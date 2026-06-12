@@ -41,8 +41,8 @@ P0 目标：
 每一版应尽量保持清晰的单一目标，例如：
 
 - v0.1：README 和产品方向。已完成。
-- v0.2：工作台空壳和能力导航。当前版本。
-- v0.3：文件上传和 DOCX 解析。
+- v0.2：工作台空壳和能力导航。已完成。
+- v0.3：文件上传和 DOCX 解析。当前版本。
 - v0.4：SPA/SHA KTS schema、taxonomy 和中间产物。
 - v0.5：KTS 表格视图和来源证据。
 - v0.6：DOCX 导出。
@@ -51,18 +51,21 @@ P0 目标：
 
 ## Current Version
 
-v0.2 includes:
+v0.3 includes:
 
 - Local Python server.
 - Static browser workbench.
 - Capability navigation.
 - `SPA/SHA KTS` placeholder capability.
-- Dry-run endpoint with local run records.
-- Parsed user-facing capability and dry-run summaries.
+- Workbench connectivity check.
+- Parsed user-facing capability and check summaries.
 - Internal capability config and raw JSON preserved only in advanced/debug sections.
+- Multi-file Word upload.
+- DOCX parsing for all body paragraphs and table rows, with rough document type recognition.
+- Latest parsed document structure saved as one overwriteable debug snapshot.
 - Windows start script.
 
-KTS generation, DOCX parsing, source QA, and DOCX export are not implemented yet.
+KTS generation, source QA, and DOCX export are not implemented yet.
 
 ## Run Locally
 
@@ -75,5 +78,6 @@ start_windows.bat
 Or run from a terminal:
 
 ```bash
+python -m pip install -r requirements.txt
 python app/server.py --host 127.0.0.1 --port 8787
 ```

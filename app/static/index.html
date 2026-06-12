@@ -35,11 +35,23 @@
               <h2 id="capabilityTitle">加载中</h2>
               <p id="capabilityDescription" class="muted">正在读取 capability registry。</p>
             </div>
-            <button type="button" id="dryRun" class="primary">Dry Run</button>
+            <button type="button" id="checkWorkbench" class="secondary">测试工作台</button>
           </div>
 
           <section class="panel">
-            <h3>事项输入</h3>
+            <h3>交易文件</h3>
+            <div class="upload-area">
+              <label class="file-picker">
+                <span>选择 Word 文件</span>
+                <input id="documentFiles" type="file" multiple accept=".docx,.docx.crdownload,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+              </label>
+              <div id="fileList" class="file-list muted">尚未选择文件。</div>
+              <button type="button" id="uploadDocuments" class="primary">解析文件</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h3>事项背景</h3>
             <div class="form-grid">
               <label>
                 我方角色
@@ -64,11 +76,11 @@
           </details>
 
           <section class="panel">
-            <h3>运行结果</h3>
-            <div id="resultBox" class="result empty">尚未运行。</div>
+            <h3>处理结果</h3>
+            <div id="resultBox" class="result empty">尚未处理。</div>
             <details class="advanced-block">
-              <summary>高级信息：本次运行原始数据</summary>
-              <pre id="rawResultJson" class="codebox">尚未运行。</pre>
+              <summary>高级信息：当前处理原始数据</summary>
+              <pre id="rawResultJson" class="codebox">尚未处理。</pre>
             </details>
           </section>
         </section>

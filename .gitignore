@@ -4,8 +4,5 @@ __pycache__/
 *.py[cod]
 *.log
 *.pid
-runs/*
-!runs/.gitkeep
-app/uploads/*
-!app/uploads/.gitkeep
-
+debug/*
+!debug/.gitkeep

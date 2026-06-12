@@ -22,13 +22,16 @@ function labelForStatus(value) {
   const labels = {
     shell: "工作台搭建中",
     placeholder: "工作台已连通",
+    parsed: "文件已解析",
+    partial_error: "部分文件未解析",
   };
   return labels[value] || value || "未设置";
 }
 
 function labelForPhase(value) {
   const labels = {
-    "v0.2-dry-run": "工作台连通性测试",
+    "workbench-check": "工作台连通性测试",
+    "v0.3-docx-intake": "交易文件解析",
   };
   return labels[value] || value || "未设置";
 }
@@ -72,32 +75,86 @@ async function selectCapability(capabilityId) {
 }
 
 function renderRunSummary(result) {
-  const run = result.run || {};
-  const runResult = run.result || {};
-  const capability = runResult.capability || {};
+  const current = result.current || {};
+  const currentResult = current.result || {};
+  const capability = currentResult.capability || {};
+  if (Array.isArray(currentResult.documents)) {
+    return renderDocumentSummary(result);
+  }
   return `
     <div class="status-line">
-      <strong>${escapeHtml(labelForStatus(runResult.status) || "已记录")}</strong>
-      <span>${escapeHtml(runResult.message || "运行已完成。")}</span>
+      <strong>${escapeHtml(labelForStatus(currentResult.status) || "已连通")}</strong>
+      <span>${escapeHtml(currentResult.message || "检查已完成。")}</span>
     </div>
     <dl>
-      <div>
-        <dt>运行 ID</dt>
-        <dd>${escapeHtml(run.run_id || "未生成")}</dd>
-      </div>
       <div>
         <dt>能力</dt>
         <dd>${escapeHtml(capability.title || "融资交易 KTS")}</dd>
       </div>
       <div>
         <dt>阶段</dt>
-        <dd>${escapeHtml(labelForPhase(run.phase))}</dd>
+        <dd>${escapeHtml(labelForPhase(current.phase))}</dd>
       </div>
       <div>
-        <dt>创建时间</dt>
-        <dd>${escapeHtml(run.created_at || "未记录")}</dd>
+        <dt>检查时间</dt>
+        <dd>${escapeHtml(current.updated_at || "未记录")}</dd>
       </div>
     </dl>
+  `;
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (value >= 1024 * 1024) {
+    return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  }
+  if (value >= 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${value} B`;
+}
+
+function renderDocumentSummary(result) {
+  const current = result.current || {};
+  const currentResult = current.result || {};
+  const documents = Array.isArray(currentResult.documents) ? currentResult.documents : [];
+  return `
+    <div class="status-line">
+      <strong>${escapeHtml(labelForStatus(currentResult.status))}</strong>
+      <span>${escapeHtml(currentResult.message || "文件解析已完成。")}</span>
+    </div>
+    <div class="document-list">
+      ${documents
+        .map((document) => {
+          if (document.status === "error") {
+            return `
+              <article class="document-item error">
+                <div class="document-item-head">
+                  <div>
+                    <h4>${escapeHtml(document.file_name || "未命名文件")}</h4>
+                    <p class="muted">${escapeHtml(formatBytes(document.file_size))}</p>
+                  </div>
+                  <span class="pill warn">未解析</span>
+                </div>
+                <p>${escapeHtml(document.error || "文件读取失败。")}</p>
+              </article>
+            `;
+          }
+          return `
+            <article class="document-item">
+              <div class="document-item-head">
+                <div>
+                  <h4>${escapeHtml(document.file_name || "未命名文件")}</h4>
+                  <p class="muted">${escapeHtml(formatBytes(document.file_size))}</p>
+                </div>
+                <span class="pill">${escapeHtml(document.document_type?.label || "交易文件")}</span>
+              </div>
+              <p class="document-status">正文及表格已读取，可用于后续生成 KTS。</p>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
   `;
 }
 
@@ -124,6 +181,17 @@ function renderAiSummary(result) {
   `;
 }
 
+function renderSelectedFiles() {
+  const files = Array.from($("#documentFiles").files || []);
+  if (files.length === 0) {
+    $("#fileList").textContent = "尚未选择文件。";
+    return;
+  }
+  $("#fileList").innerHTML = files
+    .map((file) => `<span>${escapeHtml(file.name)} · ${escapeHtml(formatBytes(file.size))}</span>`)
+    .join("");
+}
+
 async function loadCapabilities() {
   setBadge("读取能力");
   state.capabilities = await fetchJson("/api/capabilities");
@@ -133,16 +201,15 @@ async function loadCapabilities() {
   setBadge("就绪");
 }
 
-async function runDryRun() {
+async function checkWorkbench() {
   if (!state.activeCapabilityId) return;
-  setBadge("运行中");
+  setBadge("检查中");
   const payload = {
     capability_id: state.activeCapabilityId,
-    template_mode: "single_round",
     party_role: $("#partyRole").value,
     matter_notes: $("#matterNotes").value,
   };
-  const result = await fetchJson("/api/runs/dry-run", {
+  const result = await fetchJson("/api/workbench/check", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -150,7 +217,35 @@ async function runDryRun() {
   $("#resultBox").classList.remove("empty");
   $("#resultBox").innerHTML = renderRunSummary(result);
   $("#rawResultJson").textContent = JSON.stringify(result, null, 2);
-  setBadge("完成");
+  setBadge("已连通");
+}
+
+async function uploadDocuments() {
+  if (!state.activeCapabilityId) return;
+  const files = Array.from($("#documentFiles").files || []);
+  if (files.length === 0) {
+    $("#resultBox").classList.remove("empty");
+    $("#resultBox").textContent = "请先选择至少一个 Word 文件。";
+    return;
+  }
+
+  setBadge("解析文件");
+  const payload = new FormData();
+  payload.append("capability_id", state.activeCapabilityId);
+  payload.append("party_role", $("#partyRole").value);
+  payload.append("matter_notes", $("#matterNotes").value);
+  for (const file of files) {
+    payload.append("documents", file, file.name);
+  }
+
+  const result = await fetchJson("/api/documents/upload", {
+    method: "POST",
+    body: payload,
+  });
+  $("#resultBox").classList.remove("empty");
+  $("#resultBox").innerHTML = renderDocumentSummary(result);
+  $("#rawResultJson").textContent = JSON.stringify(result, null, 2);
+  setBadge(result.ok ? "解析完成" : "需检查");
 }
 
 async function testAi() {
@@ -163,8 +258,16 @@ async function testAi() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  $("#dryRun").addEventListener("click", () => {
-    runDryRun().catch((error) => {
+  $("#documentFiles").addEventListener("change", renderSelectedFiles);
+  $("#uploadDocuments").addEventListener("click", () => {
+    uploadDocuments().catch((error) => {
+      setBadge("失败");
+      $("#resultBox").textContent = error.message;
+      $("#rawResultJson").textContent = error.stack || error.message;
+    });
+  });
+  $("#checkWorkbench").addEventListener("click", () => {
+    checkWorkbench().catch((error) => {
       setBadge("失败");
       $("#resultBox").textContent = error.message;
       $("#rawResultJson").textContent = error.stack || error.message;

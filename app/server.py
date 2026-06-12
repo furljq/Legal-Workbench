@@ -4,19 +4,27 @@
 from __future__ import annotations
 
 import argparse
+import email.policy
 import json
 import mimetypes
 import sys
+import tempfile
 import threading
 import webbrowser
+from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
 from ai_client import public_config, test_connection
 from capability_registry import get_capability, load_capabilities
 from config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, STATIC_DIR, ensure_runtime_dirs
-from run_store import list_runs, save_run_record
+from docx_parser import DocxParseError, parse_docx_file
+from work_state import load_current_parse, save_current_parse, timestamp
+
+
+MAX_UPLOAD_BYTES = 120 * 1024 * 1024
 
 
 def json_bytes(data: object) -> bytes:
@@ -24,7 +32,7 @@ def json_bytes(data: object) -> bytes:
 
 
 class WorkbenchHandler(BaseHTTPRequestHandler):
-    server_version = "LegalWorkbench/0.2"
+    server_version = "LegalWorkbench/0.3"
 
     def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("[LegalWorkbench] " + fmt % args + "\n")
@@ -63,6 +71,52 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             raise ValueError("JSON body must be an object")
         return data
 
+    def read_multipart_body(self) -> tuple[dict[str, str], list[dict[str, object]]]:
+        content_type = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in content_type:
+            raise ValueError("请使用 multipart/form-data 上传文件。")
+
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        if length <= 0:
+            raise ValueError("上传内容为空。")
+        if length > MAX_UPLOAD_BYTES:
+            raise ValueError("上传内容过大，请分批上传。")
+
+        body = self.rfile.read(length)
+        message = BytesParser(policy=email.policy.default).parsebytes(
+            f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
+            + body
+        )
+        if not message.is_multipart():
+            raise ValueError("上传格式无法识别。")
+
+        fields: dict[str, str] = {}
+        files: list[dict[str, object]] = []
+        for part in message.iter_parts():
+            if part.get_content_disposition() != "form-data":
+                continue
+            field_name = part.get_param("name", header="content-disposition") or ""
+            file_name = part.get_filename()
+            if file_name:
+                content = part.get_payload(decode=True) or b""
+                if content:
+                    files.append(
+                        {
+                            "field_name": field_name,
+                            "file_name": file_name,
+                            "content": content,
+                        }
+                    )
+                continue
+
+            try:
+                fields[field_name] = str(part.get_content())
+            except LookupError:
+                fields[field_name] = (part.get_payload(decode=True) or b"").decode(
+                    "utf-8", errors="replace"
+                )
+        return fields, files
+
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
 
@@ -92,8 +146,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 return
             self.send_json(capability.raw)
             return
-        if path == "/api/runs":
-            self.send_json(list_runs())
+        if path == "/api/debug/current-parse":
+            self.send_json(load_current_parse() or {"status": "empty"})
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
@@ -101,7 +155,100 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
 
-        if path == "/api/runs/dry-run":
+        if path == "/api/documents/upload":
+            try:
+                fields, files = self.read_multipart_body()
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+
+            if not files:
+                self.send_json({"ok": False, "error": "请选择至少一个 Word 文件。"}, HTTPStatus.BAD_REQUEST)
+                return
+
+            capability_id = str(fields.get("capability_id") or "spa_sha_kts")
+            capability = get_capability(capability_id)
+            if capability is None:
+                self.send_json({"ok": False, "error": "Unknown capability"}, HTTPStatus.BAD_REQUEST)
+                return
+
+            documents: list[dict[str, object]] = []
+            for index, file_info in enumerate(files, start=1):
+                original_name = str(file_info["file_name"])
+                content = file_info["content"]
+                suffix = "".join(Path(original_name).suffixes) or ".docx"
+                temp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+                        temp_file.write(content)  # type: ignore[arg-type]
+                        temp_path = Path(temp_file.name)
+
+                    parsed = parse_docx_file(temp_path, original_name)
+                    documents.append(parsed)
+                except DocxParseError as exc:
+                    documents.append(
+                        {
+                            "file_name": original_name,
+                            "file_size": len(content),  # type: ignore[arg-type]
+                            "status": "error",
+                            "error": str(exc),
+                        }
+                    )
+                finally:
+                    if temp_path is not None:
+                        temp_path.unlink(missing_ok=True)
+
+            error_count = sum(1 for item in documents if item.get("status") == "error")
+            debug_record = save_current_parse(
+                {
+                    "capability_id": capability_id,
+                    "phase": "v0.3-docx-intake",
+                    "input": {
+                        "capability_id": capability_id,
+                        "party_role": fields.get("party_role", ""),
+                        "matter_notes": fields.get("matter_notes", ""),
+                        "file_names": [str(item["file_name"]) for item in documents],
+                    },
+                    "result": {
+                        "status": "partial_error" if error_count else "parsed",
+                        "message": (
+                            f"已解析 {len(documents) - error_count} 个文件，{error_count} 个文件未能解析。"
+                            if error_count
+                            else f"已解析 {len(documents)} 个文件，可继续核对文档结构。"
+                        ),
+                        "capability": capability.public_dict(),
+                        "documents": documents,
+                    },
+                }
+            )
+            public_documents = []
+            for document in documents:
+                public_document = {
+                    "file_name": document["file_name"],
+                    "file_size": document["file_size"],
+                    "status": document["status"],
+                }
+                if document.get("document_type"):
+                    public_document["document_type"] = document["document_type"]
+                if document.get("error"):
+                    public_document["error"] = document["error"]
+                public_documents.append(public_document)
+
+            public_current = {
+                "updated_at": debug_record["updated_at"],
+                "capability_id": debug_record["capability_id"],
+                "phase": debug_record["phase"],
+                "result": {
+                    "status": debug_record["result"]["status"],
+                    "message": debug_record["result"]["message"],
+                    "capability": debug_record["result"]["capability"],
+                    "documents": public_documents,
+                },
+            }
+            self.send_json({"ok": error_count == 0, "current": public_current})
+            return
+
+        if path == "/api/workbench/check":
             try:
                 data = self.read_json_body()
             except (ValueError, json.JSONDecodeError) as exc:
@@ -114,19 +261,21 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": "Unknown capability"}, HTTPStatus.BAD_REQUEST)
                 return
 
-            record = save_run_record(
+            self.send_json(
                 {
-                    "capability_id": capability_id,
-                    "phase": "v0.2-dry-run",
-                    "input": data,
-                    "result": {
-                        "status": "placeholder",
-                        "message": "工作台已经连通。后续版本会接入文件解析、KTS 生成和 Word 导出。",
-                        "capability": capability.public_dict(),
+                    "ok": True,
+                    "current": {
+                        "updated_at": timestamp(),
+                        "capability_id": capability_id,
+                        "phase": "workbench-check",
+                        "result": {
+                            "status": "placeholder",
+                            "message": "工作台已经连通。后续版本会接入 KTS 生成和 Word 导出。",
+                            "capability": capability.public_dict(),
+                        },
                     },
                 }
             )
-            self.send_json({"ok": True, "run": record})
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")

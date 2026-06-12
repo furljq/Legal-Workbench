@@ -1,3 +1,1 @@
-# v0.2 uses the Python standard library only.
-# Dependencies for DOCX parsing/rendering will be added in later iterations.
-
+python-docx>=1.1.2,<2
