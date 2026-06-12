@@ -1,0 +1,29 @@
+{
+  "capability_id": "spa_sha_kts",
+  "title": "融资交易 KTS",
+  "description": "根据增资协议和股东协议生成关键条款摘要，并最终导出为可编辑的 Word 文档。",
+  "status": "shell",
+  "stage_label": "工作台搭建中",
+  "version": "0.2.0",
+  "workflow": [
+    "financing-doc-intake",
+    "clause-inventory-builder",
+    "spa-kts-extraction",
+    "sha-kts-extraction",
+    "kts-template-rendering",
+    "kts-style-normalization",
+    "kts-source-qa",
+    "docx-kts-export"
+  ],
+  "views": [
+    "kts-table",
+    "source-drawer",
+    "qa-panel",
+    "intermediate-json",
+    "docx-export"
+  ],
+  "examples": [
+    "case_a_prior_round_only",
+    "case_b_full_reproduction"
+  ]
+}
