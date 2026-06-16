@@ -58,6 +58,10 @@ def parse_docx_file(path: Path, original_name: str | None = None) -> dict[str, A
 
     try:
         from docx import Document
+        from docx.oxml.table import CT_Tbl
+        from docx.oxml.text.paragraph import CT_P
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
     except ImportError as exc:  # pragma: no cover - depends on local environment
         raise DocxParseError("缺少 python-docx 依赖，请先安装 requirements.txt。") from exc
 
@@ -69,32 +73,49 @@ def parse_docx_file(path: Path, original_name: str | None = None) -> dict[str, A
     file_name = original_name or path.name
     paragraphs: list[dict[str, Any]] = []
     headings: list[dict[str, Any]] = []
+    tables: list[dict[str, Any]] = []
+    body_blocks: list[dict[str, Any]] = []
+    paragraph_index = 0
+    table_index = 0
 
-    for index, paragraph in enumerate(document.paragraphs, start=1):
+    def parse_paragraph(paragraph, block_index: int) -> dict[str, Any] | None:
+        nonlocal paragraph_index
+        paragraph_index += 1
         text = normalize_space(paragraph.text)
         if not text:
-            continue
+            return None
 
         style_name = getattr(getattr(paragraph, "style", None), "name", "") or ""
         heading_level = classify_heading(text, style_name)
         item: dict[str, Any] = {
-            "index": index,
+            "index": paragraph_index,
+            "paragraph_index": paragraph_index,
+            "text": text,
+            "style": style_name,
+        }
+        block_item: dict[str, Any] = {
+            "block_index": block_index,
+            "kind": "paragraph",
+            "paragraph_index": paragraph_index,
             "text": text,
             "style": style_name,
         }
         if heading_level is not None:
             item["heading_level"] = heading_level
+            block_item["heading_level"] = heading_level
             headings.append(
                 {
-                    "index": index,
+                    "index": paragraph_index,
                     "level": heading_level,
                     "text": text,
                 }
             )
         paragraphs.append(item)
+        return block_item
 
-    tables: list[dict[str, Any]] = []
-    for table_index, table in enumerate(document.tables, start=1):
+    def parse_table(table, block_index: int) -> dict[str, Any]:
+        nonlocal table_index
+        table_index += 1
         rows: list[dict[str, Any]] = []
         column_count = 0
         for row_index, row in enumerate(table.rows, start=1):
@@ -105,14 +126,28 @@ def parse_docx_file(path: Path, original_name: str | None = None) -> dict[str, A
             row_item = {"row_index": row_index, "cells": cells}
             rows.append(row_item)
 
-        tables.append(
-            {
-                "index": table_index,
-                "row_count": len(table.rows),
-                "column_count": column_count,
-                "rows": rows,
-            }
-        )
+        table_item = {
+            "index": table_index,
+            "table_index": table_index,
+            "row_count": len(table.rows),
+            "column_count": column_count,
+            "rows": rows,
+        }
+        tables.append(table_item)
+        return {
+            "block_index": block_index,
+            "kind": "table",
+            **table_item,
+        }
+
+    for block_index, child in enumerate(document.element.body.iterchildren(), start=1):
+        if isinstance(child, CT_P):
+            block = parse_paragraph(Paragraph(child, document), block_index)
+            if block is not None:
+                body_blocks.append(block)
+            continue
+        if isinstance(child, CT_Tbl):
+            body_blocks.append(parse_table(Table(child, document), block_index))
 
     doc_type = guess_document_type(file_name, paragraphs)
 
@@ -125,9 +160,11 @@ def parse_docx_file(path: Path, original_name: str | None = None) -> dict[str, A
         "counts": {
             "paragraphs": len(paragraphs),
             "headings": len(headings),
-            "tables": len(document.tables),
+            "tables": len(tables),
+            "body_blocks": len(body_blocks),
         },
         "headings": headings,
+        "body_blocks": body_blocks,
         "paragraphs": paragraphs,
         "tables": tables,
     }

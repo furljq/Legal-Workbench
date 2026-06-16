@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Legal Workbench</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -14,8 +15,8 @@
           <p>选择能力，上传交易文件，生成可复核、可导出的法律工作成果。</p>
         </div>
         <div class="header-actions">
+          <span id="modelBadge" class="badge pending">模型检测中</span>
           <span id="stateBadge" class="badge">未开始</span>
-          <button type="button" id="testAi" class="secondary">测试 AI 服务</button>
         </div>
       </header>
 
@@ -46,7 +47,7 @@
                 <input id="documentFiles" type="file" multiple accept=".docx,.docx.crdownload,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
               </label>
               <div id="fileList" class="file-list muted">尚未选择文件。</div>
-              <button type="button" id="uploadDocuments" class="primary">解析文件</button>
+              <button type="button" id="uploadDocuments" class="primary">生成候选证据</button>
             </div>
           </section>
 
@@ -70,7 +71,7 @@
           </section>
 
           <details class="panel advanced-panel">
-            <summary>高级信息：能力配置</summary>
+            <summary>高级信息：能力规则</summary>
             <p class="muted">供维护和调试使用；普通使用无需查看。</p>
             <pre id="capabilityJson" class="codebox">等待加载。</pre>
           </details>

@@ -1,6 +1,7 @@
 const state = {
   capabilities: [],
   activeCapabilityId: null,
+  progressTimer: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -18,6 +19,12 @@ function setBadge(text) {
   $("#stateBadge").textContent = text;
 }
 
+function setModelBadge(text, status = "") {
+  const badge = $("#modelBadge");
+  badge.textContent = text;
+  badge.className = ["badge", "model-badge", status].filter(Boolean).join(" ");
+}
+
 function labelForStatus(value) {
   const labels = {
     shell: "工作台搭建中",
@@ -32,6 +39,9 @@ function labelForPhase(value) {
   const labels = {
     "workbench-check": "工作台连通性测试",
     "v0.3-docx-intake": "交易文件解析",
+    "v0.4-source-index": "原文证据索引",
+    "v0.4-kts-candidates": "KTS 候选证据",
+    "v0.4-kts-extraction": "KTS 摘要生成",
   };
   return labels[value] || value || "未设置";
 }
@@ -114,6 +124,267 @@ function formatBytes(bytes) {
   return `${value} B`;
 }
 
+function createRunId() {
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `run-${Date.now()}-${randomPart}`;
+}
+
+function renderProgressStages(progress) {
+  const stageIndex = Number(progress.stage_index || 0);
+  const done = progress.status === "completed";
+  const stages = [
+    { index: 1, label: "读取文件" },
+    { index: 2, label: "证据索引" },
+    { index: 3, label: "模型复核" },
+    { index: 4, label: "生成摘要" },
+  ];
+  return stages
+    .map((stage) => {
+      let className = "pending";
+      if (done || stage.index < stageIndex) {
+        className = "completed";
+      } else if (stage.index === stageIndex) {
+        className = "active";
+      }
+      return `<span class="${className}">${escapeHtml(stage.label)}</span>`;
+    })
+    .join("");
+}
+
+function renderProcessingProgress(progress = {}) {
+  const completedItems = Number(progress.completed_items || 0);
+  const totalItems = Number(progress.total_items || 0);
+  const ktsText = totalItems > 0 ? `KTS 事项 ${completedItems}/${totalItems}` : "KTS 事项待开始";
+  return `
+    <div class="status-line running">
+      <strong>${escapeHtml(progress.stage_label || "正在处理交易文件")}</strong>
+      <span>${escapeHtml(ktsText)}</span>
+    </div>
+    <div class="processing-steps">
+      ${renderProgressStages(progress)}
+    </div>
+  `;
+}
+
+function startProcessingProgress(fileCount, runId) {
+  const button = $("#uploadDocuments");
+  let latestProgress = {
+    progress_percent: 1,
+    stage_label: "准备处理",
+    message: `${fileCount} 个文件已提交。`,
+  };
+  let polling = false;
+  button.disabled = true;
+  button.textContent = "处理中";
+  $("#resultBox").classList.remove("empty");
+  const render = () => {
+    $("#resultBox").innerHTML = renderProcessingProgress(latestProgress);
+    setBadge("处理中");
+  };
+  const poll = async () => {
+    if (polling) return;
+    polling = true;
+    try {
+      const result = await fetchJson(`/api/runs/${encodeURIComponent(runId)}/progress`);
+      latestProgress = result.progress || latestProgress;
+    } catch (error) {
+      latestProgress = {
+        ...latestProgress,
+        message: "正在等待后台进度更新。",
+      };
+    } finally {
+      polling = false;
+      render();
+    }
+  };
+  render();
+  poll();
+  state.progressTimer = window.setInterval(poll, 1000);
+  return () => {
+    if (state.progressTimer) {
+      window.clearInterval(state.progressTimer);
+      state.progressTimer = null;
+    }
+    button.disabled = false;
+    button.textContent = "生成候选证据";
+  };
+}
+
+function renderEvidenceSummary(current) {
+  const sourceSummary = current.source_index?.summary || null;
+  const candidateSummary = current.kts_candidates?.summary || null;
+  const extractionSummary = current.kts_extraction?.summary || null;
+  if (!sourceSummary && !candidateSummary && !extractionSummary) {
+    return "";
+  }
+
+  return `
+    <div class="workflow-summary">
+      <div>
+        <strong>原文证据索引</strong>
+        <span>${escapeHtml(sourceSummary?.raw_block_count ?? 0)} 个原文块，${escapeHtml(sourceSummary?.search_shard_count ?? 0)} 个检索切片</span>
+      </div>
+      <div>
+        <strong>KTS 候选证据</strong>
+        <span>${escapeHtml(candidateSummary?.candidate_item_count ?? 0)} 个事项找到候选，${escapeHtml(candidateSummary?.candidate_count ?? 0)} 条候选证据</span>
+      </div>
+      <div>
+        <strong>模型语义复核</strong>
+        <span>${renderModelReviewSummary(candidateSummary)}</span>
+      </div>
+      <div>
+        <strong>KTS 摘要</strong>
+        <span>${escapeHtml(extractionSummary?.draft_content_count ?? extractionSummary?.drafted_count ?? 0)} 个事项已形成摘要，${escapeHtml(extractionSummary?.needs_review_count ?? 0)} 个事项待复核，${escapeHtml(extractionSummary?.unclear_count ?? 0)} 个事项未明确</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderModelReviewSummary(candidateSummary) {
+  const review = candidateSummary?.model_review || {};
+  const reviewed = review.reviewed_item_count ?? candidateSummary?.ai_reviewed_item_count ?? 0;
+  const scanned = review.scanned_item_count ?? candidateSummary?.ai_scanned_item_count ?? 0;
+  const added = review.added_candidate_count ?? candidateSummary?.ai_added_candidate_count ?? 0;
+  const errors = review.error_item_count ?? candidateSummary?.ai_error_count ?? 0;
+  if (errors > 0) {
+    return `${escapeHtml(reviewed)} 个事项已复核，${escapeHtml(scanned)} 个事项已补充扫描；${escapeHtml(errors)} 个事项待重新复核`;
+  }
+  return `${escapeHtml(reviewed)} 个事项已复核，${escapeHtml(scanned)} 个事项已补充扫描，新增 ${escapeHtml(added)} 条候选证据`;
+}
+
+function labelForExtractionStatus(value) {
+  const labels = {
+    drafted: "已形成摘要",
+    needs_review: "待复核",
+    unclear: "未明确",
+  };
+  return labels[value] || value || "未设置";
+}
+
+function labelForKtsGroup(value) {
+  const labels = {
+    SPA: "SPA",
+    SHA: "SHA",
+  };
+  return labels[value] || value || "其他";
+}
+
+function renderReviewNotes(notes) {
+  if (!Array.isArray(notes) || notes.length === 0) {
+    return "";
+  }
+  return `
+    <div class="kts-detail-block">
+      <strong>复核要点</strong>
+      <ul>
+        ${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}
+      </ul>
+    </div>
+  `;
+}
+
+function renderSourceEvidence(evidenceItems) {
+  if (!Array.isArray(evidenceItems) || evidenceItems.length === 0) {
+    return "";
+  }
+  return `
+    <div class="kts-detail-block">
+      <strong>来源证据</strong>
+      <div class="evidence-list">
+        ${evidenceItems
+          .map((evidence, index) => {
+            const verifiedLabel = evidence.verified ? "已核验" : "待核验";
+            const verifiedClass = evidence.verified ? "ok" : "warn";
+            return `
+              <article class="evidence-item">
+                <div class="evidence-head">
+                  <span>证据 ${index + 1}</span>
+                  <span class="pill ${verifiedClass}">${escapeHtml(verifiedLabel)}</span>
+                </div>
+                <p>${escapeHtml(evidence.quote || "未返回可展示原文。")}</p>
+                <small>${escapeHtml(evidence.file_name || "未命名文件")}${evidence.source_locator ? ` · ${escapeHtml(evidence.source_locator)}` : ""}</small>
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderKtsDetail(item) {
+  const notes = renderReviewNotes(item.review_notes);
+  const evidence = renderSourceEvidence(item.source_evidence);
+  if (!notes && !evidence) {
+    return "";
+  }
+  return `
+    <div class="kts-detail-row">
+      <details class="kts-detail">
+        <summary>查看证据与复核要点</summary>
+        <div class="kts-detail-content">
+          ${notes}
+          ${evidence}
+        </div>
+      </details>
+    </div>
+  `;
+}
+
+function renderKtsDraftRows(items) {
+  const rows = [];
+  let currentGroup = "";
+  for (const item of items) {
+    const group = item.group || "OTHER";
+    if (group !== currentGroup) {
+      currentGroup = group;
+      rows.push(`
+        <div class="kts-row group">
+          <strong>${escapeHtml(labelForKtsGroup(group))}</strong>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      `);
+    }
+    const note = Array.isArray(item.review_notes) ? item.review_notes[0] : "";
+    rows.push(`
+      <div class="kts-row">
+        <strong>${escapeHtml(item.label || item.taxonomy_id || "未命名事项")}</strong>
+        <span>${escapeHtml(labelForExtractionStatus(item.status))}</span>
+        <p>${escapeHtml(item.draft_content || note || "待后续复核。")}</p>
+        <span>${escapeHtml(item.source_evidence_count ?? 0)} 条</span>
+      </div>
+    `);
+    rows.push(renderKtsDetail(item));
+  }
+  return rows.join("");
+}
+
+function renderKtsDraftTable(extraction) {
+  const items = Array.isArray(extraction?.items) ? extraction.items : [];
+  if (items.length === 0) {
+    return "";
+  }
+  return `
+    <section class="kts-draft">
+      <div class="section-head compact">
+        <h3>KTS 中间表</h3>
+        <span class="muted">${escapeHtml(items.length)} 项</span>
+      </div>
+      <div class="kts-table">
+        <div class="kts-row head">
+          <span>事项</span>
+          <span>状态</span>
+          <span>内容摘要</span>
+          <span>证据</span>
+        </div>
+        ${renderKtsDraftRows(items)}
+      </div>
+    </section>
+  `;
+}
+
 function renderDocumentSummary(result) {
   const current = result.current || {};
   const currentResult = current.result || {};
@@ -155,29 +426,8 @@ function renderDocumentSummary(result) {
         })
         .join("")}
     </div>
-  `;
-}
-
-function renderAiSummary(result) {
-  return `
-    <div class="status-line">
-      <strong>${result.ok ? "AI 服务占位检查通过" : "AI 服务异常"}</strong>
-      <span>${escapeHtml(result.message || "")}</span>
-    </div>
-    <dl>
-      <div>
-        <dt>模型</dt>
-        <dd>${result.configured ? escapeHtml(result.model || "已配置") : "内置占位服务"}</dd>
-      </div>
-      <div>
-        <dt>服务</dt>
-        <dd>${result.configured ? "已连接配置服务" : "待接入真实生成服务"}</dd>
-      </div>
-      <div>
-        <dt>配置状态</dt>
-        <dd>${result.configured ? "已配置" : "使用占位配置"}</dd>
-      </div>
-    </dl>
+    ${renderEvidenceSummary(current)}
+    ${renderKtsDraftTable(current.kts_extraction)}
   `;
 }
 
@@ -199,6 +449,13 @@ async function loadCapabilities() {
     await selectCapability(state.capabilities[0].capability_id);
   }
   setBadge("就绪");
+}
+
+async function refreshModelStatus() {
+  setModelBadge("模型检测中", "pending");
+  const result = await fetchJson("/api/ai/test");
+  setModelBadge(result.ok ? "模型可用" : "模型需检查", result.ok ? "ok" : "warn");
+  $("#modelBadge").title = result.message || "";
 }
 
 async function checkWorkbench() {
@@ -229,8 +486,11 @@ async function uploadDocuments() {
     return;
   }
 
-  setBadge("解析文件");
+  setBadge("处理文件");
+  const runId = createRunId();
+  const stopProgress = startProcessingProgress(files.length, runId);
   const payload = new FormData();
+  payload.append("run_id", runId);
   payload.append("capability_id", state.activeCapabilityId);
   payload.append("party_role", $("#partyRole").value);
   payload.append("matter_notes", $("#matterNotes").value);
@@ -238,23 +498,18 @@ async function uploadDocuments() {
     payload.append("documents", file, file.name);
   }
 
-  const result = await fetchJson("/api/documents/upload", {
-    method: "POST",
-    body: payload,
-  });
-  $("#resultBox").classList.remove("empty");
-  $("#resultBox").innerHTML = renderDocumentSummary(result);
-  $("#rawResultJson").textContent = JSON.stringify(result, null, 2);
-  setBadge(result.ok ? "解析完成" : "需检查");
-}
-
-async function testAi() {
-  setBadge("测试 AI");
-  const result = await fetchJson("/api/ai/test");
-  $("#resultBox").classList.remove("empty");
-  $("#resultBox").innerHTML = renderAiSummary(result);
-  $("#rawResultJson").textContent = JSON.stringify(result, null, 2);
-  setBadge(result.ok ? "AI 可用" : "AI 异常");
+  try {
+    const result = await fetchJson("/api/documents/upload", {
+      method: "POST",
+      body: payload,
+    });
+    $("#resultBox").classList.remove("empty");
+    $("#resultBox").innerHTML = renderDocumentSummary(result);
+    $("#rawResultJson").textContent = JSON.stringify(result, null, 2);
+    setBadge(result.ok ? "处理完成" : "需检查");
+  } finally {
+    stopProgress();
+  }
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -273,14 +528,10 @@ window.addEventListener("DOMContentLoaded", async () => {
       $("#rawResultJson").textContent = error.stack || error.message;
     });
   });
-  $("#testAi").addEventListener("click", () => {
-    testAi().catch((error) => {
-      setBadge("失败");
-      $("#resultBox").textContent = error.message;
-      $("#rawResultJson").textContent = error.stack || error.message;
-    });
+  refreshModelStatus().catch((error) => {
+    setModelBadge("模型需检查", "warn");
+    $("#modelBadge").title = error.message;
   });
-
   try {
     await loadCapabilities();
   } catch (error) {

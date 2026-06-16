@@ -1,0 +1,215 @@
+{
+  "taxonomy_id": "spa_sha_kts_core",
+  "version": "0.2.0",
+  "items": [
+    {
+      "id": "spa.transaction_arrangement",
+      "group": "SPA",
+      "label": "本次交易安排",
+      "template_labels": {"single_round": "本次交易安排"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["本次交易", "交易安排", "增资", "认购", "投资款", "融资额", "投前估值", "投后估值", "注册资本", "股权结构", "签署方", "ESOP", "员工持股平台"]
+    },
+    {
+      "id": "spa.closing_conditions",
+      "group": "SPA",
+      "label": "交割先决条件",
+      "template_labels": {"single_round": "交割先决条件"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["交割先决条件", "先决条件", "条件满足", "内部批准", "批准许可", "投委会", "尽职调查", "法律意见书", "重大不利"]
+    },
+    {
+      "id": "spa.closing",
+      "group": "SPA",
+      "label": "交割及工商变更安排",
+      "template_labels": {"single_round": "交割及工商变更安排"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["交割", "交割日", "付款通知", "付款通知书", "出资证明", "出资证明书", "股东名册", "工商变更", "工商变更登记", "登记机关", "市场监督"]
+    },
+    {
+      "id": "spa.representations_warranties",
+      "group": "SPA",
+      "label": "陈述及保证",
+      "template_labels": {"single_round": "陈述及保证"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["陈述", "保证", "陈述保证", "声明", "资料真实", "知识产权", "合规", "授权", "过渡期", "代持", "重大不利影响"]
+    },
+    {
+      "id": "spa.post_closing_covenants",
+      "group": "SPA",
+      "label": "交割后承诺",
+      "template_labels": {"single_round": "交割后承诺"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["交割后承诺", "承诺", "增资款", "资金用途", "实缴", "实缴出资", "重组", "整改", "竞业", "知识产权转移", "许可或备案", "持续任职"]
+    },
+    {
+      "id": "spa.termination",
+      "group": "SPA",
+      "label": "解除和终止",
+      "template_labels": {"single_round": "解除和终止"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["解除", "终止", "单方解除", "终止日", "最后期限", "Long-Stop Date", "long stop"]
+    },
+    {
+      "id": "spa.liability",
+      "group": "SPA",
+      "label": "违约责任",
+      "template_labels": {"single_round": "违约责任"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["违约", "违约责任", "违约赔偿", "赔偿", "补偿", "责任", "损失", "连带", "连带赔偿", "特殊赔偿"]
+    },
+    {
+      "id": "spa.expenses",
+      "group": "SPA",
+      "label": "费用条款",
+      "template_labels": {"single_round": "费用条款"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["费用", "律师费", "交易费用", "承担", "费用承担"]
+    },
+    {
+      "id": "spa.compliance",
+      "group": "SPA",
+      "label": "道德合规特别约定",
+      "template_labels": {"single_round": "道德合规特别约定"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["反腐败", "反商业贿赂", "廉洁", "道德", "合规", "利益输送", "资金往来", "不正当利益交换", "代持", "违约金"]
+    },
+    {
+      "id": "sha.board_composition",
+      "group": "SHA",
+      "label": "董事会构成",
+      "template_labels": {"single_round": "董事会构成"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["董事会", "董事会构成", "董事会由", "董事", "观察员", "董事长", "委派", "提名", "席"]
+    },
+    {
+      "id": "sha.board_reserved_matters",
+      "group": "SHA",
+      "label": "董事会保护性事项",
+      "template_labels": {"single_round": "董事会保护性事项"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["董事会保护性事项", "董事会重大事项", "重大事项决策", "投资人董事同意", "董事会批准", "保护性事项", "任免高管", "预算", "贷款", "担保"]
+    },
+    {
+      "id": "sha.shareholder_reserved_matters",
+      "group": "SHA",
+      "label": "股东会保护性事项",
+      "template_labels": {"single_round": "股东会保护性事项"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["股东会保护性事项", "股东会重大事项", "股东会", "股东同意", "全体投资人", "多数投资人", "三分之二", "特别决议", "保护性事项", "veto"]
+    },
+    {
+      "id": "sha.preemptive_right",
+      "group": "SHA",
+      "label": "优先认购权",
+      "template_labels": {"single_round": "优先认购权"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["优先认购权", "优先认购", "新增注册资本", "新增发行", "认购权", "二次认购权"]
+    },
+    {
+      "id": "sha.transfer_restriction",
+      "group": "SHA",
+      "label": "股权转让限制",
+      "template_labels": {"single_round": "股权转让限制"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["股权转让", "转让限制", "转股限制", "转股受限", "锁定", "QIPO前", "合格上市前", "竞对", "不受限制"]
+    },
+    {
+      "id": "sha.rofr_tag",
+      "group": "SHA",
+      "label": "优先购买权&共同出售权",
+      "template_labels": {"single_round": "优先购买权&共同出售权"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["优先购买权", "优先购买", "共同出售权", "共同出售", "共售权", "随售权", "共同售卖", "二次购买权", "控制权变更", "ROFR"]
+    },
+    {
+      "id": "sha.information_audit",
+      "group": "SHA",
+      "label": "信息权及审计权",
+      "template_labels": {"single_round": "信息权及审计权"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["信息权", "检查权", "审计权", "独立审计权", "财务报表", "经审计年报", "未经审计季报", "预算", "月报"]
+    },
+    {
+      "id": "sha.liquidation_preference",
+      "group": "SHA",
+      "label": "优先清算权",
+      "template_labels": {"single_round": "优先清算权"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["优先清算", "清算事件", "视同清算", "清算顺位", "优先清算额", "年单利", "剩余财产", "控制权变更", "新项目"]
+    },
+    {
+      "id": "sha.anti_dilution",
+      "group": "SHA",
+      "label": "反稀释权",
+      "template_labels": {"single_round": "反稀释权"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["反稀释", "反稀释权", "棘轮", "全棘轮", "加权平均", "广义加权平均", "调整价格", "价格调整"]
+    },
+    {
+      "id": "sha.dividend",
+      "group": "SHA",
+      "label": "分红权",
+      "template_labels": {"single_round": "分红权"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["分红", "分红权", "利润分配", "股利", "实缴出资比例", "不得分红", "优先分红"]
+    },
+    {
+      "id": "sha.esop",
+      "group": "SHA",
+      "label": "ESOP特别约定",
+      "template_labels": {"single_round": "ESOP特别约定"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["员工股权激励", "股权激励", "期权池", "员工持股", "ESOP", "员工激励", "后续融资", "投前估值", "增发"]
+    },
+    {
+      "id": "sha.redemption",
+      "group": "SHA",
+      "label": "特殊回购权",
+      "template_labels": {"single_round": "特殊回购权"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["特殊回购权", "回购触发事项", "回购义务人", "回购价格", "回购价款", "回购权行使", "回购顺位", "利益输送", "股权代持", "不正当利益交换", "日万分之三"]
+    },
+    {
+      "id": "sha.other",
+      "group": "SHA",
+      "label": "其他",
+      "template_labels": {"single_round": "其他"},
+      "document_types": ["shareholders_agreement"],
+      "extraction_mode": "absence_check",
+      "keywords": ["常规回购权", "回购权", "赎回权", "IPO联动", "领售权", "拖售权", "最惠国待遇", "创始人全职", "全职付出", "不竞争义务", "竞业限制"],
+      "absence_checks": [
+        {
+          "label": "常规回购权",
+          "expected_meaning": "与合格上市、重大违约、创始人离职、控制权变化等事项联动的投资人常规回购或赎回权；仅有利益输送、股权代持、资金往来等廉洁事项触发的特殊回购权时，仍应判断为未约定常规回购权。",
+          "keywords": ["回购", "赎回", "合格上市", "QIPO", "IPO", "重大违约", "未完成上市"],
+          "required_cooccurrence": {
+            "right_terms": ["回购", "赎回"],
+            "trigger_terms": ["合格上市", "QIPO", "IPO", "重大违约", "未完成上市"],
+            "window_chars": 320
+          }
+        },
+        {
+          "label": "领售权",
+          "expected_meaning": "投资人或特定股东要求其他股东一并出售股权的领售、拖售或强制出售安排。",
+          "keywords": ["领售", "拖售", "强制出售", "drag"]
+        },
+        {
+          "label": "最惠国待遇",
+          "expected_meaning": "投资人可自动享有其他投资人或后续投资人更优惠权利的最惠国或同等享有安排。",
+          "keywords": ["最惠国", "更优惠", "同等享有", "同等权利", "更优待遇"]
+        },
+        {
+          "label": "创始人全职付出",
+          "expected_meaning": "创始人、核心人员应全职投入公司或持续任职的股东协议层面义务。",
+          "keywords": ["创始人全职", "核心人员全职", "全职", "持续任职", "全部工作时间"]
+        },
+        {
+          "label": "不竞争义务",
+          "expected_meaning": "创始人、核心人员或相关主体不得从事竞争业务、不得在竞争主体任职或持股的义务。",
+          "keywords": ["不竞争", "竞业", "竞争业务", "竞争关系", "竞业限制"]
+        }
+      ]
+    }
+  ]
+}

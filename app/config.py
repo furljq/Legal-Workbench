@@ -13,7 +13,7 @@ CAPABILITIES_DIR = APP_ROOT / "capabilities"
 DEBUG_DIR = PROJECT_ROOT / "debug"
 
 APP_NAME = "Legal Workbench"
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 
 DEFAULT_HOST = os.environ.get("LEGAL_WORKBENCH_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("LEGAL_WORKBENCH_PORT", "8787"))

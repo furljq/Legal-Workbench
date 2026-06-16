@@ -10,6 +10,7 @@ import mimetypes
 import sys
 import tempfile
 import threading
+import time
 import webbrowser
 from email.parser import BytesParser
 from http import HTTPStatus
@@ -17,22 +18,180 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ai_client import public_config, test_connection
+from ai_client import test_connection
 from capability_registry import get_capability, load_capabilities
 from config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, STATIC_DIR, ensure_runtime_dirs
 from docx_parser import DocxParseError, parse_docx_file
-from work_state import load_current_parse, save_current_parse, timestamp
+from kts_extractor import build_kts_candidates, build_kts_extraction
+from source_index import build_source_index
+from work_state import (
+    load_current_kts_candidates,
+    load_current_kts_extraction,
+    load_current_parse,
+    load_current_source_index,
+    save_current_kts_candidates,
+    save_current_kts_extraction,
+    save_current_parse,
+    save_current_source_index,
+    timestamp,
+)
 
 
 MAX_UPLOAD_BYTES = 120 * 1024 * 1024
+RUN_PROGRESS: dict[str, dict[str, object]] = {}
+RUN_PROGRESS_LOCK = threading.Lock()
+
+
+def clamp_percent(value: int | float) -> int:
+    return max(0, min(100, int(round(value))))
+
+
+def start_run_progress(run_id: str, file_count: int) -> None:
+    if not run_id:
+        return
+    now = timestamp()
+    with RUN_PROGRESS_LOCK:
+        RUN_PROGRESS[run_id] = {
+            "run_id": run_id,
+            "status": "running",
+            "stage": "queued",
+            "stage_label": "准备处理",
+            "stage_index": 0,
+            "stage_count": 4,
+            "progress_percent": 1,
+            "file_count": file_count,
+            "parsed_file_count": 0,
+            "completed_items": 0,
+            "total_items": 0,
+            "started_at": now,
+            "started_at_epoch": time.time(),
+            "updated_at": now,
+            "message": "已收到文件，准备开始处理。",
+        }
+
+
+def update_run_progress(run_id: str, **fields: object) -> None:
+    if not run_id:
+        return
+    with RUN_PROGRESS_LOCK:
+        current = RUN_PROGRESS.setdefault(
+            run_id,
+            {
+                "run_id": run_id,
+                "status": "running",
+                "started_at": timestamp(),
+                "started_at_epoch": time.time(),
+            },
+        )
+        current.update(fields)
+        if "progress_percent" in current:
+            current["progress_percent"] = clamp_percent(float(current["progress_percent"]))  # type: ignore[arg-type]
+        current["updated_at"] = timestamp()
+
+
+def get_run_progress(run_id: str) -> dict[str, object] | None:
+    with RUN_PROGRESS_LOCK:
+        progress = RUN_PROGRESS.get(run_id)
+        if progress is None:
+            return None
+        public = dict(progress)
+    started_at_epoch = public.get("started_at_epoch")
+    if isinstance(started_at_epoch, (int, float)):
+        public["elapsed_seconds"] = max(0, int(time.time() - started_at_epoch))
+    public.pop("started_at_epoch", None)
+    return public
 
 
 def json_bytes(data: object) -> bytes:
     return json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
 
 
+def public_source_index(record: dict[str, object]) -> dict[str, object]:
+    documents = []
+    raw_documents = record.get("documents", [])
+    if not isinstance(raw_documents, list):
+        raw_documents = []
+    for document in raw_documents:
+        if not isinstance(document, dict):
+            continue
+        documents.append(
+            {
+                "file_name": document.get("file_name", ""),
+                "document_type": document.get("document_type", {}),
+                "raw_block_count": document.get("raw_block_count", 0),
+                "search_shard_count": document.get("search_shard_count", 0),
+                "warning_count": len(document.get("warnings", []))
+                if isinstance(document.get("warnings", []), list)
+                else 0,
+            }
+        )
+    return {
+        "updated_at": record.get("updated_at", ""),
+        "phase": record.get("phase", ""),
+        "summary": record.get("summary", {}),
+        "documents": documents,
+    }
+
+
+def public_kts_candidates(record: dict[str, object]) -> dict[str, object]:
+    return {
+        "updated_at": record.get("updated_at", ""),
+        "phase": record.get("phase", ""),
+        "taxonomy_id": record.get("taxonomy_id", ""),
+        "taxonomy_version": record.get("taxonomy_version", ""),
+        "summary": record.get("summary", {}),
+    }
+
+
+def public_kts_extraction(record: dict[str, object]) -> dict[str, object]:
+    items = []
+    raw_items = record.get("items", [])
+    if not isinstance(raw_items, list):
+        raw_items = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        source_evidence = item.get("source_evidence", [])
+        review_notes = item.get("review_notes", [])
+        public_evidence = []
+        if isinstance(source_evidence, list):
+            for evidence in source_evidence[:3]:
+                if not isinstance(evidence, dict):
+                    continue
+                public_evidence.append(
+                    {
+                        "file_name": evidence.get("file_name", ""),
+                        "source_locator": evidence.get("source_locator", ""),
+                        "quote": evidence.get("quote", ""),
+                        "verified": bool(evidence.get("verified")),
+                        "ai_relevance": evidence.get("ai_relevance", ""),
+                    }
+                )
+        items.append(
+            {
+                "taxonomy_id": item.get("taxonomy_id", ""),
+                "group": item.get("group", ""),
+                "label": item.get("label", ""),
+                "status": item.get("status", ""),
+                "draft_content": item.get("draft_content", ""),
+                "source_evidence_count": len(source_evidence) if isinstance(source_evidence, list) else 0,
+                "source_evidence": public_evidence,
+                "extracted_facts": item.get("extracted_facts", {}),
+                "review_notes": review_notes if isinstance(review_notes, list) else [],
+            }
+        )
+    return {
+        "updated_at": record.get("updated_at", ""),
+        "phase": record.get("phase", ""),
+        "taxonomy_id": record.get("taxonomy_id", ""),
+        "taxonomy_version": record.get("taxonomy_version", ""),
+        "summary": record.get("summary", {}),
+        "items": items,
+    }
+
+
 class WorkbenchHandler(BaseHTTPRequestHandler):
-    server_version = "LegalWorkbench/0.3"
+    server_version = "LegalWorkbench/0.4"
 
     def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("[LegalWorkbench] " + fmt % args + "\n")
@@ -129,11 +288,16 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         if path == "/api/health":
             self.send_json({"ok": True, "name": APP_NAME, "version": APP_VERSION})
             return
-        if path == "/api/ai/config":
-            self.send_json(public_config())
-            return
         if path == "/api/ai/test":
             self.send_json(test_connection())
+            return
+        if path.startswith("/api/runs/") and path.endswith("/progress"):
+            run_id = path.removeprefix("/api/runs/").removesuffix("/progress").strip("/")
+            progress = get_run_progress(run_id)
+            if progress is None:
+                self.send_json({"ok": False, "error": "Run progress not found"}, HTTPStatus.NOT_FOUND)
+                return
+            self.send_json({"ok": True, "progress": progress})
             return
         if path == "/api/capabilities":
             self.send_json([cap.public_dict() for cap in load_capabilities()])
@@ -148,6 +312,15 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/debug/current-parse":
             self.send_json(load_current_parse() or {"status": "empty"})
+            return
+        if path == "/api/debug/current-source-index":
+            self.send_json(load_current_source_index() or {"status": "empty"})
+            return
+        if path == "/api/debug/current-kts-candidates":
+            self.send_json(load_current_kts_candidates() or {"status": "empty"})
+            return
+        if path == "/api/debug/current-kts-extraction":
+            self.send_json(load_current_kts_extraction() or {"status": "empty"})
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
@@ -166,13 +339,24 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": "请选择至少一个 Word 文件。"}, HTTPStatus.BAD_REQUEST)
                 return
 
+            run_id = str(fields.get("run_id") or "")
+            start_run_progress(run_id, len(files))
             capability_id = str(fields.get("capability_id") or "spa_sha_kts")
             capability = get_capability(capability_id)
             if capability is None:
+                update_run_progress(run_id, status="error", message="Unknown capability")
                 self.send_json({"ok": False, "error": "Unknown capability"}, HTTPStatus.BAD_REQUEST)
                 return
 
             documents: list[dict[str, object]] = []
+            update_run_progress(
+                run_id,
+                stage="parse",
+                stage_label="读取正文及表格",
+                stage_index=1,
+                progress_percent=5,
+                message="正在读取 Word 正文和表格。",
+            )
             for index, file_info in enumerate(files, start=1):
                 original_name = str(file_info["file_name"])
                 content = file_info["content"]
@@ -197,6 +381,12 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 finally:
                     if temp_path is not None:
                         temp_path.unlink(missing_ok=True)
+                update_run_progress(
+                    run_id,
+                    parsed_file_count=index,
+                    progress_percent=5 + (15 * index / max(1, len(files))),
+                    message=f"已读取 {index}/{len(files)} 个文件。",
+                )
 
             error_count = sum(1 for item in documents if item.get("status") == "error")
             debug_record = save_current_parse(
@@ -221,6 +411,85 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     },
                 }
             )
+            update_run_progress(
+                run_id,
+                stage="source_index",
+                stage_label="建立原文证据索引",
+                stage_index=2,
+                progress_percent=25,
+                message="正在建立原文证据索引。",
+            )
+            source_index_record = save_current_source_index(build_source_index(debug_record))
+            update_run_progress(
+                run_id,
+                stage="model_review",
+                stage_label="模型语义复核",
+                stage_index=3,
+                progress_percent=30,
+                message="正在逐项复核 KTS 候选证据。",
+            )
+
+            def update_kts_progress(progress: dict[str, object]) -> None:
+                completed = int(progress.get("completed_items", 0) or 0)
+                total = int(progress.get("total_items", 0) or 0)
+                percent = 30 + (60 * completed / max(1, total))
+                update_run_progress(
+                    run_id,
+                    stage="model_review",
+                    stage_label="模型语义复核",
+                    stage_index=3,
+                    progress_percent=percent,
+                    completed_items=completed,
+                    total_items=total,
+                    worker_count=progress.get("worker_count", 1),
+                    message=f"已完成 {completed}/{total} 个 KTS 事项。",
+                )
+
+            candidates_record = save_current_kts_candidates(
+                build_kts_candidates(source_index_record, progress_callback=update_kts_progress)
+            )
+            update_run_progress(
+                run_id,
+                stage="extraction",
+                stage_label="生成摘要",
+                stage_index=4,
+                progress_percent=94,
+                message="正在生成 KTS 摘要。",
+            )
+
+            def update_extraction_progress(progress: dict[str, object]) -> None:
+                completed = int(progress.get("completed_items", 0) or 0)
+                total = int(progress.get("total_items", 0) or 0)
+                update_run_progress(
+                    run_id,
+                    stage="extraction",
+                    stage_label="生成摘要",
+                    stage_index=4,
+                    progress_percent=90 + (9 * completed / max(1, total)),
+                    completed_items=completed,
+                    total_items=total,
+                    worker_count=progress.get("worker_count", 1),
+                    message=f"已处理 {completed}/{total} 个 KTS 事项。",
+                )
+
+            extraction_record = save_current_kts_extraction(
+                build_kts_extraction(
+                    candidates_record,
+                    source_index_record,
+                    progress_callback=update_extraction_progress,
+                )
+            )
+            update_run_progress(
+                run_id,
+                status="completed",
+                stage="completed",
+                stage_label="处理完成",
+                stage_index=4,
+                progress_percent=100,
+                completed_items=candidates_record.get("summary", {}).get("taxonomy_item_count", 0),
+                total_items=candidates_record.get("summary", {}).get("taxonomy_item_count", 0),
+                message="处理完成。",
+            )
             public_documents = []
             for document in documents:
                 public_document = {
@@ -238,6 +507,9 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 "updated_at": debug_record["updated_at"],
                 "capability_id": debug_record["capability_id"],
                 "phase": debug_record["phase"],
+                "source_index": public_source_index(source_index_record),
+                "kts_candidates": public_kts_candidates(candidates_record),
+                "kts_extraction": public_kts_extraction(extraction_record),
                 "result": {
                     "status": debug_record["result"]["status"],
                     "message": debug_record["result"]["message"],
@@ -246,6 +518,49 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 },
             }
             self.send_json({"ok": error_count == 0, "current": public_current})
+            return
+
+        if path == "/api/source-index/build":
+            parse_record = load_current_parse()
+            if parse_record is None:
+                self.send_json({"ok": False, "error": "请先上传并解析交易文件。"}, HTTPStatus.BAD_REQUEST)
+                return
+            source_index_record = save_current_source_index(build_source_index(parse_record))
+            self.send_json(
+                {
+                    "ok": True,
+                    "current_source_index": public_source_index(source_index_record),
+                }
+            )
+            return
+
+        if path == "/api/kts-candidates/build":
+            source_index_record = load_current_source_index()
+            if source_index_record is None:
+                parse_record = load_current_parse()
+                if parse_record is None:
+                    self.send_json({"ok": False, "error": "请先上传并解析交易文件。"}, HTTPStatus.BAD_REQUEST)
+                    return
+                source_index_record = save_current_source_index(build_source_index(parse_record))
+            candidates_record = save_current_kts_candidates(build_kts_candidates(source_index_record))
+            self.send_json({"ok": True, "current_kts_candidates": public_kts_candidates(candidates_record)})
+            return
+
+        if path == "/api/kts-extraction/build":
+            source_index_record = load_current_source_index()
+            if source_index_record is None:
+                parse_record = load_current_parse()
+                if parse_record is None:
+                    self.send_json({"ok": False, "error": "请先上传并解析交易文件。"}, HTTPStatus.BAD_REQUEST)
+                    return
+                source_index_record = save_current_source_index(build_source_index(parse_record))
+            candidates_record = load_current_kts_candidates()
+            if candidates_record is None:
+                candidates_record = save_current_kts_candidates(build_kts_candidates(source_index_record))
+            extraction_record = save_current_kts_extraction(
+                build_kts_extraction(candidates_record, source_index_record)
+            )
+            self.send_json({"ok": True, "current_kts_extraction": public_kts_extraction(extraction_record)})
             return
 
         if path == "/api/workbench/check":

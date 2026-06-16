@@ -4,5 +4,6 @@ __pycache__/
 *.py[cod]
 *.log
 *.pid
+app/ai_config.py
 debug/*
 !debug/.gitkeep
