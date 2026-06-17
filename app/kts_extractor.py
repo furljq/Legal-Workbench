@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from difflib import SequenceMatcher
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
-from ai_client import AIClientError, ai_configured, ai_max_workers, chat_json
+from ai_client import AIClientError, ai_configured, ai_max_workers, chat_json, is_transient_ai_error
 from config import CAPABILITIES_DIR
 from evidence_verifier import verify_quote
 from source_index import normalize_for_match
@@ -18,9 +20,16 @@ from source_index import normalize_for_match
 MAX_CANDIDATES_PER_ITEM = 8
 MAX_ANCHOR_SHARDS_PER_ITEM = 18
 MAX_CANDIDATE_CHARS = 2000
+MAX_TABLE_CANDIDATE_CHARS = 5000
 MAX_AI_REVIEW_CANDIDATES = 8
 MAX_AI_SCAN_SHARDS = 120
-MAX_EXTRACTION_EVIDENCE = 3
+MAX_EXTRACTION_EVIDENCE = MAX_CANDIDATES_PER_ITEM
+SOURCE_BLOCK_OVERLAP_DUPLICATE_RATIO = 0.70
+EVIDENCE_TEXT_SIMILARITY_DUPLICATE_RATIO = 0.82
+EVIDENCE_QUOTE_SIMILARITY_DUPLICATE_RATIO = 0.86
+MIN_SIMILARITY_TEXT_CHARS = 80
+MAX_ADAPTIVE_MODEL_RETRIES = 2
+ADAPTIVE_RETRY_SLEEP_SECONDS = 2
 MAX_ABSENCE_SNIPPETS_PER_CHECK = 8
 ABSENCE_SNIPPET_RADIUS = 180
 TAXONOMY_PATH = CAPABILITIES_DIR / "spa_sha_kts" / "kts_taxonomy.json"
@@ -193,13 +202,15 @@ def build_candidate_text(
     for index in range(max(0, anchor_position - before), min(len(raw_blocks), anchor_position + after + 1)):
         selected.append(raw_blocks[index])
 
+    selected = expand_selected_tables(raw_blocks, selected)
+    max_chars = MAX_TABLE_CANDIDATE_CHARS if any(block.get("kind") == "table_row" for block in selected) else MAX_CANDIDATE_CHARS
     parts: list[str] = []
     block_ids: list[str] = []
     for block in selected:
         text = str(block.get("normalized_text") or "")
         if not text:
             continue
-        if len("\n".join(parts + [text])) > MAX_CANDIDATE_CHARS and parts:
+        if len("\n".join(parts + [text])) > max_chars and parts:
             if block.get("block_id") != anchor_block_id:
                 continue
         parts.append(text)
@@ -208,6 +219,58 @@ def build_candidate_text(
     if not parts:
         return str(shard.get("text") or ""), source_block_ids
     return "\n".join(parts), block_ids
+
+
+def table_key(block: dict[str, Any]) -> tuple[str, str] | None:
+    if block.get("kind") != "table_row":
+        return None
+    source = block.get("source", {})
+    if not isinstance(source, dict):
+        return None
+    table_index = source.get("table_index")
+    if table_index is None:
+        return None
+    return (str(block.get("doc_id") or ""), str(table_index))
+
+
+def expand_selected_tables(
+    raw_blocks: list[dict[str, Any]],
+    selected: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    table_keys = {key for block in selected if (key := table_key(block)) is not None}
+    if not table_keys:
+        return selected
+    selected_ids = {str(block.get("block_id") or "") for block in selected}
+    expanded = list(selected)
+    for block in raw_blocks:
+        block_id = str(block.get("block_id") or "")
+        if block_id in selected_ids:
+            continue
+        if table_key(block) in table_keys:
+            expanded.append(block)
+            selected_ids.add(block_id)
+    expanded.sort(key=lambda block: int(block.get("order") or 0))
+    return expanded
+
+
+def source_span_for_blocks(document: dict[str, Any], block_ids: list[str]) -> dict[str, Any]:
+    positions = block_positions(document)
+    ordered_blocks = [
+        (positions[block_id], block_id)
+        for block_id in block_ids
+        if block_id in positions
+    ]
+    if not ordered_blocks:
+        return {}
+    ordered_blocks.sort(key=lambda item: item[0])
+    return {
+        "doc_id": document.get("doc_id", ""),
+        "start_block_id": ordered_blocks[0][1],
+        "end_block_id": ordered_blocks[-1][1],
+        "start_block_index": ordered_blocks[0][0],
+        "end_block_index": ordered_blocks[-1][0],
+        "block_count": ordered_blocks[-1][0] - ordered_blocks[0][0] + 1,
+    }
 
 
 def build_item_candidates(
@@ -252,6 +315,7 @@ def build_item_candidates(
                 "document_type": document.get("document_type", {}),
                 "shard_ids": [shard.get("shard_id", "")],
                 "source_block_ids": block_ids,
+                "source_span": source_span_for_blocks(document, block_ids),
                 "source_locator": shard.get("source_locator", ""),
                 "source_quote": quote,
                 "text": text,
@@ -430,6 +494,7 @@ def candidate_from_ai_selection(
         "document_type": document.get("document_type", {}),
         "shard_ids": [shard_id],
         "source_block_ids": block_ids,
+        "source_span": source_span_for_blocks(document, block_ids),
         "source_locator": shard.get("source_locator", ""),
         "source_quote": source_quote,
         "text": text,
@@ -523,6 +588,87 @@ def apply_ai_semantic_recall(
     return scan_no_candidate_item_with_ai(item, source_index)
 
 
+def reduced_worker_count(worker_count: int) -> int:
+    return max(1, worker_count // 2)
+
+
+def candidate_item_transient_error(item: dict[str, Any]) -> bool:
+    model_review = item.get("model_review", {})
+    if not isinstance(model_review, dict):
+        return False
+    if model_review.get("status") != "model_error":
+        return False
+    return is_transient_ai_error(model_review.get("error", ""))
+
+
+def extraction_item_transient_error(item: dict[str, Any]) -> bool:
+    review_notes = item.get("review_notes", [])
+    if not isinstance(review_notes, list):
+        return False
+    return any(is_transient_ai_error(note) for note in review_notes)
+
+
+def adaptive_retry_sleep(attempt: int) -> None:
+    time.sleep(ADAPTIVE_RETRY_SLEEP_SECONDS * max(1, attempt))
+
+
+def build_candidate_items_adaptive(
+    taxonomy_items: list[dict[str, Any]],
+    source_index: dict[str, Any],
+    initial_worker_count: int,
+    progress_callback: ProgressCallback | None = None,
+) -> list[dict[str, Any]]:
+    ordered_items: list[dict[str, Any] | None] = [None] * len(taxonomy_items)
+    attempts: list[int] = [0] * len(taxonomy_items)
+    pending_indices = list(range(len(taxonomy_items)))
+    completed_count = 0
+    worker_count = max(1, initial_worker_count)
+
+    while pending_indices:
+        batch_indices = pending_indices[:worker_count]
+        pending_indices = pending_indices[worker_count:]
+        batch_results: dict[int, dict[str, Any]] = {}
+
+        if worker_count > 1 and len(batch_indices) > 1:
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                futures = {
+                    executor.submit(build_kts_candidate_item, taxonomy_items[index], source_index): index
+                    for index in batch_indices
+                }
+                for future in as_completed(futures):
+                    batch_results[futures[future]] = future.result()
+        else:
+            for index in batch_indices:
+                batch_results[index] = build_kts_candidate_item(taxonomy_items[index], source_index)
+
+        retry_indices: list[int] = []
+        for index in batch_indices:
+            item = batch_results[index]
+            if candidate_item_transient_error(item) and attempts[index] < MAX_ADAPTIVE_MODEL_RETRIES:
+                attempts[index] += 1
+                retry_indices.append(index)
+                continue
+            ordered_items[index] = item
+            completed_count += 1
+            if progress_callback:
+                progress_callback(
+                    {
+                        "stage": "model_review",
+                        "stage_label": "模型语义复核",
+                        "completed_items": completed_count,
+                        "total_items": len(taxonomy_items),
+                        "worker_count": worker_count,
+                    }
+                )
+
+        if retry_indices:
+            worker_count = reduced_worker_count(worker_count)
+            pending_indices = retry_indices + pending_indices
+            adaptive_retry_sleep(max(attempts[index] for index in retry_indices))
+
+    return [item for item in ordered_items if item is not None]
+
+
 def build_kts_candidates(
     source_index: dict[str, Any],
     taxonomy: dict[str, Any] | None = None,
@@ -542,29 +688,13 @@ def build_kts_candidates(
             }
         )
 
-    if ai_configured() and worker_count > 1:
-        ordered_items: list[dict[str, Any] | None] = [None] * len(taxonomy_items)
-        completed_count = 0
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            futures = {
-                executor.submit(build_kts_candidate_item, item, source_index): index
-                for index, item in enumerate(taxonomy_items)
-            }
-            for future in as_completed(futures):
-                index = futures[future]
-                ordered_items[index] = future.result()
-                completed_count += 1
-                if progress_callback:
-                    progress_callback(
-                        {
-                            "stage": "model_review",
-                            "stage_label": "模型语义复核",
-                            "completed_items": completed_count,
-                            "total_items": len(taxonomy_items),
-                            "worker_count": worker_count,
-                        }
-                    )
-        items = [item for item in ordered_items if item is not None]
+    if ai_configured():
+        items = build_candidate_items_adaptive(
+            taxonomy_items,
+            source_index,
+            worker_count,
+            progress_callback,
+        )
     else:
         items = []
         for item in taxonomy_items:
@@ -650,6 +780,306 @@ def candidate_for_extraction_ai(candidate: dict[str, Any]) -> dict[str, Any]:
         "context": str(candidate.get("text") or "")[:1400],
         "relevance": candidate.get("ai_relevance", ""),
     }
+
+
+def normalize_evidence_quote(value: Any) -> str:
+    return re.sub(r"\s+", "", str(value or "")).strip()
+
+
+def similarity_ratio(left: str, right: str) -> float:
+    if len(left) < MIN_SIMILARITY_TEXT_CHARS or len(right) < MIN_SIMILARITY_TEXT_CHARS:
+        return 0.0
+    return SequenceMatcher(None, left, right).ratio()
+
+
+def duplicate_evidence_quote(normalized_quote: str, seen_quotes: list[str]) -> bool:
+    if not normalized_quote:
+        return True
+    for seen_quote in seen_quotes:
+        if normalized_quote == seen_quote:
+            return True
+        if len(normalized_quote) >= 30 and len(seen_quote) >= 30:
+            if normalized_quote in seen_quote or seen_quote in normalized_quote:
+                return True
+    return False
+
+
+def source_block_id_list(candidate: dict[str, Any]) -> list[str]:
+    values = candidate.get("source_block_ids", [])
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values if str(value)]
+
+
+def source_block_ids(candidate: dict[str, Any]) -> set[str]:
+    return set(source_block_id_list(candidate))
+
+
+def block_sort_key(block_id: str) -> tuple[str, int, str]:
+    match = re.match(r"^(?P<doc>D\d+)-B(?P<order>\d+)$", block_id)
+    if not match:
+        return ("", 0, block_id)
+    return (match.group("doc"), int(match.group("order")), block_id)
+
+
+def sorted_source_block_ids(values: list[str]) -> list[str]:
+    return sorted({str(value) for value in values if str(value)}, key=block_sort_key)
+
+
+def inferred_source_span(candidate: dict[str, Any]) -> dict[str, Any]:
+    block_ids = sorted_source_block_ids(source_block_id_list(candidate))
+    if not block_ids:
+        return {}
+    parsed = [block_sort_key(block_id) for block_id in block_ids]
+    doc_id = str(candidate.get("doc_id") or parsed[0][0])
+    orders = [item[1] for item in parsed if item[1] > 0]
+    if not orders:
+        return {}
+    return {
+        "doc_id": doc_id,
+        "start_block_id": block_ids[0],
+        "end_block_id": block_ids[-1],
+        "start_block_index": min(orders),
+        "end_block_index": max(orders),
+        "block_count": max(orders) - min(orders) + 1,
+    }
+
+
+def candidate_source_span(candidate: dict[str, Any]) -> dict[str, Any]:
+    span = candidate.get("source_span", {})
+    if isinstance(span, dict) and span.get("doc_id"):
+        return span
+    return inferred_source_span(candidate)
+
+
+def source_spans_overlap(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if not left or not right:
+        return False
+    if str(left.get("doc_id") or "") != str(right.get("doc_id") or ""):
+        return False
+    left_start = int(left.get("start_block_index") or -1)
+    left_end = int(left.get("end_block_index") or -1)
+    right_start = int(right.get("start_block_index") or -1)
+    right_end = int(right.get("end_block_index") or -1)
+    if min(left_start, left_end, right_start, right_end) < 0:
+        return False
+    return max(left_start, right_start) <= min(left_end, right_end)
+
+
+def merge_source_spans(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    if not left:
+        return right
+    if not right:
+        return left
+    if str(left.get("doc_id") or "") != str(right.get("doc_id") or ""):
+        return left
+    start_left = int(left.get("start_block_index") or 0)
+    start_right = int(right.get("start_block_index") or 0)
+    end_left = int(left.get("end_block_index") or 0)
+    end_right = int(right.get("end_block_index") or 0)
+    start = min(start_left, start_right)
+    end = max(end_left, end_right)
+    return {
+        "doc_id": left.get("doc_id", ""),
+        "start_block_id": left.get("start_block_id") if start_left <= start_right else right.get("start_block_id"),
+        "end_block_id": left.get("end_block_id") if end_left >= end_right else right.get("end_block_id"),
+        "start_block_index": start,
+        "end_block_index": end,
+        "block_count": end - start + 1,
+    }
+
+
+def merge_unique_values(*groups: Any) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        values = group if isinstance(group, list) else [group]
+        for value in values:
+            text = str(value or "").strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            merged.append(text)
+    return merged
+
+
+def merge_candidate_text(left: Any, right: Any, limit: int = MAX_CANDIDATE_CHARS) -> str:
+    lines: list[str] = []
+    seen_lines: set[str] = set()
+    for value in [left, right]:
+        for line in str(value or "").splitlines():
+            text = line.strip()
+            normalized = normalize_evidence_quote(text)
+            if not normalized or normalized in seen_lines:
+                continue
+            next_text = "\n".join([*lines, text])
+            if len(next_text) > limit and lines:
+                continue
+            seen_lines.add(normalized)
+            lines.append(text)
+    return "\n".join(lines)
+
+
+def source_block_overlap_ratio(left: dict[str, Any], right: dict[str, Any]) -> float:
+    left_ids = source_block_ids(left)
+    right_ids = source_block_ids(right)
+    if not left_ids or not right_ids:
+        return 0.0
+    return len(left_ids & right_ids) / min(len(left_ids), len(right_ids))
+
+
+def duplicate_evidence_candidate(
+    candidate: dict[str, Any],
+    normalized_quote: str,
+    normalized_context: str,
+    selected: list[tuple[dict[str, Any], str, str]],
+) -> bool:
+    for selected_candidate, selected_quote, selected_context in selected:
+        if duplicate_evidence_quote(normalized_quote, [selected_quote]):
+            return True
+        if (
+            similarity_ratio(normalized_quote, selected_quote)
+            >= EVIDENCE_QUOTE_SIMILARITY_DUPLICATE_RATIO
+        ):
+            return True
+        if (
+            similarity_ratio(normalized_context, selected_context)
+            >= EVIDENCE_TEXT_SIMILARITY_DUPLICATE_RATIO
+        ):
+            return True
+        if (
+            source_block_overlap_ratio(candidate, selected_candidate)
+            >= SOURCE_BLOCK_OVERLAP_DUPLICATE_RATIO
+        ):
+            return True
+    return False
+
+
+def merge_extraction_candidate(
+    primary: dict[str, Any],
+    addition: dict[str, Any],
+) -> dict[str, Any]:
+    merged = dict(primary)
+    merged["merged_candidate_ids"] = merge_unique_values(
+        primary.get("merged_candidate_ids", [primary.get("candidate_id", "")]),
+        addition.get("merged_candidate_ids", [addition.get("candidate_id", "")]),
+    )
+    merged["source_block_ids"] = sorted_source_block_ids(
+        merge_unique_values(primary.get("source_block_ids", []), addition.get("source_block_ids", []))
+    )
+    merged["source_span"] = merge_source_spans(
+        candidate_source_span(primary),
+        candidate_source_span(addition),
+    )
+    merged["shard_ids"] = merge_unique_values(primary.get("shard_ids", []), addition.get("shard_ids", []))
+    merged["retrieval_channels"] = merge_unique_values(
+        primary.get("retrieval_channels", []),
+        addition.get("retrieval_channels", []),
+    )
+    merged["source_locators"] = merge_unique_values(
+        primary.get("source_locators", [primary.get("source_locator", "")]),
+        addition.get("source_locators", [addition.get("source_locator", "")]),
+    )
+    merged_text = merge_candidate_text(primary.get("text", ""), addition.get("text", ""))
+    merged["text"] = merged_text
+    merged["character_count"] = len(merged_text)
+    return merged
+
+
+def find_candidate_cluster(
+    candidate: dict[str, Any],
+    normalized_quote: str,
+    normalized_context: str,
+    clusters: list[tuple[dict[str, Any], str, str]],
+) -> int | None:
+    span = candidate_source_span(candidate)
+    for index, (cluster_candidate, _cluster_quote, _cluster_context) in enumerate(clusters):
+        if source_spans_overlap(span, candidate_source_span(cluster_candidate)):
+            return index
+    for index, (cluster_candidate, cluster_quote, cluster_context) in enumerate(clusters):
+        if duplicate_evidence_candidate(
+            candidate,
+            normalized_quote,
+            normalized_context,
+            [(cluster_candidate, cluster_quote, cluster_context)],
+        ):
+            return index
+    return None
+
+
+def should_merge_candidate_clusters(
+    left: tuple[dict[str, Any], str, str],
+    right: tuple[dict[str, Any], str, str],
+) -> bool:
+    left_candidate, left_quote, left_context = left
+    right_candidate, right_quote, right_context = right
+    if source_spans_overlap(candidate_source_span(left_candidate), candidate_source_span(right_candidate)):
+        return True
+    return duplicate_evidence_candidate(
+        right_candidate,
+        right_quote,
+        right_context,
+        [(left_candidate, left_quote, left_context)],
+    )
+
+
+def merge_candidate_clusters(
+    clusters: list[tuple[dict[str, Any], str, str]],
+) -> list[tuple[dict[str, Any], str, str]]:
+    merged_clusters = list(clusters)
+    changed = True
+    while changed:
+        changed = False
+        for left_index in range(len(merged_clusters)):
+            if changed:
+                break
+            for right_index in range(left_index + 1, len(merged_clusters)):
+                left = merged_clusters[left_index]
+                right = merged_clusters[right_index]
+                if not should_merge_candidate_clusters(left, right):
+                    continue
+                merged_candidate = merge_extraction_candidate(left[0], right[0])
+                merged_clusters[left_index] = (
+                    merged_candidate,
+                    left[1],
+                    normalize_evidence_quote(merged_candidate.get("text")),
+                )
+                del merged_clusters[right_index]
+                changed = True
+                break
+    return merged_clusters
+
+
+def select_extraction_candidates(
+    candidates: list[dict[str, Any]],
+    limit: int = MAX_EXTRACTION_EVIDENCE,
+) -> list[dict[str, Any]]:
+    clusters: list[tuple[dict[str, Any], str, str]] = []
+    for candidate in candidates:
+        quote = candidate_quote_for_extraction(candidate)
+        normalized_quote = normalize_evidence_quote(quote)
+        normalized_context = normalize_evidence_quote(candidate.get("text"))
+        cluster_index = find_candidate_cluster(
+            candidate,
+            normalized_quote,
+            normalized_context,
+            clusters,
+        )
+        if cluster_index is not None:
+            cluster_candidate, cluster_quote, cluster_context = clusters[cluster_index]
+            merged_candidate = merge_extraction_candidate(cluster_candidate, candidate)
+            clusters[cluster_index] = (
+                merged_candidate,
+                cluster_quote,
+                normalize_evidence_quote(merged_candidate.get("text")),
+            )
+            clusters = merge_candidate_clusters(clusters)
+            continue
+        if len(clusters) >= limit:
+            break
+        clusters.append((dict(candidate), normalized_quote, normalized_context))
+        clusters = merge_candidate_clusters(clusters)
+    return [candidate for candidate, _quote, _context in clusters]
 
 
 def normalize_string_list(value: Any) -> list[str]:
@@ -857,6 +1287,7 @@ def extract_absence_checks_with_ai(
             "review_notes": ["已完成常见缺失条款的关键词命中检查，但模型抽取未完成，需律师复核。"],
         }
 
+    extraction_candidates = select_extraction_candidates(candidates)
     messages = [
         {
             "role": "system",
@@ -891,7 +1322,7 @@ def extract_absence_checks_with_ai(
                     "search_results": checks,
                     "related_evidence": [
                         candidate_for_extraction_ai(candidate)
-                        for candidate in candidates[:MAX_EXTRACTION_EVIDENCE]
+                        for candidate in extraction_candidates
                     ],
                 },
                 ensure_ascii=False,
@@ -932,6 +1363,61 @@ def extract_absence_checks_with_ai(
     }
 
 
+def source_blocks_by_id(source_index: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    blocks: dict[str, dict[str, Any]] = {}
+    for document in source_index.get("documents", []):
+        if not isinstance(document, dict):
+            continue
+        for block in document.get("raw_blocks", []):
+            if not isinstance(block, dict):
+                continue
+            block_id = str(block.get("block_id") or "")
+            if block_id:
+                blocks[block_id] = block
+    return blocks
+
+
+def evidence_tables_for_candidate(
+    candidate: dict[str, Any],
+    source_index: dict[str, Any],
+) -> list[dict[str, Any]]:
+    blocks = source_blocks_by_id(source_index)
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for block_id in source_block_id_list(candidate):
+        block = blocks.get(block_id)
+        if not block or block.get("kind") != "table_row":
+            continue
+        source = block.get("source", {})
+        if not isinstance(source, dict):
+            continue
+        table_index = str(source.get("table_index") or "")
+        key = (str(block.get("doc_id") or ""), table_index)
+        table = grouped.setdefault(
+            key,
+            {
+                "file_name": block.get("file_name", ""),
+                "table_index": table_index,
+                "rows": [],
+            },
+        )
+        table["rows"].append(
+            {
+                "row_index": source.get("row_index"),
+                "cells": [str(cell) for cell in source.get("cells", [])],
+            }
+        )
+
+    tables: list[dict[str, Any]] = []
+    for table in grouped.values():
+        rows = table.get("rows", [])
+        if isinstance(rows, list):
+            rows.sort(key=lambda row: int(row.get("row_index") or 0) if isinstance(row, dict) else 0)
+        if rows:
+            tables.append(table)
+    tables.sort(key=lambda table: int(table.get("table_index") or 0))
+    return tables
+
+
 def extract_facts_with_ai(
     item: dict[str, Any],
     candidates: list[dict[str, Any]],
@@ -954,6 +1440,7 @@ def extract_facts_with_ai(
             "review_notes": ["已找到候选原文，但模型抽取未完成，需律师复核。"],
         }
 
+    extraction_candidates = select_extraction_candidates(candidates)
     messages = [
         {
             "role": "system",
@@ -984,7 +1471,7 @@ def extract_facts_with_ai(
                     },
                     "evidence": [
                         candidate_for_extraction_ai(candidate)
-                        for candidate in candidates[:MAX_EXTRACTION_EVIDENCE]
+                        for candidate in extraction_candidates
                     ],
                 },
                 ensure_ascii=False,
@@ -1021,9 +1508,10 @@ def build_kts_extraction_item(
     source_index: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
     candidates = [candidate for candidate in item.get("candidates", []) if isinstance(candidate, dict)]
+    extraction_candidates = select_extraction_candidates(candidates)
     evidence: list[dict[str, Any]] = []
     verified_count = 0
-    for candidate in candidates[:MAX_EXTRACTION_EVIDENCE]:
+    for candidate in extraction_candidates:
         quote = candidate_quote_for_extraction(candidate)
         verification = verify_quote(quote, candidate, source_index)
         if verification.get("verified"):
@@ -1034,6 +1522,12 @@ def build_kts_extraction_item(
                 "file_name": candidate.get("file_name", ""),
                 "source_locator": candidate.get("source_locator", ""),
                 "quote": quote,
+                "context": str(candidate.get("text") or "")[:1400],
+                "source_block_ids": candidate.get("source_block_ids", []),
+                "source_span": candidate.get("source_span", {}),
+                "shard_ids": candidate.get("shard_ids", []),
+                "merged_candidate_ids": candidate.get("merged_candidate_ids", []),
+                "tables": evidence_tables_for_candidate(candidate, source_index),
                 "score": candidate.get("score", 0),
                 "retrieval_channels": candidate.get("retrieval_channels", []),
                 "ai_relevance": candidate.get("ai_relevance", ""),
@@ -1060,6 +1554,65 @@ def build_kts_extraction_item(
     )
 
 
+def build_extraction_items_adaptive(
+    source_items: list[dict[str, Any]],
+    source_index: dict[str, Any],
+    initial_worker_count: int,
+    progress_callback: ProgressCallback | None = None,
+) -> tuple[list[dict[str, Any]], list[int]]:
+    ordered_items: list[dict[str, Any] | None] = [None] * len(source_items)
+    verified_counts: list[int] = [0] * len(source_items)
+    attempts: list[int] = [0] * len(source_items)
+    pending_indices = list(range(len(source_items)))
+    completed_count = 0
+    worker_count = max(1, initial_worker_count)
+
+    while pending_indices:
+        batch_indices = pending_indices[:worker_count]
+        pending_indices = pending_indices[worker_count:]
+        batch_results: dict[int, tuple[dict[str, Any], int]] = {}
+
+        if worker_count > 1 and len(batch_indices) > 1:
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                futures = {
+                    executor.submit(build_kts_extraction_item, source_items[index], source_index): index
+                    for index in batch_indices
+                }
+                for future in as_completed(futures):
+                    batch_results[futures[future]] = future.result()
+        else:
+            for index in batch_indices:
+                batch_results[index] = build_kts_extraction_item(source_items[index], source_index)
+
+        retry_indices: list[int] = []
+        for index in batch_indices:
+            item, verified_count = batch_results[index]
+            if extraction_item_transient_error(item) and attempts[index] < MAX_ADAPTIVE_MODEL_RETRIES:
+                attempts[index] += 1
+                retry_indices.append(index)
+                continue
+            ordered_items[index] = item
+            verified_counts[index] = verified_count
+            completed_count += 1
+            if progress_callback:
+                progress_callback(
+                    {
+                        "stage": "extraction",
+                        "stage_label": "生成摘要",
+                        "completed_items": completed_count,
+                        "total_items": len(source_items),
+                        "worker_count": worker_count,
+                    }
+                )
+
+        if retry_indices:
+            worker_count = reduced_worker_count(worker_count)
+            pending_indices = retry_indices + pending_indices
+            adaptive_retry_sleep(max(attempts[index] for index in retry_indices))
+
+    return [item for item in ordered_items if item is not None], verified_counts
+
+
 def build_kts_extraction(
     candidates_record: dict[str, Any],
     source_index: dict[str, Any],
@@ -1078,31 +1631,15 @@ def build_kts_extraction(
             }
         )
 
-    verified_counts: list[int] = [0] * len(source_items)
-    if ai_configured() and worker_count > 1:
-        ordered_items: list[dict[str, Any] | None] = [None] * len(source_items)
-        completed_count = 0
-        with ThreadPoolExecutor(max_workers=worker_count) as executor:
-            futures = {
-                executor.submit(build_kts_extraction_item, item, source_index): index
-                for index, item in enumerate(source_items)
-            }
-            for future in as_completed(futures):
-                index = futures[future]
-                ordered_items[index], verified_counts[index] = future.result()
-                completed_count += 1
-                if progress_callback:
-                    progress_callback(
-                        {
-                            "stage": "extraction",
-                            "stage_label": "生成摘要",
-                            "completed_items": completed_count,
-                            "total_items": len(source_items),
-                            "worker_count": worker_count,
-                        }
-                    )
-        items = [item for item in ordered_items if item is not None]
+    if ai_configured():
+        items, verified_counts = build_extraction_items_adaptive(
+            source_items,
+            source_index,
+            worker_count,
+            progress_callback,
+        )
     else:
+        verified_counts = [0] * len(source_items)
         items = []
         for index, item in enumerate(source_items):
             extraction_item, verified_count = build_kts_extraction_item(item, source_index)

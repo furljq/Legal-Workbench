@@ -16,7 +16,20 @@ DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_API_TYPE = "chat_completions"
 DEFAULT_TEMPERATURE = 0.1
 DEFAULT_TIMEOUT_SECONDS = 180
+MAX_MODEL_WORKER_LIMIT = 16
 API_TYPES = {"chat_completions", "responses"}
+TRANSIENT_HTTP_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+TRANSIENT_ERROR_KEYWORDS = (
+    "rate limit",
+    "too many requests",
+    "timeout",
+    "timed out",
+    "temporarily",
+    "try again",
+    "connection reset",
+    "connection aborted",
+    "remote end closed",
+)
 
 
 class AIClientError(RuntimeError):
@@ -96,12 +109,24 @@ def ai_timeout_seconds(default: int = DEFAULT_TIMEOUT_SECONDS) -> int:
         return default
 
 
-def ai_max_workers(default: int = 4) -> int:
+def ai_max_workers(default: int = 8) -> int:
     value = configured_value("MAX_MODEL_WORKERS", "LEGAL_WORKBENCH_MODEL_MAX_WORKERS", default)
     try:
-        return min(8, max(1, int(value)))
+        return min(MAX_MODEL_WORKER_LIMIT, max(1, int(value)))
     except (TypeError, ValueError):
         return default
+
+
+def is_transient_ai_error(error: object) -> bool:
+    text = str(error or "")
+    match = re.search(r"HTTP\s+(\d+)", text, re.IGNORECASE)
+    if match:
+        try:
+            return int(match.group(1)) in TRANSIENT_HTTP_CODES
+        except ValueError:
+            return False
+    lowered = text.lower()
+    return any(keyword in lowered for keyword in TRANSIENT_ERROR_KEYWORDS)
 
 
 def api_headers(api_key: str) -> dict[str, str]:

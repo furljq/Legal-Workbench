@@ -7,11 +7,13 @@ import argparse
 import email.policy
 import json
 import mimetypes
+import re
 import sys
 import tempfile
 import threading
 import time
 import webbrowser
+from difflib import SequenceMatcher
 from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -38,6 +40,12 @@ from work_state import (
 
 
 MAX_UPLOAD_BYTES = 120 * 1024 * 1024
+REVIEW_STATUSES = {"pending", "ai_reviewed", "confirmed"}
+MAX_REVIEW_CONTENT_CHARS = 20000
+MAX_REVIEW_NOTE_CHARS = 4000
+PUBLIC_EVIDENCE_TEXT_SIMILARITY_DUPLICATE_RATIO = 0.82
+PUBLIC_EVIDENCE_QUOTE_SIMILARITY_DUPLICATE_RATIO = 0.86
+MIN_PUBLIC_EVIDENCE_SIMILARITY_CHARS = 80
 RUN_PROGRESS: dict[str, dict[str, object]] = {}
 RUN_PROGRESS_LOCK = threading.Lock()
 
@@ -143,6 +151,246 @@ def public_kts_candidates(record: dict[str, object]) -> dict[str, object]:
     }
 
 
+def public_documents_from_parse_record(parse_record: dict[str, object] | None) -> list[dict[str, object]]:
+    if parse_record is None:
+        return []
+    result = parse_record.get("result", {})
+    if not isinstance(result, dict):
+        return []
+    raw_documents = result.get("documents", [])
+    if not isinstance(raw_documents, list):
+        return []
+
+    public_documents: list[dict[str, object]] = []
+    for document in raw_documents:
+        if not isinstance(document, dict):
+            continue
+        public_document = {
+            "file_name": document.get("file_name", ""),
+            "file_size": document.get("file_size", 0),
+            "status": document.get("status", ""),
+        }
+        if document.get("document_type"):
+            public_document["document_type"] = document["document_type"]
+        if document.get("error"):
+            public_document["error"] = document["error"]
+        public_documents.append(public_document)
+    return public_documents
+
+
+def public_current_kts_review(
+    parse_record: dict[str, object] | None,
+    source_index_record: dict[str, object] | None,
+    candidates_record: dict[str, object] | None,
+    extraction_record: dict[str, object],
+) -> dict[str, object]:
+    parse_result = parse_record.get("result", {}) if isinstance(parse_record, dict) else {}
+    if not isinstance(parse_result, dict):
+        parse_result = {}
+    capability_id = "spa_sha_kts"
+    if isinstance(parse_record, dict):
+        capability_id = str(parse_record.get("capability_id") or capability_id)
+
+    current = {
+        "updated_at": extraction_record.get("updated_at", ""),
+        "capability_id": capability_id,
+        "phase": extraction_record.get("phase", "v0.5-kts-review-current"),
+        "kts_extraction": public_kts_extraction(extraction_record),
+        "result": {
+            "status": parse_result.get("status", "parsed"),
+            "message": "已恢复上次 KTS 复核结果。",
+            "capability": parse_result.get("capability", {}),
+            "documents": public_documents_from_parse_record(parse_record),
+        },
+    }
+    if source_index_record is not None:
+        current["source_index"] = public_source_index(source_index_record)
+    if candidates_record is not None:
+        current["kts_candidates"] = public_kts_candidates(candidates_record)
+    return current
+
+
+def normalize_review_status(value: object) -> str:
+    status = str(value or "pending").strip()
+    return status if status in REVIEW_STATUSES else "pending"
+
+
+def clamp_text(value: object, limit: int) -> str:
+    text = str(value or "").strip()
+    return text[:limit]
+
+
+def evidence_quality(item: dict[str, object]) -> dict[str, int]:
+    source_evidence = item.get("source_evidence", [])
+    if not isinstance(source_evidence, list):
+        source_evidence = []
+
+    verified_quote_count = 0
+    quote_count = 0
+    for evidence in source_evidence:
+        if not isinstance(evidence, dict):
+            continue
+        quote = str(evidence.get("quote") or "").strip()
+        if quote:
+            quote_count += 1
+        if quote and evidence.get("verified"):
+            verified_quote_count += 1
+    return {
+        "evidence_count": len(source_evidence),
+        "quote_count": quote_count,
+        "verified_quote_count": verified_quote_count,
+    }
+
+
+def public_kts_confidence(item: dict[str, object]) -> dict[str, str]:
+    quality = evidence_quality(item)
+    status = str(item.get("status") or "").strip()
+    draft_content = str(item.get("draft_content") or "").strip()
+
+    if status == "drafted" and draft_content and quality["verified_quote_count"] > 0:
+        return {
+            "confidence_level": "high",
+            "confidence_label": "高",
+            "confidence_reason": "已形成内容摘要，且至少有一条已核验原文依据。",
+        }
+    if draft_content and quality["verified_quote_count"] > 0:
+        return {
+            "confidence_level": "medium",
+            "confidence_label": "中",
+            "confidence_reason": "已有内容摘要和已核验原文依据，但仍需要律师确认表述。",
+        }
+    if draft_content and quality["quote_count"] > 0:
+        return {
+            "confidence_level": "medium",
+            "confidence_label": "中",
+            "confidence_reason": "已有内容摘要和候选原文依据，但证据尚未全部核验。",
+        }
+    if quality["evidence_count"] > 0:
+        return {
+            "confidence_level": "low",
+            "confidence_label": "低",
+            "confidence_reason": "仅找到候选证据，尚未形成稳定内容摘要。",
+        }
+    if status == "unclear":
+        return {
+            "confidence_level": "low",
+            "confidence_label": "低",
+            "confidence_reason": "原文中未识别到足够明确的对应约定。",
+        }
+    return {
+        "confidence_level": "low",
+        "confidence_label": "低",
+        "confidence_reason": "缺少可直接采用的摘要或原文依据。",
+    }
+
+
+def public_human_review(item: dict[str, object], default_status: str = "pending") -> dict[str, object]:
+    review = item.get("human_review", {})
+    if not isinstance(review, dict):
+        review = {}
+    has_saved_review = any(key in review for key in ("status", "content", "note", "updated_at"))
+    review_status = normalize_review_status(review.get("status") if has_saved_review else default_status)
+    return {
+        "review_status": review_status,
+        "review_content": str(review.get("content") or ""),
+        "review_note": str(review.get("note") or ""),
+        "review_updated_at": str(review.get("updated_at") or ""),
+        "review_is_default": not has_saved_review,
+    }
+
+
+def normalize_evidence_text(value: object) -> str:
+    return re.sub(r"\s+", "", str(value or "")).strip()
+
+
+def public_evidence_similarity(left: str, right: str) -> float:
+    if (
+        len(left) < MIN_PUBLIC_EVIDENCE_SIMILARITY_CHARS
+        or len(right) < MIN_PUBLIC_EVIDENCE_SIMILARITY_CHARS
+    ):
+        return 0.0
+    return SequenceMatcher(None, left, right).ratio()
+
+
+def is_duplicate_evidence_quote(normalized_quote: str, seen_quotes: list[str]) -> bool:
+    if not normalized_quote:
+        return True
+    for seen_quote in seen_quotes:
+        if normalized_quote == seen_quote:
+            return True
+        if len(normalized_quote) >= 30 and len(seen_quote) >= 30:
+            if normalized_quote in seen_quote or seen_quote in normalized_quote:
+                return True
+    return False
+
+
+def is_duplicate_public_evidence(
+    normalized_quote: str,
+    normalized_context: str,
+    source_block_ids: set[str],
+    seen_evidence: list[tuple[str, str, set[str]]],
+) -> bool:
+    for seen_quote, seen_context, seen_block_ids in seen_evidence:
+        if is_duplicate_evidence_quote(normalized_quote, [seen_quote]):
+            return True
+        if (
+            public_evidence_similarity(normalized_quote, seen_quote)
+            >= PUBLIC_EVIDENCE_QUOTE_SIMILARITY_DUPLICATE_RATIO
+        ):
+            return True
+        if (
+            public_evidence_similarity(normalized_context, seen_context)
+            >= PUBLIC_EVIDENCE_TEXT_SIMILARITY_DUPLICATE_RATIO
+        ):
+            return True
+        if source_block_ids and seen_block_ids:
+            if source_block_ids & seen_block_ids:
+                return True
+    return False
+
+
+def public_source_block_ids(evidence: dict[str, object]) -> set[str]:
+    values = evidence.get("source_block_ids", [])
+    if not isinstance(values, list):
+        return set()
+    return {str(value) for value in values if str(value)}
+
+
+def public_source_evidence(source_evidence: object) -> list[dict[str, object]]:
+    if not isinstance(source_evidence, list):
+        return []
+
+    public_evidence: list[dict[str, object]] = []
+    seen_evidence: list[tuple[str, str, set[str]]] = []
+    for evidence in source_evidence:
+        if not isinstance(evidence, dict):
+            continue
+        quote = str(evidence.get("quote") or "")
+        context = str(evidence.get("context") or "")
+        normalized_quote = normalize_evidence_text(quote)
+        normalized_context = normalize_evidence_text(context)
+        block_ids = public_source_block_ids(evidence)
+        if is_duplicate_public_evidence(
+            normalized_quote,
+            normalized_context,
+            block_ids,
+            seen_evidence,
+        ):
+            continue
+        seen_evidence.append((normalized_quote, normalized_context, block_ids))
+        public_evidence.append(
+            {
+                "file_name": evidence.get("file_name", ""),
+                "source_locator": evidence.get("source_locator", ""),
+                "quote": quote,
+                "context": context,
+                "tables": evidence.get("tables", []),
+                "ai_relevance": evidence.get("ai_relevance", ""),
+            }
+        )
+    return public_evidence
+
+
 def public_kts_extraction(record: dict[str, object]) -> dict[str, object]:
     items = []
     raw_items = record.get("items", [])
@@ -153,45 +401,92 @@ def public_kts_extraction(record: dict[str, object]) -> dict[str, object]:
             continue
         source_evidence = item.get("source_evidence", [])
         review_notes = item.get("review_notes", [])
-        public_evidence = []
-        if isinstance(source_evidence, list):
-            for evidence in source_evidence[:3]:
-                if not isinstance(evidence, dict):
-                    continue
-                public_evidence.append(
-                    {
-                        "file_name": evidence.get("file_name", ""),
-                        "source_locator": evidence.get("source_locator", ""),
-                        "quote": evidence.get("quote", ""),
-                        "verified": bool(evidence.get("verified")),
-                        "ai_relevance": evidence.get("ai_relevance", ""),
-                    }
-                )
+        public_evidence = public_source_evidence(source_evidence)
+        confidence = public_kts_confidence(item)
+        default_review_status = (
+            "ai_reviewed" if confidence["confidence_level"] == "high" else "pending"
+        )
+        human_review = public_human_review(item, default_review_status)
         items.append(
             {
                 "taxonomy_id": item.get("taxonomy_id", ""),
                 "group": item.get("group", ""),
                 "label": item.get("label", ""),
-                "status": item.get("status", ""),
                 "draft_content": item.get("draft_content", ""),
                 "source_evidence_count": len(source_evidence) if isinstance(source_evidence, list) else 0,
+                "source_evidence_display_count": len(public_evidence),
                 "source_evidence": public_evidence,
                 "extracted_facts": item.get("extracted_facts", {}),
                 "review_notes": review_notes if isinstance(review_notes, list) else [],
+                **confidence,
+                **human_review,
             }
         )
+
+    review_summary = {
+        "confirmed_count": sum(1 for item in items if item["review_status"] == "confirmed"),
+        "pending_count": sum(
+            1 for item in items if item["review_status"] != "confirmed"
+        ),
+        "high_confidence_count": sum(1 for item in items if item["confidence_level"] == "high"),
+        "medium_confidence_count": sum(1 for item in items if item["confidence_level"] == "medium"),
+        "low_confidence_count": sum(1 for item in items if item["confidence_level"] == "low"),
+    }
     return {
         "updated_at": record.get("updated_at", ""),
         "phase": record.get("phase", ""),
         "taxonomy_id": record.get("taxonomy_id", ""),
         "taxonomy_version": record.get("taxonomy_version", ""),
         "summary": record.get("summary", {}),
+        "review_summary": review_summary,
         "items": items,
     }
 
 
+def apply_kts_review_updates(
+    record: dict[str, object],
+    review_items: list[object],
+) -> dict[str, object]:
+    updates: dict[str, dict[str, object]] = {}
+    for raw_item in review_items:
+        if not isinstance(raw_item, dict):
+            continue
+        taxonomy_id = str(raw_item.get("taxonomy_id") or "").strip()
+        if not taxonomy_id:
+            continue
+        updates[taxonomy_id] = raw_item
+
+    if not updates:
+        raise ValueError("没有可保存的复核结果。")
+
+    now = timestamp()
+    raw_items = record.get("items", [])
+    if not isinstance(raw_items, list):
+        raise ValueError("当前 KTS 结果结构异常。")
+
+    matched_count = 0
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        taxonomy_id = str(item.get("taxonomy_id") or "")
+        update = updates.get(taxonomy_id)
+        if update is None:
+            continue
+        matched_count += 1
+        item["human_review"] = {
+            "status": normalize_review_status(update.get("review_status")),
+            "content": clamp_text(update.get("review_content"), MAX_REVIEW_CONTENT_CHARS),
+            "note": clamp_text(update.get("review_note"), MAX_REVIEW_NOTE_CHARS),
+            "updated_at": now,
+        }
+
+    if matched_count == 0:
+        raise ValueError("未匹配到任何 KTS 事项。")
+    return record
+
+
 class WorkbenchHandler(BaseHTTPRequestHandler):
-    server_version = "LegalWorkbench/0.4"
+    server_version = "LegalWorkbench/0.5"
 
     def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("[LegalWorkbench] " + fmt % args + "\n")
@@ -298,6 +593,23 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": "Run progress not found"}, HTTPStatus.NOT_FOUND)
                 return
             self.send_json({"ok": True, "progress": progress})
+            return
+        if path == "/api/kts-review/current":
+            extraction_record = load_current_kts_extraction()
+            if extraction_record is None:
+                self.send_json({"ok": False, "status": "empty", "message": "暂无可继续的复核结果。"})
+                return
+            self.send_json(
+                {
+                    "ok": True,
+                    "current": public_current_kts_review(
+                        load_current_parse(),
+                        load_current_source_index(),
+                        load_current_kts_candidates(),
+                        extraction_record,
+                    ),
+                }
+            )
             return
         if path == "/api/capabilities":
             self.send_json([cap.public_dict() for cap in load_capabilities()])
@@ -490,19 +802,6 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 total_items=candidates_record.get("summary", {}).get("taxonomy_item_count", 0),
                 message="处理完成。",
             )
-            public_documents = []
-            for document in documents:
-                public_document = {
-                    "file_name": document["file_name"],
-                    "file_size": document["file_size"],
-                    "status": document["status"],
-                }
-                if document.get("document_type"):
-                    public_document["document_type"] = document["document_type"]
-                if document.get("error"):
-                    public_document["error"] = document["error"]
-                public_documents.append(public_document)
-
             public_current = {
                 "updated_at": debug_record["updated_at"],
                 "capability_id": debug_record["capability_id"],
@@ -514,53 +813,43 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     "status": debug_record["result"]["status"],
                     "message": debug_record["result"]["message"],
                     "capability": debug_record["result"]["capability"],
-                    "documents": public_documents,
+                    "documents": public_documents_from_parse_record(debug_record),
                 },
             }
             self.send_json({"ok": error_count == 0, "current": public_current})
             return
 
-        if path == "/api/source-index/build":
-            parse_record = load_current_parse()
-            if parse_record is None:
-                self.send_json({"ok": False, "error": "请先上传并解析交易文件。"}, HTTPStatus.BAD_REQUEST)
+        if path == "/api/kts-review/save":
+            try:
+                data = self.read_json_body()
+            except (ValueError, json.JSONDecodeError) as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
-            source_index_record = save_current_source_index(build_source_index(parse_record))
+
+            extraction_record = load_current_kts_extraction()
+            if extraction_record is None:
+                self.send_json({"ok": False, "error": "请先生成 KTS 中间表。"}, HTTPStatus.BAD_REQUEST)
+                return
+
+            review_items = data.get("items", [])
+            if not isinstance(review_items, list):
+                self.send_json({"ok": False, "error": "复核结果格式不正确。"}, HTTPStatus.BAD_REQUEST)
+                return
+
+            try:
+                updated_record = apply_kts_review_updates(extraction_record, review_items)
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+
+            updated_record.pop("updated_at", None)
+            saved_record = save_current_kts_extraction(updated_record)
             self.send_json(
                 {
                     "ok": True,
-                    "current_source_index": public_source_index(source_index_record),
+                    "current_kts_extraction": public_kts_extraction(saved_record),
                 }
             )
-            return
-
-        if path == "/api/kts-candidates/build":
-            source_index_record = load_current_source_index()
-            if source_index_record is None:
-                parse_record = load_current_parse()
-                if parse_record is None:
-                    self.send_json({"ok": False, "error": "请先上传并解析交易文件。"}, HTTPStatus.BAD_REQUEST)
-                    return
-                source_index_record = save_current_source_index(build_source_index(parse_record))
-            candidates_record = save_current_kts_candidates(build_kts_candidates(source_index_record))
-            self.send_json({"ok": True, "current_kts_candidates": public_kts_candidates(candidates_record)})
-            return
-
-        if path == "/api/kts-extraction/build":
-            source_index_record = load_current_source_index()
-            if source_index_record is None:
-                parse_record = load_current_parse()
-                if parse_record is None:
-                    self.send_json({"ok": False, "error": "请先上传并解析交易文件。"}, HTTPStatus.BAD_REQUEST)
-                    return
-                source_index_record = save_current_source_index(build_source_index(parse_record))
-            candidates_record = load_current_kts_candidates()
-            if candidates_record is None:
-                candidates_record = save_current_kts_candidates(build_kts_candidates(source_index_record))
-            extraction_record = save_current_kts_extraction(
-                build_kts_extraction(candidates_record, source_index_record)
-            )
-            self.send_json({"ok": True, "current_kts_extraction": public_kts_extraction(extraction_record)})
             return
 
         if path == "/api/workbench/check":

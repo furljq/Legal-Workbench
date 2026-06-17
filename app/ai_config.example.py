@@ -10,4 +10,4 @@ BASE_URL = "https://api.openai.com/v1"
 API_TYPE = "chat_completions"
 TEMPERATURE = 0.1
 TIMEOUT_SECONDS = 180
-MAX_MODEL_WORKERS = 4
+MAX_MODEL_WORKERS = 8
