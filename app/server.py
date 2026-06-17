@@ -18,12 +18,13 @@ from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from ai_client import test_connection
 from capability_registry import get_capability, load_capabilities
 from config import APP_NAME, APP_VERSION, DEFAULT_HOST, DEFAULT_PORT, STATIC_DIR, ensure_runtime_dirs
 from docx_parser import DocxParseError, parse_docx_file
+from kts_docx_exporter import KtsDocxExportError, build_kts_docx
 from kts_extractor import build_kts_candidates, build_kts_extraction
 from source_index import build_source_index
 from work_state import (
@@ -48,6 +49,17 @@ PUBLIC_EVIDENCE_QUOTE_SIMILARITY_DUPLICATE_RATIO = 0.86
 MIN_PUBLIC_EVIDENCE_SIMILARITY_CHARS = 80
 RUN_PROGRESS: dict[str, dict[str, object]] = {}
 RUN_PROGRESS_LOCK = threading.Lock()
+DOCUMENT_UPLOAD_SLOTS = {
+    "spa_document": {
+        "role": {"code": "spa", "label": "增资协议（SPA）"},
+        "document_type": {"code": "capital_increase_agreement", "label": "增资协议"},
+    },
+    "sha_document": {
+        "role": {"code": "sha", "label": "股东协议（SHA）"},
+        "document_type": {"code": "shareholders_agreement", "label": "股东协议"},
+    },
+}
+DOCUMENT_UPLOAD_SLOT_ORDER = ("spa_document", "sha_document")
 
 
 def clamp_percent(value: int | float) -> int:
@@ -125,6 +137,7 @@ def public_source_index(record: dict[str, object]) -> dict[str, object]:
         documents.append(
             {
                 "file_name": document.get("file_name", ""),
+                "document_role": document.get("document_role", {}),
                 "document_type": document.get("document_type", {}),
                 "raw_block_count": document.get("raw_block_count", 0),
                 "search_shard_count": document.get("search_shard_count", 0),
@@ -170,6 +183,8 @@ def public_documents_from_parse_record(parse_record: dict[str, object] | None) -
             "file_size": document.get("file_size", 0),
             "status": document.get("status", ""),
         }
+        if document.get("document_role"):
+            public_document["document_role"] = document["document_role"]
         if document.get("document_type"):
             public_document["document_type"] = document["document_type"]
         if document.get("error"):
@@ -381,6 +396,7 @@ def public_source_evidence(source_evidence: object) -> list[dict[str, object]]:
         public_evidence.append(
             {
                 "file_name": evidence.get("file_name", ""),
+                "document_role": evidence.get("document_role", {}),
                 "source_locator": evidence.get("source_locator", ""),
                 "quote": quote,
                 "context": context,
@@ -486,7 +502,7 @@ def apply_kts_review_updates(
 
 
 class WorkbenchHandler(BaseHTTPRequestHandler):
-    server_version = "LegalWorkbench/0.5"
+    server_version = "LegalWorkbench/0.6"
 
     def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("[LegalWorkbench] " + fmt % args + "\n")
@@ -495,6 +511,18 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
         body = json_bytes(data)
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_download(self, body: bytes, content_type: str, filename: str) -> None:
+        fallback_name = "kts-summary.docx"
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header(
+            "Content-Disposition",
+            f"attachment; filename=\"{fallback_name}\"; filename*=UTF-8''{quote(filename)}",
+        )
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -611,6 +639,24 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if path == "/api/kts-review/export-docx":
+            extraction_record = load_current_kts_extraction()
+            if extraction_record is None:
+                self.send_json({"ok": False, "error": "请先生成 KTS 中间表。"}, HTTPStatus.BAD_REQUEST)
+                return
+            now = timestamp()
+            try:
+                body = build_kts_docx(extraction_record, export_date=now.split("T")[0])
+            except KtsDocxExportError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+            filename = f"KTS_关键条款摘要_{now.replace('-', '').replace(':', '').replace('T', '_')}.docx"
+            self.send_download(
+                body,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                filename,
+            )
+            return
         if path == "/api/capabilities":
             self.send_json([cap.public_dict() for cap in load_capabilities()])
             return
@@ -647,12 +693,49 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, HTTPStatus.BAD_REQUEST)
                 return
 
-            if not files:
-                self.send_json({"ok": False, "error": "请选择至少一个 Word 文件。"}, HTTPStatus.BAD_REQUEST)
+            files_by_slot: dict[str, dict[str, object]] = {}
+            unknown_fields: list[str] = []
+            duplicate_fields: list[str] = []
+            for file_info in files:
+                field_name = str(file_info.get("field_name") or "")
+                if field_name not in DOCUMENT_UPLOAD_SLOTS:
+                    unknown_fields.append(field_name or "未命名字段")
+                    continue
+                if field_name in files_by_slot:
+                    duplicate_fields.append(DOCUMENT_UPLOAD_SLOTS[field_name]["role"]["label"])
+                    continue
+                files_by_slot[field_name] = file_info
+
+            missing_slots = [
+                DOCUMENT_UPLOAD_SLOTS[field_name]["role"]["label"]
+                for field_name in DOCUMENT_UPLOAD_SLOT_ORDER
+                if field_name not in files_by_slot
+            ]
+            if unknown_fields:
+                self.send_json(
+                    {"ok": False, "error": "请通过增资协议和股东协议两个文件槽上传 Word 文件。"},
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return
+            if duplicate_fields:
+                self.send_json(
+                    {"ok": False, "error": f"请为{duplicate_fields[0]}仅选择一个 Word 文件。"},
+                    HTTPStatus.BAD_REQUEST,
+                )
+                return
+            if missing_slots:
+                self.send_json(
+                    {"ok": False, "error": f"请分别选择{'、'.join(missing_slots)}。"},
+                    HTTPStatus.BAD_REQUEST,
+                )
                 return
 
             run_id = str(fields.get("run_id") or "")
-            start_run_progress(run_id, len(files))
+            ordered_uploads = [
+                (DOCUMENT_UPLOAD_SLOTS[field_name], files_by_slot[field_name])
+                for field_name in DOCUMENT_UPLOAD_SLOT_ORDER
+            ]
+            start_run_progress(run_id, len(ordered_uploads))
             capability_id = str(fields.get("capability_id") or "spa_sha_kts")
             capability = get_capability(capability_id)
             if capability is None:
@@ -669,7 +752,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 progress_percent=5,
                 message="正在读取 Word 正文和表格。",
             )
-            for index, file_info in enumerate(files, start=1):
+            for index, (slot, file_info) in enumerate(ordered_uploads, start=1):
                 original_name = str(file_info["file_name"])
                 content = file_info["content"]
                 suffix = "".join(Path(original_name).suffixes) or ".docx"
@@ -680,6 +763,11 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                         temp_path = Path(temp_file.name)
 
                     parsed = parse_docx_file(temp_path, original_name)
+                    guessed_document_type = parsed.get("document_type", {})
+                    parsed["document_role"] = slot["role"]
+                    parsed["document_type"] = slot["document_type"]
+                    parsed["document_type_source"] = "upload_slot"
+                    parsed["guessed_document_type"] = guessed_document_type
                     documents.append(parsed)
                 except DocxParseError as exc:
                     documents.append(
@@ -687,6 +775,9 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                             "file_name": original_name,
                             "file_size": len(content),  # type: ignore[arg-type]
                             "status": "error",
+                            "document_role": slot["role"],
+                            "document_type": slot["document_type"],
+                            "document_type_source": "upload_slot",
                             "error": str(exc),
                         }
                     )
@@ -696,8 +787,8 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 update_run_progress(
                     run_id,
                     parsed_file_count=index,
-                    progress_percent=5 + (15 * index / max(1, len(files))),
-                    message=f"已读取 {index}/{len(files)} 个文件。",
+                    progress_percent=5 + (15 * index / max(1, len(ordered_uploads))),
+                    message=f"已读取 {index}/{len(ordered_uploads)} 个文件。",
                 )
 
             error_count = sum(1 for item in documents if item.get("status") == "error")
@@ -710,6 +801,14 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                         "party_role": fields.get("party_role", ""),
                         "matter_notes": fields.get("matter_notes", ""),
                         "file_names": [str(item["file_name"]) for item in documents],
+                        "documents": [
+                            {
+                                "role": document.get("document_role", {}),
+                                "document_type": document.get("document_type", {}),
+                                "file_name": document.get("file_name", ""),
+                            }
+                            for document in documents
+                        ],
                     },
                     "result": {
                         "status": "partial_error" if error_count else "parsed",

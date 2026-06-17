@@ -8,10 +8,26 @@ const state = {
   ktsReviewKey: "",
   ktsReviewDirty: false,
   ktsReviewSaving: false,
+  ktsExporting: false,
   ktsSaveMessage: "",
 };
 
 const $ = (selector) => document.querySelector(selector);
+
+const DOCUMENT_UPLOAD_SLOTS = [
+  {
+    fieldName: "spa_document",
+    inputSelector: "#spaDocumentFile",
+    listSelector: "#spaFileList",
+    label: "增资协议（SPA）",
+  },
+  {
+    fieldName: "sha_document",
+    inputSelector: "#shaDocumentFile",
+    listSelector: "#shaFileList",
+    label: "股东协议（SHA）",
+  },
+];
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -59,6 +75,20 @@ async function fetchJson(url, options) {
     throw new Error(`${response.status} ${response.statusText}`);
   }
   return response.json();
+}
+
+function filenameFromContentDisposition(value) {
+  const header = String(value || "");
+  const encoded = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      return encoded[1].trim().replace(/^"|"$/g, "");
+    }
+  }
+  const plain = header.match(/filename="?([^";]+)"?/i);
+  return plain ? plain[1].trim() : "";
 }
 
 function renderCapabilities() {
@@ -420,6 +450,7 @@ function resetKtsReviewState() {
   state.ktsReviewKey = "";
   state.ktsReviewDirty = false;
   state.ktsReviewSaving = false;
+  state.ktsExporting = false;
   state.ktsSaveMessage = "";
 }
 
@@ -556,6 +587,10 @@ function renderSourceEvidence(evidenceItems) {
               evidence.context || evidence.quote || "未返回可展示原文。",
               tables.length > 0,
             );
+            const roleLabel = evidence.document_role?.label || "";
+            const sourceLabel = [roleLabel, evidence.file_name || "未命名文件"]
+              .filter(Boolean)
+              .join(" · ");
             return `
               <article class="evidence-item">
                 <div class="evidence-head">
@@ -563,7 +598,7 @@ function renderSourceEvidence(evidenceItems) {
                 </div>
                 ${evidenceText ? `<p>${escapeHtml(evidenceText)}</p>` : ""}
                 ${renderEvidenceTables(tables)}
-                <small>${escapeHtml(evidence.file_name || "未命名文件")}${evidence.source_locator ? ` · ${escapeHtml(evidence.source_locator)}` : ""}</small>
+                <small>${escapeHtml(sourceLabel)}${evidence.source_locator ? ` · ${escapeHtml(evidence.source_locator)}` : ""}</small>
               </article>
             `;
           })
@@ -642,6 +677,14 @@ function renderKtsDraftTable(extraction) {
         <div class="section-actions">
           <span class="muted">${escapeHtml(items.length)} 项</span>
           <span class="muted" data-kts-save-status>${escapeHtml(ktsSaveStatusText())}</span>
+          <button
+            type="button"
+            class="secondary"
+            data-action="kts-export-docx"
+            ${state.ktsReviewSaving || state.ktsExporting ? "disabled" : ""}
+          >
+            ${escapeHtml(state.ktsExporting ? "导出中" : "导出 Word")}
+          </button>
         </div>
       </div>
       ${renderReviewSummary(items)}
@@ -665,12 +708,13 @@ function renderDocumentSummary(result) {
       ${documents
         .map((document) => {
           if (document.status === "error") {
+            const roleLabel = document.document_role?.label || "交易文件";
             return `
               <article class="document-item error">
                 <div class="document-item-head">
                   <div>
-                    <h4>${escapeHtml(document.file_name || "未命名文件")}</h4>
-                    <p class="muted">${escapeHtml(formatBytes(document.file_size))}</p>
+                    <h4>${escapeHtml(roleLabel)}</h4>
+                    <p class="muted">${escapeHtml(document.file_name || "未命名文件")} · ${escapeHtml(formatBytes(document.file_size))}</p>
                   </div>
                   <span class="pill warn">未解析</span>
                 </div>
@@ -678,12 +722,13 @@ function renderDocumentSummary(result) {
               </article>
             `;
           }
+          const roleLabel = document.document_role?.label || "交易文件";
           return `
             <article class="document-item">
               <div class="document-item-head">
                 <div>
-                  <h4>${escapeHtml(document.file_name || "未命名文件")}</h4>
-                  <p class="muted">${escapeHtml(formatBytes(document.file_size))}</p>
+                  <h4>${escapeHtml(roleLabel)}</h4>
+                  <p class="muted">${escapeHtml(document.file_name || "未命名文件")} · ${escapeHtml(formatBytes(document.file_size))}</p>
                 </div>
                 <span class="pill">${escapeHtml(document.document_type?.label || "交易文件")}</span>
               </div>
@@ -699,14 +744,24 @@ function renderDocumentSummary(result) {
 }
 
 function renderSelectedFiles() {
-  const files = Array.from($("#documentFiles").files || []);
-  if (files.length === 0) {
-    $("#fileList").textContent = "尚未选择文件。";
-    return;
+  for (const slot of DOCUMENT_UPLOAD_SLOTS) {
+    const input = $(slot.inputSelector);
+    const file = input?.files?.[0];
+    const list = $(slot.listSelector);
+    if (!list) continue;
+    if (!file) {
+      list.textContent = "尚未选择文件。";
+      continue;
+    }
+    list.innerHTML = `<span>${escapeHtml(file.name)} · ${escapeHtml(formatBytes(file.size))}</span>`;
   }
-  $("#fileList").innerHTML = files
-    .map((file) => `<span>${escapeHtml(file.name)} · ${escapeHtml(formatBytes(file.size))}</span>`)
-    .join("");
+}
+
+function selectedUploadFiles() {
+  return DOCUMENT_UPLOAD_SLOTS.map((slot) => ({
+    ...slot,
+    file: $(slot.inputSelector)?.files?.[0] || null,
+  }));
 }
 
 async function loadCapabilities() {
@@ -747,23 +802,24 @@ async function checkWorkbench() {
 
 async function uploadDocuments() {
   if (!state.activeCapabilityId) return;
-  const files = Array.from($("#documentFiles").files || []);
-  if (files.length === 0) {
+  const selectedFiles = selectedUploadFiles();
+  const missingSlots = selectedFiles.filter((item) => !item.file);
+  if (missingSlots.length > 0) {
     $("#resultBox").classList.remove("empty");
-    $("#resultBox").textContent = "请先选择至少一个 Word 文件。";
+    $("#resultBox").textContent = `请分别选择${missingSlots.map((item) => item.label).join("、")}。`;
     return;
   }
 
   setBadge("处理文件");
   const runId = createRunId();
-  const stopProgress = startProcessingProgress(files.length, runId);
+  const stopProgress = startProcessingProgress(selectedFiles.length, runId);
   const payload = new FormData();
   payload.append("run_id", runId);
   payload.append("capability_id", state.activeCapabilityId);
   payload.append("party_role", $("#partyRole").value);
   payload.append("matter_notes", $("#matterNotes").value);
-  for (const file of files) {
-    payload.append("documents", file, file.name);
+  for (const item of selectedFiles) {
+    payload.append(item.fieldName, item.file, item.file.name);
   }
 
   try {
@@ -925,8 +981,52 @@ async function clearCurrentKtsContent(advanceAfterClear = false) {
   await saveKtsReviewItems([item], nextIndex);
 }
 
+async function exportKtsDocx() {
+  if (state.ktsExporting) return;
+  state.ktsExporting = true;
+  state.ktsSaveMessage = "导出中";
+  setBadge("导出中");
+  updateKtsReviewShell();
+  try {
+    const item = currentKtsReviewItem();
+    if (state.ktsReviewDirty && item) {
+      await saveKtsReviewItems([item], state.activeKtsIndex);
+    }
+
+    const response = await fetch("/api/kts-review/export-docx");
+    if (!response.ok) {
+      let message = `${response.status} ${response.statusText}`;
+      const contentType = response.headers.get("Content-Type") || "";
+      if (contentType.includes("application/json")) {
+        const errorResult = await response.json();
+        message = errorResult.error || message;
+      }
+      throw new Error(message);
+    }
+
+    const blob = await response.blob();
+    const fileName = filenameFromContentDisposition(response.headers.get("Content-Disposition"))
+      || "KTS_关键条款摘要.docx";
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    state.ktsSaveMessage = `已导出 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
+    setBadge("已导出");
+  } finally {
+    state.ktsExporting = false;
+    updateKtsReviewShell();
+  }
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
-  $("#documentFiles").addEventListener("change", renderSelectedFiles);
+  for (const slot of DOCUMENT_UPLOAD_SLOTS) {
+    $(slot.inputSelector)?.addEventListener("change", renderSelectedFiles);
+  }
   document.addEventListener("click", (event) => {
     const actionTarget = event.target?.closest?.("[data-action]");
     const action = actionTarget?.dataset?.action;
@@ -951,6 +1051,15 @@ window.addEventListener("DOMContentLoaded", async () => {
       clearCurrentKtsContent(true).catch((error) => {
         setBadge("失败");
         state.ktsSaveMessage = "保存失败";
+        updateKtsSaveStatus();
+        $("#rawResultJson").textContent = error.stack || error.message;
+      });
+      return;
+    }
+    if (action === "kts-export-docx") {
+      exportKtsDocx().catch((error) => {
+        setBadge("失败");
+        state.ktsSaveMessage = "导出失败";
         updateKtsSaveStatus();
         $("#rawResultJson").textContent = error.stack || error.message;
       });

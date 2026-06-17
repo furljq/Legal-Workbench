@@ -235,11 +235,32 @@ textarea {
 }
 
 .upload-area {
-  align-items: center;
+  margin-top: 12px;
+}
+
+.document-upload-list {
   display: grid;
   gap: 12px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  margin-top: 12px;
+}
+
+.document-upload-row {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-top: 12px;
+}
+
+.document-upload-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.document-upload-row strong {
+  color: var(--accent-dark);
+  display: block;
+  margin-bottom: 6px;
 }
 
 .file-picker {
@@ -799,6 +820,7 @@ button:disabled {
   .workspace,
   .form-grid,
   .upload-area,
+  .document-upload-row,
   .kts-row,
   .kts-page-head,
   .kts-review-controls,

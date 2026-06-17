@@ -149,7 +149,7 @@ def document_type_code(value: Any) -> str:
 def score_shard(item: dict[str, Any], shard: dict[str, Any], terms: list[str]) -> tuple[int, list[str]]:
     allowed_types = set(item.get("document_types") or [])
     shard_doc_type = document_type_code(shard.get("document_type", {}))
-    if allowed_types and shard_doc_type and shard_doc_type not in allowed_types:
+    if allowed_types and shard_doc_type not in allowed_types:
         return 0, []
 
     text = str(shard.get("normalized_text") or "")
@@ -281,7 +281,7 @@ def build_item_candidates(
     scored: list[tuple[int, list[str], dict[str, Any], dict[str, Any]]] = []
 
     for document in source_index.get("documents", []):
-        if not isinstance(document, dict):
+        if not isinstance(document, dict) or not allowed_document_for_item(item, document):
             continue
         for shard in document.get("search_shards", []):
             if not isinstance(shard, dict):
@@ -312,6 +312,7 @@ def build_item_candidates(
                 "retrieval_channels": ["rule_keyword"],
                 "doc_id": document.get("doc_id", ""),
                 "file_name": document.get("file_name", ""),
+                "document_role": document.get("document_role", {}),
                 "document_type": document.get("document_type", {}),
                 "shard_ids": [shard.get("shard_id", "")],
                 "source_block_ids": block_ids,
@@ -431,6 +432,7 @@ def shard_for_ai(shard: dict[str, Any]) -> dict[str, Any]:
     return {
         "shard_id": shard.get("shard_id", ""),
         "file_name": shard.get("file_name", ""),
+        "document_role": shard.get("document_role", {}),
         "source_locator": shard.get("source_locator", ""),
         "text": str(shard.get("text") or "")[:320],
     }
@@ -491,6 +493,7 @@ def candidate_from_ai_selection(
         "retrieval_channels": ["model_semantic_scan"],
         "doc_id": document.get("doc_id", ""),
         "file_name": document.get("file_name", ""),
+        "document_role": document.get("document_role", {}),
         "document_type": document.get("document_type", {}),
         "shard_ids": [shard_id],
         "source_block_ids": block_ids,
@@ -775,6 +778,7 @@ def candidate_for_extraction_ai(candidate: dict[str, Any]) -> dict[str, Any]:
     return {
         "candidate_id": candidate.get("candidate_id", ""),
         "file_name": candidate.get("file_name", ""),
+        "document_role": candidate.get("document_role", {}),
         "source_locator": candidate.get("source_locator", ""),
         "quote": candidate_quote_for_extraction(candidate),
         "context": str(candidate.get("text") or "")[:1400],
@@ -1520,6 +1524,7 @@ def build_kts_extraction_item(
             {
                 "candidate_id": candidate.get("candidate_id", ""),
                 "file_name": candidate.get("file_name", ""),
+                "document_role": candidate.get("document_role", {}),
                 "source_locator": candidate.get("source_locator", ""),
                 "quote": quote,
                 "context": str(candidate.get("text") or "")[:1400],
