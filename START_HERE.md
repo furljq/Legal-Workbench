@@ -1,27 +1,54 @@
-# Start Here
+# Legal Workbench 快速开始
 
-## Windows 启动
+## 1. 配置模型
 
-双击：
+复制配置示例：
+
+```powershell
+Copy-Item app\ai_config.example.py app\ai_config.py
+```
+
+打开 `app\ai_config.py`，填写 API Key、模型名和 Base URL。
+
+## 2. 启动工作台
+
+Windows 下双击：
 
 ```text
 start_windows.bat
 ```
 
-脚本会启动本地服务，并自动打开浏览器。
+脚本会自动安装依赖、启动本地服务并打开浏览器。
 
-## 当前版本
+默认地址：
 
-当前是 v0.3 文件解析版：
+```text
+http://127.0.0.1:8787/
+```
 
-- 有浏览器工作台。
-- 有 capability registry。
-- 默认能力为 `SPA/SHA KTS`。
-- 可以测试工作台连通状态。
-- 可以上传多个 Word 文件。
-- 可以读取全部正文段落和表格行，并粗略识别文件类型。
+## 3. 生成 KTS
 
-还未实现：
+1. 选择 `SPA/SHA KTS` 能力。
+2. 上传增资协议（SPA）。
+3. 上传股东协议（SHA）。
+4. 点击“生成 KTS”。
+5. 等待系统完成处理。
+6. 逐项复核内容摘要。
+7. 确认全部事项后导出 Word。
 
-- KTS 生成。
-- DOCX 导出。
+## 4. 继续上次复核
+
+如果页面刷新或浏览器关闭，重新打开工作台后点击：
+
+```text
+继续上次复核
+```
+
+系统会恢复最近一次 KTS 中间结果。
+
+## 5. 使用提醒
+
+- AI 输出是 KTS 初稿，不是最终法律意见。
+- 导出 Word 前请逐项复核。
+- 交易文件内容会发送给你配置的模型服务。
+- `app\ai_config.py` 不要提交到 GitHub。

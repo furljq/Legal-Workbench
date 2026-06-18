@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
+from functools import lru_cache
 import json
 import re
 import time
@@ -14,6 +15,7 @@ from typing import Any
 from ai_client import AIClientError, ai_configured, ai_max_workers, chat_json, is_transient_ai_error
 from config import CAPABILITIES_DIR
 from evidence_verifier import verify_quote
+from source_refs import clean_clause_refs
 from source_index import normalize_for_match
 
 
@@ -32,7 +34,10 @@ MAX_ADAPTIVE_MODEL_RETRIES = 2
 ADAPTIVE_RETRY_SLEEP_SECONDS = 2
 MAX_ABSENCE_SNIPPETS_PER_CHECK = 8
 ABSENCE_SNIPPET_RADIUS = 180
+MAX_STYLE_POLISH_CHARS_PER_ITEM = 1800
+STYLE_POLISH_TIMEOUT_SECONDS = 240
 TAXONOMY_PATH = CAPABILITIES_DIR / "spa_sha_kts" / "kts_taxonomy.json"
+CONTENT_SCHEMA_PATH = CAPABILITIES_DIR / "spa_sha_kts" / "kts_content_schema.json"
 ProgressCallback = Callable[[dict[str, Any]], None]
 
 EXTRA_TERMS = {
@@ -45,6 +50,7 @@ EXTRA_TERMS = {
     "spa.liability": ["违约责任", "赔偿", "补偿", "连带责任", "责任上限"],
     "spa.expenses": ["费用", "律师费", "交易费用"],
     "spa.compliance": ["反腐败", "反商业贿赂", "道德合规", "廉洁", "利益输送", "代持"],
+    "spa.other": ["排他", "独家", "保密", "适用法律", "争议解决", "仲裁", "通知", "送达", "权利义务转让", "协议生效", "附件"],
     "sha.board_composition": ["董事会构成", "董事会由", "董事", "委派", "观察员", "董事长"],
     "sha.board_reserved_matters": [
         "董事会保护性事项",
@@ -82,6 +88,13 @@ def load_kts_taxonomy(path: Path = TAXONOMY_PATH) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@lru_cache(maxsize=1)
+def load_kts_content_schema(path: Path = CONTENT_SCHEMA_PATH) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def flatten_strings(value: Any) -> list[str]:
     if isinstance(value, str):
         return [value]
@@ -96,6 +109,51 @@ def flatten_strings(value: Any) -> list[str]:
             items.extend(flatten_strings(child))
         return items
     return []
+
+
+def content_schema_for_item(
+    item: dict[str, Any],
+    content_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    schema = content_schema or load_kts_content_schema()
+    items = schema.get("items", {}) if isinstance(schema, dict) else {}
+    if not isinstance(items, dict):
+        return {}
+    item_id = str(item.get("id") or item.get("taxonomy_id") or "")
+    raw_item = items.get(item_id, {})
+    if not isinstance(raw_item, dict):
+        return {}
+    merged = dict(raw_item)
+    merged["schema_id"] = schema.get("schema_id", "")
+    merged["schema_version"] = schema.get("version", "")
+    if not merged.get("drafting_guidance"):
+        merged["drafting_guidance"] = schema.get("default_drafting_guidance", "")
+    return merged
+
+
+def enrich_taxonomy_item(
+    item: dict[str, Any],
+    content_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    enriched = dict(item)
+    enriched["content_schema"] = content_schema_for_item(item, content_schema)
+    return enriched
+
+
+def content_schema_terms(schema: Any) -> list[str]:
+    if not isinstance(schema, dict):
+        return []
+    terms: list[str] = []
+    fields = schema.get("fields", [])
+    if isinstance(fields, list):
+        for field in fields:
+            if not isinstance(field, dict):
+                continue
+            terms.append(str(field.get("label") or ""))
+            aliases = field.get("aliases", [])
+            if isinstance(aliases, list):
+                terms.extend(str(alias) for alias in aliases)
+    return terms
 
 
 def split_label_terms(label: str) -> list[str]:
@@ -113,6 +171,7 @@ def collect_terms(item: dict[str, Any]) -> list[str]:
     terms.extend(flatten_strings(item.get("template_labels", {})))
     terms.extend(str(keyword) for keyword in item.get("keywords", []))
     terms.extend(flatten_strings(item.get("absence_checks", [])))
+    terms.extend(content_schema_terms(item.get("content_schema", {})))
     terms.extend(EXTRA_TERMS.get(str(item.get("id") or ""), []))
 
     seen: set[str] = set()
@@ -678,7 +737,12 @@ def build_kts_candidates(
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     taxonomy = taxonomy or load_kts_taxonomy()
-    taxonomy_items = [item for item in taxonomy.get("items", []) if isinstance(item, dict)]
+    content_schema = load_kts_content_schema()
+    taxonomy_items = [
+        enrich_taxonomy_item(item, content_schema)
+        for item in taxonomy.get("items", [])
+        if isinstance(item, dict)
+    ]
     worker_count = min(ai_max_workers(), len(taxonomy_items)) if ai_configured() and taxonomy_items else 1
     if progress_callback:
         progress_callback(
@@ -719,7 +783,7 @@ def build_kts_candidates(
         if isinstance(item.get("model_review"), dict)
     ]
     return {
-        "phase": "v0.4-kts-candidates",
+        "phase": "v0.7-kts-candidates",
         "taxonomy_id": taxonomy.get("taxonomy_id", ""),
         "taxonomy_version": taxonomy.get("version", ""),
         "source_index_updated_at": source_index.get("updated_at", ""),
@@ -756,6 +820,7 @@ def build_kts_candidate_item(item: dict[str, Any], source_index: dict[str, Any])
         "group": item.get("group", ""),
         "label": item.get("label", ""),
         "template_labels": item.get("template_labels", {}),
+        "content_schema": item.get("content_schema", {}),
         "document_types": item.get("document_types", []),
         "extraction_mode": item.get("extraction_mode", "evidence"),
         "absence_checks": item.get("absence_checks", []),
@@ -783,6 +848,216 @@ def candidate_for_extraction_ai(candidate: dict[str, Any]) -> dict[str, Any]:
         "quote": candidate_quote_for_extraction(candidate),
         "context": str(candidate.get("text") or "")[:1400],
         "relevance": candidate.get("ai_relevance", ""),
+    }
+
+
+def content_schema_for_ai(item: dict[str, Any]) -> dict[str, Any]:
+    schema = item.get("content_schema", {})
+    if not isinstance(schema, dict):
+        return {}
+    fields = []
+    for field in schema.get("fields", []):
+        if not isinstance(field, dict):
+            continue
+        fields.append(
+            {
+                "key": field.get("key", ""),
+                "label": field.get("label", ""),
+                "required": bool(field.get("required")),
+                "aliases": field.get("aliases", []),
+            }
+        )
+    return {
+        "drafting_guidance": schema.get("drafting_guidance", ""),
+        "fields": fields,
+        "lawyer_note_prompts": schema.get("lawyer_note_prompts", []),
+    }
+
+
+IMPORTANT_FACT_TOKEN_RE = re.compile(
+    r"(?i)(?:"
+    r"第\d+(?:\.\d+)*条"
+    r"|\d+(?:[.,，]\d+)+(?:%|％|万元|亿元|元|日|天|年|个月|个工作日|倍|席)?"
+    r"|\d+(?:%|％|万元|亿元|元|日|天|年|个月|个工作日|倍|席)"
+    r"|百分之[一二三四五六七八九十百千万零〇两\d]+"
+    r"|[一二三四五六七八九十百千万零〇两\d]+(?:日|天|年|个月|个工作日)"
+    r"|QIPO|IPO|ESOP|Long-Stop|long stop"
+    r")"
+)
+BRACKETED_NOTE_TOKEN_RE = re.compile(r"【[^】]{1,1200}】")
+
+
+def item_for_style_polish(item: dict[str, Any]) -> dict[str, Any]:
+    content_schema = item.get("content_schema", {})
+    drafting_guidance = ""
+    if isinstance(content_schema, dict):
+        drafting_guidance = str(content_schema.get("drafting_guidance") or "")
+    return {
+        "taxonomy_id": item.get("taxonomy_id", ""),
+        "group": item.get("group", ""),
+        "label": item.get("label", ""),
+        "drafting_guidance": drafting_guidance,
+        "draft_content": str(item.get("draft_content") or "")[:MAX_STYLE_POLISH_CHARS_PER_ITEM],
+    }
+
+
+def important_fact_tokens(text: str) -> set[str]:
+    return {match.group(0) for match in IMPORTANT_FACT_TOKEN_RE.finditer(text or "") if match.group(0)}
+
+
+def validate_polished_content(original: str, polished: str) -> tuple[bool, str]:
+    original = str(original or "").strip()
+    polished = str(polished or "").strip()
+    if not original:
+        return False, "empty_original"
+    if not polished:
+        return False, "empty_polished"
+    if len(polished) > max(120, int(len(original) * 2.2)):
+        return False, "too_long"
+    if len(polished) < max(12, int(len(original) * 0.35)):
+        return False, "too_short"
+    missing_tokens = sorted(important_fact_tokens(original) - important_fact_tokens(polished))
+    if missing_tokens:
+        return False, "missing_fact_tokens:" + "、".join(missing_tokens[:8])
+    missing_notes = [
+        note
+        for note in BRACKETED_NOTE_TOKEN_RE.findall(original)
+        if note not in polished
+    ]
+    if missing_notes:
+        return False, "missing_bracketed_notes"
+    return True, ""
+
+
+def normalize_style_polish_items(value: Any) -> dict[str, str]:
+    if isinstance(value, dict):
+        raw_items = value.get("items", [])
+    else:
+        raw_items = value
+    if not isinstance(raw_items, list):
+        return {}
+    normalized: dict[str, str] = {}
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        taxonomy_id = str(item.get("taxonomy_id") or item.get("id") or "").strip()
+        polished = str(item.get("polished_content") or item.get("draft_content") or "").strip()
+        if taxonomy_id and polished:
+            normalized[taxonomy_id] = polished
+    return normalized
+
+
+def polish_kts_draft_contents(
+    items: list[dict[str, Any]],
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    draft_items = [
+        item
+        for item in items
+        if isinstance(item, dict) and str(item.get("draft_content") or "").strip()
+    ]
+    if not draft_items:
+        return {"status": "skipped_no_draft_content", "item_count": 0, "changed_count": 0}
+    if not ai_configured():
+        return {"status": "skipped_model_unavailable", "item_count": len(draft_items), "changed_count": 0}
+
+    if progress_callback:
+        progress_callback(
+            {
+                "stage": "style_polish",
+                "stage_label": "润色摘要",
+                "completed_items": 0,
+                "total_items": len(draft_items),
+            }
+        )
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是融资交易KTS摘要的最后文风编辑。"
+                "你的任务是提升中文法律摘要的可读性、通顺度和模板文风一致性。"
+                "你只能重组、断句、分点和轻微改写已有内容，不得新增、删除或改变任何交易事实。"
+                "必须输出JSON。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "task": "对下列KTS事项的draft_content进行最后润色。",
+                    "rules": [
+                        "不得新增事实、主体、金额、比例、期限、条件、例外或风险判断。",
+                        "不得删除原文中的金额、比例、期限、主体、否定结论和【注：...】内容。",
+                        "可以把长句拆成更自然的短句，可以用1. 2. 3.组织并列信息。",
+                        "保留律师KTS摘要文风：结论先行、简洁、准确、法言法语。",
+                        "如原内容已经足够清楚，可原样返回。",
+                        "每个输入事项都必须返回一条结果。",
+                        "输出JSON格式：{\"items\":[{\"taxonomy_id\":\"...\",\"polished_content\":\"...\"}]}",
+                    ],
+                    "items": [item_for_style_polish(item) for item in draft_items],
+                },
+                ensure_ascii=False,
+            ),
+        },
+    ]
+
+    try:
+        response = chat_json(messages, temperature=0.1, timeout_seconds=STYLE_POLISH_TIMEOUT_SECONDS)
+    except AIClientError as exc:
+        for item in draft_items:
+            item["style_polish"] = {"status": "model_error", "error": str(exc)}
+        return {
+            "status": "model_error",
+            "item_count": len(draft_items),
+            "changed_count": 0,
+            "error": str(exc),
+        }
+
+    polished_by_id = normalize_style_polish_items(response)
+    changed_count = 0
+    accepted_count = 0
+    rejected_count = 0
+    for item in draft_items:
+        taxonomy_id = str(item.get("taxonomy_id") or "")
+        original = str(item.get("draft_content") or "").strip()
+        polished = polished_by_id.get(taxonomy_id, "")
+        accepted, reason = validate_polished_content(original, polished)
+        if not accepted:
+            rejected_count += 1
+            item["style_polish"] = {
+                "status": "rejected",
+                "reason": reason,
+                "original_length": len(original),
+                "polished_length": len(polished),
+            }
+            continue
+        accepted_count += 1
+        if polished != original:
+            item["draft_content"] = polished
+            changed_count += 1
+        item["style_polish"] = {
+            "status": "changed" if polished != original else "unchanged",
+            "original_length": len(original),
+            "polished_length": len(polished),
+        }
+
+    if progress_callback:
+        progress_callback(
+            {
+                "stage": "style_polish",
+                "stage_label": "润色摘要",
+                "completed_items": len(draft_items),
+                "total_items": len(draft_items),
+            }
+        )
+
+    return {
+        "status": "polished",
+        "item_count": len(draft_items),
+        "accepted_count": accepted_count,
+        "changed_count": changed_count,
+        "rejected_count": rejected_count,
     }
 
 
@@ -1092,13 +1367,153 @@ def normalize_string_list(value: Any) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
-def normalize_extracted_facts(value: Any) -> dict[str, list[str]]:
+def normalize_field_values(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    allowed_statuses = {"found", "not_found", "unclear", "not_applicable"}
+    for raw_field in value:
+        if not isinstance(raw_field, dict):
+            continue
+        key = str(raw_field.get("key") or "").strip()
+        label = str(raw_field.get("label") or "").strip()
+        if not key and not label:
+            continue
+        status = str(raw_field.get("status") or "unclear").strip()
+        if status not in allowed_statuses:
+            status = "unclear"
+        source_candidate_ids = raw_field.get("source_candidate_ids", [])
+        if not isinstance(source_candidate_ids, list):
+            source_candidate_ids = []
+        normalized.append(
+            {
+                "key": key,
+                "label": label,
+                "status": status,
+                "value": str(raw_field.get("value") or "").strip(),
+                "note": str(raw_field.get("note") or "").strip(),
+                "source_candidate_ids": [
+                    str(candidate_id)
+                    for candidate_id in source_candidate_ids
+                    if str(candidate_id).strip()
+                ],
+            }
+        )
+    return normalized
+
+
+def normalize_extracted_facts(value: Any) -> dict[str, Any]:
     facts = value if isinstance(value, dict) else {}
     return {
         "summary_points": normalize_string_list(facts.get("summary_points")),
         "key_terms": normalize_string_list(facts.get("key_terms")),
         "unclear_points": normalize_string_list(facts.get("unclear_points")),
+        "field_values": normalize_field_values(facts.get("field_values")),
+        "clause_refs": clean_clause_refs(normalize_string_list(facts.get("clause_refs"))),
+        "lawyer_notes": normalize_string_list(facts.get("lawyer_notes")),
+        "missing_or_unclear": normalize_string_list(facts.get("missing_or_unclear")),
     }
+
+
+def schema_fields(item: dict[str, Any]) -> list[dict[str, Any]]:
+    content_schema = item.get("content_schema", {})
+    if not isinstance(content_schema, dict):
+        return []
+    fields = content_schema.get("fields", [])
+    return [field for field in fields if isinstance(field, dict)]
+
+
+def field_value_map(extracted_facts: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    values = extracted_facts.get("field_values", [])
+    if not isinstance(values, list):
+        return {}
+    mapped: dict[str, dict[str, Any]] = {}
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        key = str(value.get("key") or "").strip()
+        if key:
+            mapped[key] = value
+        label = str(value.get("label") or "").strip()
+        if label:
+            mapped[f"label:{label}"] = value
+    return mapped
+
+
+def build_schema_coverage(item: dict[str, Any], extracted_facts: dict[str, Any]) -> dict[str, Any]:
+    fields = schema_fields(item)
+    values_by_key = field_value_map(extracted_facts)
+    coverage_fields: list[dict[str, Any]] = []
+    required_total = 0
+    required_found = 0
+    required_unclear = 0
+    required_missing = 0
+
+    for field in fields:
+        key = str(field.get("key") or "").strip()
+        label = str(field.get("label") or key).strip()
+        required = bool(field.get("required"))
+        value = values_by_key.get(key) or values_by_key.get(f"label:{label}") or {}
+        status = str(value.get("status") or "unclear").strip()
+        if status not in {"found", "not_found", "unclear", "not_applicable"}:
+            status = "unclear"
+        if required:
+            required_total += 1
+            if status == "found":
+                required_found += 1
+            elif status == "not_found":
+                required_missing += 1
+            elif status != "not_applicable":
+                required_unclear += 1
+        coverage_fields.append(
+            {
+                "key": key,
+                "label": label,
+                "required": required,
+                "status": status,
+                "value": str(value.get("value") or "").strip(),
+                "note": str(value.get("note") or "").strip(),
+            }
+        )
+
+    if required_total == 0:
+        status = "not_configured"
+    elif required_found == required_total:
+        status = "complete"
+    elif required_found > 0:
+        status = "partial"
+    else:
+        status = "weak"
+    return {
+        "status": status,
+        "required_total": required_total,
+        "required_found": required_found,
+        "required_missing": required_missing,
+        "required_unclear": required_unclear,
+        "fields": coverage_fields,
+    }
+
+
+def schema_coverage_review_notes(coverage: dict[str, Any]) -> list[str]:
+    fields = coverage.get("fields", [])
+    if not isinstance(fields, list):
+        return []
+    missing_labels = [
+        str(field.get("label") or "")
+        for field in fields
+        if isinstance(field, dict) and field.get("required") and field.get("status") == "not_found"
+    ]
+    unclear_labels = [
+        str(field.get("label") or "")
+        for field in fields
+        if isinstance(field, dict) and field.get("required") and field.get("status") == "unclear"
+    ]
+    notes: list[str] = []
+    if missing_labels:
+        notes.append("以下关键字段未见明确约定或未被模型提取：" + "、".join(missing_labels) + "。")
+    if unclear_labels:
+        notes.append("以下关键字段需要律师确认：" + "、".join(unclear_labels) + "。")
+    return notes
 
 
 def normalize_absence_checks(value: Any) -> list[dict[str, Any]]:
@@ -1252,12 +1667,21 @@ def rule_absence_labels(checks: list[dict[str, Any]], draft_content: str) -> lis
     ]
 
 
-def ensure_rule_absences(draft_content: str, missing_labels: list[str]) -> str:
+def agreement_label_for_item(item: dict[str, Any]) -> str:
+    group = str(item.get("group") or "").upper()
+    if group == "SPA":
+        return "增资协议"
+    if group == "SHA":
+        return "股东协议"
+    return "交易文件"
+
+
+def ensure_rule_absences(draft_content: str, missing_labels: list[str], agreement_label: str) -> str:
     if not missing_labels:
         return draft_content
     addition = "、".join(missing_labels)
     if not draft_content:
-        return f"股东协议无{addition}的明确约定。"
+        return f"{agreement_label}无{addition}的明确约定。"
 
     text = draft_content.rstrip()
     ending = "。" if text.endswith("。") else ""
@@ -1265,9 +1689,9 @@ def ensure_rule_absences(draft_content: str, missing_labels: list[str]) -> str:
     marker = "的明确约定"
     if marker in base:
         return base.replace(marker, f"、{addition}{marker}", 1) + "。"
-    if base.startswith("股东协议无"):
+    if base.startswith(f"{agreement_label}无"):
         return f"{base}、{addition}的明确约定。"
-    return f"{draft_content} 股东协议未见{addition}的明确约定。"
+    return f"{draft_content} {agreement_label}未见{addition}的明确约定。"
 
 
 def extract_absence_checks_with_ai(
@@ -1276,6 +1700,7 @@ def extract_absence_checks_with_ai(
     source_index: dict[str, Any],
 ) -> dict[str, Any]:
     checks = build_absence_check_results(item, source_index)
+    agreement_label = agreement_label_for_item(item)
     if not checks:
         return {
             "status": "unclear",
@@ -1297,8 +1722,8 @@ def extract_absence_checks_with_ai(
             "role": "system",
             "content": (
                 "你是融资交易KTS摘要起草助手。"
-                "你的任务是核对股东协议中若干常见投资人权利是否有明确约定。"
-                "你必须区分普通权利条款和仅作为其他特殊条款一部分出现的文字。"
+                f"你的任务是核对{agreement_label}中若干常见条款是否有明确约定。"
+                "你必须区分普通权利或义务条款和仅作为其他特殊条款一部分出现的文字。"
                 "必须输出JSON。"
             ),
         },
@@ -1306,7 +1731,7 @@ def extract_absence_checks_with_ai(
             "role": "user",
             "content": json.dumps(
                 {
-                    "task": "为KTS事项“其他”判断若干常见权利是否未约定，并起草表格“内容”列。",
+                    "task": "为KTS事项“其他”判断若干常见条款是否未约定，并起草表格“内容”列。",
                     "rules": [
                         "只依据search_results和related_evidence，不得使用外部知识或猜测。",
                         "必须逐项判断search_results中的每一个label，并在draft_content中列明所有判断为未见明确约定的事项，不得遗漏。",
@@ -1314,15 +1739,19 @@ def extract_absence_checks_with_ai(
                         "如命中片段只是定义、上下文引用或其他事项的一部分，而不是明确权利义务，也应判断为未见明确约定。",
                         "常规回购权必须区别于道德合规、利益输送、股权代持、资金往来等触发的特殊回购权；仅有特殊回购权时，常规回购权仍判断为未约定。",
                         "创始人全职付出与不竞争义务应分别判断；不得因不竞争义务存在就推定创始人全职付出已约定，反之亦然。",
-                        "draft_content应接近参考模板文风，优先写成“股东协议无……”的简洁句式。",
+                        f"draft_content应接近参考模板文风，优先写成“{agreement_label}无……”的简洁句式。",
                         "如不能确认某事项是否未约定，status设为needs_review，并在unclear_points和review_notes说明。",
-                        "输出JSON格式：{\"status\":\"drafted|needs_review|unclear\",\"extracted_facts\":{\"summary_points\":[\"...\"],\"key_terms\":[\"...\"],\"unclear_points\":[\"...\"]},\"draft_content\":\"...\",\"review_notes\":[\"...\"]}",
+                        "必须逐项返回content_schema.fields中的全部字段；field_values中的key必须使用给定字段key。",
+                        "字段status只能为found、not_found、unclear、not_applicable。对于已判断未见明确约定的事项，status使用not_found，value简要写“未见明确约定”。",
+                        "clause_refs只写条款编号或条款标题，不得包含文件名、candidate_id、source_locator或原文摘录。",
+                        "输出JSON格式：{\"status\":\"drafted|needs_review|unclear\",\"extracted_facts\":{\"summary_points\":[\"...\"],\"key_terms\":[\"...\"],\"field_values\":[{\"key\":\"...\",\"label\":\"...\",\"status\":\"found|not_found|unclear|not_applicable\",\"value\":\"...\",\"source_candidate_ids\":[\"...\"],\"note\":\"...\"}],\"clause_refs\":[\"...\"],\"lawyer_notes\":[\"...\"],\"missing_or_unclear\":[\"...\"],\"unclear_points\":[\"...\"]},\"draft_content\":\"...\",\"review_notes\":[\"...\"]}",
                     ],
                     "kts_item": {
                         "taxonomy_id": item.get("taxonomy_id", ""),
                         "label": item.get("label", ""),
                         "group": item.get("group", ""),
                     },
+                    "content_schema": content_schema_for_ai(item),
                     "search_results": checks,
                     "related_evidence": [
                         candidate_for_extraction_ai(candidate)
@@ -1349,7 +1778,7 @@ def extract_absence_checks_with_ai(
         status = "needs_review"
     draft_content = str(response.get("draft_content") or "").strip()
     missing_rule_labels = rule_absence_labels(checks, draft_content)
-    draft_content = ensure_rule_absences(draft_content, missing_rule_labels)
+    draft_content = ensure_rule_absences(draft_content, missing_rule_labels, agreement_label)
     if status == "drafted" and not draft_content:
         status = "needs_review"
     review_notes = normalize_string_list(response.get("review_notes"))
@@ -1359,9 +1788,10 @@ def extract_absence_checks_with_ai(
             + "、".join(missing_rule_labels)
             + "。"
         )
+    extracted_facts = normalize_extracted_facts(response.get("extracted_facts"))
     return {
         "status": status,
-        "extracted_facts": normalize_extracted_facts(response.get("extracted_facts")),
+        "extracted_facts": extracted_facts,
         "draft_content": draft_content,
         "review_notes": review_notes,
     }
@@ -1450,6 +1880,7 @@ def extract_facts_with_ai(
             "role": "system",
             "content": (
                 "你是融资交易KTS摘要起草助手。"
+                "你必须先按给定字段清单逐项抽取事实，再生成可放入KTS表格的摘要。"
                 "你只能依据给定候选证据抽取事实和起草摘要，不得编造未给出的交易条件。"
                 "文风应接近律师交易文件主要条款摘要：简洁、准确、法言法语。"
                 "必须输出JSON。"
@@ -1462,10 +1893,17 @@ def extract_facts_with_ai(
                     "task": "基于候选证据为单个KTS事项抽取事实，并起草事项内容。",
                     "rules": [
                         "只依据给定evidence，不得使用外部知识或猜测。",
+                        "必须逐项返回content_schema.fields中的全部字段；field_values中的key必须使用给定字段key。",
+                        "字段status只能为found、not_found、unclear、not_applicable；证据明确时用found，证据没有体现时用not_found，证据不足或冲突时用unclear。",
+                        "字段value应写该字段的提炼结果，不要粘贴整段原文；source_candidate_ids填写支持该字段的candidate_id。",
+                        "必须遵守content_schema.drafting_guidance的事项边界；即使evidence窗口中出现其他KTS事项的事实，也不得写入当前事项的draft_content或字段value。",
+                        "费用、税费、违约追责费用、违约赔偿、解除救济等内容，只有在当前KTS事项明确要求时才可纳入；否则应留给对应事项。",
+                        "draft_content应综合关键字段，写成可放入KTS表格“内容”列的中文摘要；避免机械罗列通知程序和低价值原文。",
+                        "如存在未约定、表述不清、偏离惯常或需客户确认之处，同时写入missing_or_unclear、lawyer_notes和review_notes；重要提示可在draft_content末尾用【注：...】呈现。",
+                        "能从原文识别条款编号或标题时，写入clause_refs；不能识别则返回空数组，不得猜测条款号。",
+                        "clause_refs只写条款编号或条款标题，不得包含文件名、candidate_id、source_locator或原文摘录。",
                         "如证据不足以形成摘要，status设为unclear，draft_content留空。",
-                        "draft_content应是一段可放入KTS表格“内容”列的中文摘要，避免写成审查意见。",
-                        "如存在不确定、冲突或需律师确认之处，写入unclear_points和review_notes。",
-                        "输出JSON格式：{\"status\":\"drafted|needs_review|unclear\",\"extracted_facts\":{\"summary_points\":[\"...\"],\"key_terms\":[\"...\"],\"unclear_points\":[\"...\"]},\"draft_content\":\"...\",\"review_notes\":[\"...\"]}",
+                        "输出JSON格式：{\"status\":\"drafted|needs_review|unclear\",\"extracted_facts\":{\"summary_points\":[\"...\"],\"key_terms\":[\"...\"],\"field_values\":[{\"key\":\"...\",\"label\":\"...\",\"status\":\"found|not_found|unclear|not_applicable\",\"value\":\"...\",\"source_candidate_ids\":[\"...\"],\"note\":\"...\"}],\"clause_refs\":[\"...\"],\"lawyer_notes\":[\"...\"],\"missing_or_unclear\":[\"...\"],\"unclear_points\":[\"...\"]},\"draft_content\":\"...\",\"review_notes\":[\"...\"]}",
                     ],
                     "kts_item": {
                         "taxonomy_id": item.get("taxonomy_id", ""),
@@ -1473,6 +1911,7 @@ def extract_facts_with_ai(
                         "template_labels": item.get("template_labels", {}),
                         "group": item.get("group", ""),
                     },
+                    "content_schema": content_schema_for_ai(item),
                     "evidence": [
                         candidate_for_extraction_ai(candidate)
                         for candidate in extraction_candidates
@@ -1499,9 +1938,10 @@ def extract_facts_with_ai(
     draft_content = str(response.get("draft_content") or "").strip()
     if status == "drafted" and not draft_content:
         status = "needs_review"
+    extracted_facts = normalize_extracted_facts(response.get("extracted_facts"))
     return {
         "status": status,
-        "extracted_facts": normalize_extracted_facts(response.get("extracted_facts")),
+        "extracted_facts": extracted_facts,
         "draft_content": draft_content,
         "review_notes": normalize_string_list(response.get("review_notes")),
     }
@@ -1541,19 +1981,30 @@ def build_kts_extraction_item(
         )
 
     extraction = extract_facts_with_ai(item, candidates, source_index)
+    extracted_facts = extraction["extracted_facts"]
+    schema_coverage = build_schema_coverage(item, extracted_facts)
+    review_notes = [
+        *extraction["review_notes"],
+        *schema_coverage_review_notes(schema_coverage),
+    ]
     return (
         {
             "taxonomy_id": item.get("taxonomy_id", ""),
             "group": item.get("group", ""),
             "label": item.get("label", ""),
             "template_labels": item.get("template_labels", {}),
+            "content_schema": item.get("content_schema", {}),
             "status": extraction["status"],
             "candidate_count": len(candidates),
             "model_review": item.get("model_review", {}),
             "source_evidence": evidence,
-            "extracted_facts": extraction["extracted_facts"],
+            "extracted_facts": extracted_facts,
+            "schema_coverage": schema_coverage,
+            "clause_refs": extracted_facts.get("clause_refs", []),
+            "lawyer_notes": extracted_facts.get("lawyer_notes", []),
+            "missing_or_unclear": extracted_facts.get("missing_or_unclear", []),
             "draft_content": extraction["draft_content"],
-            "review_notes": extraction["review_notes"],
+            "review_notes": review_notes,
         },
         verified_count,
     )
@@ -1654,15 +2105,17 @@ def build_kts_extraction(
                 progress_callback(
                     {
                         "stage": "extraction",
-                    "stage_label": "生成摘要",
+                        "stage_label": "生成摘要",
                         "completed_items": len(items),
                         "total_items": len(source_items),
                         "worker_count": worker_count,
                     }
                 )
 
+    style_polish_summary = polish_kts_draft_contents(items, progress_callback)
+
     return {
-        "phase": "v0.4-kts-extraction",
+        "phase": "v0.7-kts-extraction",
         "taxonomy_id": candidates_record.get("taxonomy_id", ""),
         "taxonomy_version": candidates_record.get("taxonomy_version", ""),
         "source_candidates_updated_at": candidates_record.get("updated_at", ""),
@@ -1674,9 +2127,29 @@ def build_kts_extraction(
             "unclear_count": sum(1 for item in items if item["status"] == "unclear"),
             "candidate_count": sum(int(item["candidate_count"]) for item in items),
             "verified_evidence_count": sum(verified_counts),
+            "schema_coverage": {
+                "complete_item_count": sum(
+                    1 for item in items if item.get("schema_coverage", {}).get("status") == "complete"
+                ),
+                "partial_item_count": sum(
+                    1 for item in items if item.get("schema_coverage", {}).get("status") == "partial"
+                ),
+                "weak_item_count": sum(
+                    1 for item in items if item.get("schema_coverage", {}).get("status") == "weak"
+                ),
+                "required_field_count": sum(
+                    int(item.get("schema_coverage", {}).get("required_total", 0))
+                    for item in items
+                ),
+                "required_field_found_count": sum(
+                    int(item.get("schema_coverage", {}).get("required_found", 0))
+                    for item in items
+                ),
+            },
             "model_extraction": {
                 "worker_count": worker_count,
             },
+            "style_polish": style_polish_summary,
         },
         "items": items,
     }

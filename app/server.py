@@ -27,6 +27,7 @@ from docx_parser import DocxParseError, parse_docx_file
 from kts_docx_exporter import KtsDocxExportError, build_kts_docx
 from kts_extractor import build_kts_candidates, build_kts_extraction
 from source_index import build_source_index
+from source_refs import clean_clause_refs
 from work_state import (
     load_current_kts_candidates,
     load_current_kts_extraction,
@@ -43,7 +44,6 @@ from work_state import (
 MAX_UPLOAD_BYTES = 120 * 1024 * 1024
 REVIEW_STATUSES = {"pending", "ai_reviewed", "confirmed"}
 MAX_REVIEW_CONTENT_CHARS = 20000
-MAX_REVIEW_NOTE_CHARS = 4000
 PUBLIC_EVIDENCE_TEXT_SIMILARITY_DUPLICATE_RATIO = 0.82
 PUBLIC_EVIDENCE_QUOTE_SIMILARITY_DUPLICATE_RATIO = 0.86
 MIN_PUBLIC_EVIDENCE_SIMILARITY_CHARS = 80
@@ -261,12 +261,31 @@ def public_kts_confidence(item: dict[str, object]) -> dict[str, str]:
     quality = evidence_quality(item)
     status = str(item.get("status") or "").strip()
     draft_content = str(item.get("draft_content") or "").strip()
+    schema_coverage = item.get("schema_coverage", {})
+    if not isinstance(schema_coverage, dict):
+        schema_coverage = {}
+    coverage_status = str(schema_coverage.get("status") or "")
+    required_missing = int(schema_coverage.get("required_missing") or 0)
+    required_unclear = int(schema_coverage.get("required_unclear") or 0)
+    has_coverage_gap = required_missing > 0 or required_unclear > 0
 
-    if status == "drafted" and draft_content and quality["verified_quote_count"] > 0:
+    if (
+        status == "drafted"
+        and draft_content
+        and quality["verified_quote_count"] > 0
+        and not has_coverage_gap
+        and coverage_status in {"complete", "not_configured", ""}
+    ):
         return {
             "confidence_level": "high",
             "confidence_label": "高",
-            "confidence_reason": "已形成内容摘要，且至少有一条已核验原文依据。",
+            "confidence_reason": "已形成内容摘要，原文依据已核验，关键字段覆盖较完整。",
+        }
+    if draft_content and quality["verified_quote_count"] > 0 and has_coverage_gap:
+        return {
+            "confidence_level": "medium",
+            "confidence_label": "中",
+            "confidence_reason": "已有摘要和已核验依据，但仍有关键字段未覆盖或需确认。",
         }
     if draft_content and quality["verified_quote_count"] > 0:
         return {
@@ -303,12 +322,11 @@ def public_human_review(item: dict[str, object], default_status: str = "pending"
     review = item.get("human_review", {})
     if not isinstance(review, dict):
         review = {}
-    has_saved_review = any(key in review for key in ("status", "content", "note", "updated_at"))
+    has_saved_review = any(key in review for key in ("status", "content", "updated_at"))
     review_status = normalize_review_status(review.get("status") if has_saved_review else default_status)
     return {
         "review_status": review_status,
         "review_content": str(review.get("content") or ""),
-        "review_note": str(review.get("note") or ""),
         "review_updated_at": str(review.get("updated_at") or ""),
         "review_is_default": not has_saved_review,
     }
@@ -407,6 +425,44 @@ def public_source_evidence(source_evidence: object) -> list[dict[str, object]]:
     return public_evidence
 
 
+def schema_field_status_label(value: object) -> str:
+    labels = {
+        "found": "已提取",
+        "not_found": "未见明确约定",
+        "unclear": "需确认",
+        "not_applicable": "不适用",
+    }
+    return labels.get(str(value or ""), "需确认")
+
+
+def public_schema_coverage(item: dict[str, object]) -> dict[str, object]:
+    coverage = item.get("schema_coverage", {})
+    if not isinstance(coverage, dict):
+        return {}
+    fields = coverage.get("fields", [])
+    if not isinstance(fields, list):
+        fields = []
+    return {
+        "status": coverage.get("status", ""),
+        "required_total": coverage.get("required_total", 0),
+        "required_found": coverage.get("required_found", 0),
+        "required_missing": coverage.get("required_missing", 0),
+        "required_unclear": coverage.get("required_unclear", 0),
+        "fields": [
+            {
+                "label": field.get("label", ""),
+                "required": bool(field.get("required")),
+                "status": field.get("status", ""),
+                "status_label": schema_field_status_label(field.get("status")),
+                "value": field.get("value", ""),
+                "note": field.get("note", ""),
+            }
+            for field in fields
+            if isinstance(field, dict)
+        ],
+    }
+
+
 def public_kts_extraction(record: dict[str, object]) -> dict[str, object]:
     items = []
     raw_items = record.get("items", [])
@@ -419,6 +475,7 @@ def public_kts_extraction(record: dict[str, object]) -> dict[str, object]:
         review_notes = item.get("review_notes", [])
         public_evidence = public_source_evidence(source_evidence)
         confidence = public_kts_confidence(item)
+        schema_coverage = public_schema_coverage(item)
         default_review_status = (
             "ai_reviewed" if confidence["confidence_level"] == "high" else "pending"
         )
@@ -433,6 +490,10 @@ def public_kts_extraction(record: dict[str, object]) -> dict[str, object]:
                 "source_evidence_display_count": len(public_evidence),
                 "source_evidence": public_evidence,
                 "extracted_facts": item.get("extracted_facts", {}),
+                "field_coverage": schema_coverage,
+                "clause_refs": clean_clause_refs(item.get("clause_refs", [])),
+                "lawyer_notes": item.get("lawyer_notes", []),
+                "missing_or_unclear": item.get("missing_or_unclear", []),
                 "review_notes": review_notes if isinstance(review_notes, list) else [],
                 **confidence,
                 **human_review,
@@ -492,7 +553,6 @@ def apply_kts_review_updates(
         item["human_review"] = {
             "status": normalize_review_status(update.get("review_status")),
             "content": clamp_text(update.get("review_content"), MAX_REVIEW_CONTENT_CHARS),
-            "note": clamp_text(update.get("review_note"), MAX_REVIEW_NOTE_CHARS),
             "updated_at": now,
         }
 
@@ -798,8 +858,6 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     "phase": "v0.3-docx-intake",
                     "input": {
                         "capability_id": capability_id,
-                        "party_role": fields.get("party_role", ""),
-                        "matter_notes": fields.get("matter_notes", ""),
                         "file_names": [str(item["file_name"]) for item in documents],
                         "documents": [
                             {
@@ -864,23 +922,35 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 stage="extraction",
                 stage_label="生成摘要",
                 stage_index=4,
-                progress_percent=94,
+                progress_percent=90,
                 message="正在生成 KTS 摘要。",
             )
 
             def update_extraction_progress(progress: dict[str, object]) -> None:
                 completed = int(progress.get("completed_items", 0) or 0)
                 total = int(progress.get("total_items", 0) or 0)
+                stage = str(progress.get("stage") or "extraction")
+                stage_label = str(progress.get("stage_label") or "生成摘要")
+                if stage == "style_polish":
+                    stage_index = 5
+                    percent = 97 + (2 * completed / max(1, total))
+                    worker_count = None
+                    message = f"正在批量润色 {total} 个 KTS 事项。"
+                else:
+                    stage_index = 4
+                    percent = 90 + (7 * completed / max(1, total))
+                    worker_count = progress.get("worker_count", 1)
+                    message = f"已处理 {completed}/{total} 个 KTS 事项。"
                 update_run_progress(
                     run_id,
-                    stage="extraction",
-                    stage_label="生成摘要",
-                    stage_index=4,
-                    progress_percent=90 + (9 * completed / max(1, total)),
+                    stage=stage,
+                    stage_label=stage_label,
+                    stage_index=stage_index,
+                    progress_percent=percent,
                     completed_items=completed,
                     total_items=total,
-                    worker_count=progress.get("worker_count", 1),
-                    message=f"已处理 {completed}/{total} 个 KTS 事项。",
+                    worker_count=worker_count,
+                    message=message,
                 )
 
             extraction_record = save_current_kts_extraction(
@@ -895,7 +965,7 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 status="completed",
                 stage="completed",
                 stage_label="处理完成",
-                stage_index=4,
+                stage_index=5,
                 progress_percent=100,
                 completed_items=candidates_record.get("summary", {}).get("taxonomy_item_count", 0),
                 total_items=candidates_record.get("summary", {}).get("taxonomy_item_count", 0),

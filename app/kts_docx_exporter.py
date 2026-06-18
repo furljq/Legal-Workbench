@@ -14,15 +14,48 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
+from source_refs import clean_clause_ref
 
 EAST_ASIA_FONT = "宋体"
 TITLE_FONT = "黑体"
 GROUP_ORDER = {"SPA": 0, "SHA": 1}
 PARENTHETICAL_MARKER_RE = re.compile(r"\s*([（(][一二三四五六七八九十\d]+[）)])")
+BRACKETED_NOTE_RE = re.compile(r"【[^】]{1,1200}】")
+NOTE_LINE_RE = re.compile(r"\s*(【[^】]*注[：:][^】]*】)")
+PRENUMBERED_LINE_RE = re.compile(r"^(\d+[.、]\s*|（[一二三四五六七八九十\d]+）|\([0-9]+\))")
+SOURCE_REF_MAX_LENGTH = 96
+SOURCE_REF_MAX_COUNT = 5
 
 
 class KtsDocxExportError(ValueError):
     """Raised when KTS results cannot be exported."""
+
+
+def protect_bracketed_notes(text: str) -> tuple[str, dict[str, str]]:
+    notes: dict[str, str] = {}
+
+    def replace(match: re.Match[str]) -> str:
+        token = f"@@KTS_NOTE_{len(notes)}@@"
+        notes[token] = match.group(0)
+        return token
+
+    return BRACKETED_NOTE_RE.sub(replace, text), notes
+
+
+def restore_bracketed_notes(text: str, notes: dict[str, str]) -> str:
+    restored = text
+    for token, note in notes.items():
+        restored = restored.replace(token, note)
+    return restored
+
+
+def separate_note_lines(text: str) -> str:
+    return NOTE_LINE_RE.sub(r"\n\1", text)
+
+
+def is_note_line(line: str) -> bool:
+    text = line.strip()
+    return text.startswith("【") and text.endswith("】") and "注" in text
 
 
 def split_readable_lines(value: object) -> list[str]:
@@ -33,6 +66,7 @@ def split_readable_lines(value: object) -> list[str]:
         prepared = text
     else:
         prepared = re.sub(r"\s+", " ", text)
+        prepared, bracketed_notes = protect_bracketed_notes(prepared)
         prepared = re.sub(r"([。；;])\s*", r"\1\n", prepared)
         prepared = re.sub(
             r"([：:])\s*((?:（?[一二三四五六七八九十\d]+[）.)、]))",
@@ -41,6 +75,8 @@ def split_readable_lines(value: object) -> list[str]:
         )
         prepared = split_parenthetical_markers(prepared)
         prepared = re.sub(r"(其中[，,])\s*", r"\n\1", prepared)
+        prepared = restore_bracketed_notes(prepared, bracketed_notes)
+        prepared = separate_note_lines(prepared)
     return [line.strip() for line in prepared.split("\n") if line.strip()]
 
 
@@ -65,11 +101,13 @@ def number_readable_lines(lines: list[str]) -> list[str]:
     if len(lines) <= 1:
         return lines
     numbered: list[str] = []
-    for index, line in enumerate(lines, start=1):
-        if re.match(r"^(\d+[.、]\s*|（[一二三四五六七八九十\d]+）|\([0-9]+\))", line):
+    next_number = 1
+    for line in lines:
+        if is_note_line(line) or PRENUMBERED_LINE_RE.match(line):
             numbered.append(line)
         else:
-            numbered.append(f"{index}. {line}")
+            numbered.append(f"{next_number}. {line}")
+            next_number += 1
     return numbered
 
 
@@ -81,7 +119,7 @@ def saved_human_review(item: dict[str, Any]) -> dict[str, Any] | None:
     review = item.get("human_review")
     if not isinstance(review, dict):
         return None
-    if any(key in review for key in ("status", "content", "note", "updated_at")):
+    if any(key in review for key in ("status", "content", "updated_at")):
         return review
     return None
 
@@ -100,6 +138,34 @@ def export_content_lines(item: dict[str, Any]) -> list[str]:
     return []
 
 
+def export_label(item: dict[str, Any]) -> str:
+    return str(item.get("label") or item.get("taxonomy_id") or "未命名事项").strip()
+
+
+def clean_source_ref(value: object) -> str:
+    text = clean_clause_ref(value)
+    if len(text) <= SOURCE_REF_MAX_LENGTH:
+        return text
+    return text[: SOURCE_REF_MAX_LENGTH - 1].rstrip() + "…"
+
+
+def export_source_refs(item: dict[str, Any]) -> list[str]:
+    refs = item.get("clause_refs", [])
+    if not isinstance(refs, list):
+        return []
+    clean_refs: list[str] = []
+    seen: set[str] = set()
+    for ref in refs:
+        clean_ref = clean_source_ref(ref)
+        if not clean_ref or clean_ref in seen:
+            continue
+        seen.add(clean_ref)
+        clean_refs.append(clean_ref)
+        if len(clean_refs) >= SOURCE_REF_MAX_COUNT:
+            break
+    return clean_refs
+
+
 def export_items(record: dict[str, Any]) -> list[dict[str, Any]]:
     raw_items = record.get("items", [])
     if not isinstance(raw_items, list):
@@ -110,13 +176,13 @@ def export_items(record: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         group = str(item.get("group") or "其他").strip() or "其他"
-        label = str(item.get("label") or item.get("taxonomy_id") or "未命名事项").strip()
         items.append(
             {
                 "index": index,
                 "group": group,
-                "label": label,
+                "label": export_label(item),
                 "content_lines": export_content_lines(item),
+                "source_refs": export_source_refs(item),
             }
         )
     if not items:
@@ -150,6 +216,30 @@ def append_cell_lines(cell, lines: list[str]) -> None:
         run._element.rPr.rFonts.set(qn("w:eastAsia"), EAST_ASIA_FONT)
 
 
+def append_source_refs(cell, refs: list[str]) -> None:
+    if not refs:
+        return
+    heading = cell.add_paragraph()
+    heading.paragraph_format.space_before = Pt(6)
+    heading.paragraph_format.space_after = Pt(2)
+    heading_run = heading.add_run("信息来源：")
+    heading_run.bold = True
+    heading_run.font.name = EAST_ASIA_FONT
+    heading_run.font.size = Pt(9)
+    heading_run.font.color.rgb = RGBColor(104, 112, 105)
+    heading_run._element.rPr.rFonts.set(qn("w:eastAsia"), EAST_ASIA_FONT)
+
+    for index, ref in enumerate(refs, start=1):
+        paragraph = cell.add_paragraph()
+        paragraph.paragraph_format.space_after = Pt(2)
+        paragraph.paragraph_format.line_spacing = 1.05
+        run = paragraph.add_run(f"{index}. {ref}")
+        run.font.name = EAST_ASIA_FONT
+        run.font.size = Pt(9)
+        run.font.color.rgb = RGBColor(104, 112, 105)
+        run._element.rPr.rFonts.set(qn("w:eastAsia"), EAST_ASIA_FONT)
+
+
 def set_cell_shading(cell, fill: str) -> None:
     tc_pr = cell._tc.get_or_add_tcPr()
     shading = tc_pr.find(qn("w:shd"))
@@ -168,13 +258,6 @@ def set_cell_width(cell, width_cm: float) -> None:
         tc_pr.append(tc_w)
     tc_w.set(qn("w:w"), str(int(width_cm * 567)))
     tc_w.set(qn("w:type"), "dxa")
-
-
-def set_repeat_table_header(row) -> None:
-    tr_pr = row._tr.get_or_add_trPr()
-    tbl_header = OxmlElement("w:tblHeader")
-    tbl_header.set(qn("w:val"), "true")
-    tr_pr.append(tbl_header)
 
 
 def set_table_borders(table) -> None:
@@ -279,7 +362,6 @@ def add_table_shell(document: Document, widths: list[float]):
     set_table_borders(table)
 
     header = table.rows[0]
-    set_repeat_table_header(header)
     for cell, width, text in zip(header.cells, widths, ["#", "事项", "内容"]):
         apply_cell_basics(cell, width)
         set_cell_shading(cell, "A5C9EB")
@@ -295,7 +377,13 @@ def add_group_row(table, widths: list[float], group: str) -> None:
     set_cell_text(merged, group, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
 
 
-def add_item_rows(table, widths: list[float], label: str, content_lines: list[str]) -> None:
+def add_item_rows(
+    table,
+    widths: list[float],
+    label: str,
+    content_lines: list[str],
+    source_refs: list[str],
+) -> None:
     lines = content_lines or [""]
     row = table.add_row()
     for cell, width in zip(row.cells, widths):
@@ -303,16 +391,25 @@ def add_item_rows(table, widths: list[float], label: str, content_lines: list[st
     set_cell_text(row.cells[0], "", align=WD_ALIGN_PARAGRAPH.CENTER)
     set_cell_text(row.cells[1], label, align=WD_ALIGN_PARAGRAPH.LEFT)
     append_cell_lines(row.cells[2], [str(line) for line in lines])
+    append_source_refs(row.cells[2], source_refs)
 
 
 def add_kts_table(document: Document, items: list[dict[str, Any]]) -> None:
     widths = [0.74, 4.25, 19.61]
-    for item_index, item in enumerate(items):
-        table = add_table_shell(document, widths)
-        add_group_row(table, widths, str(item["group"]))
-        add_item_rows(table, widths, str(item["label"]), list(item["content_lines"]))
-        if item_index < len(items) - 1:
-            document.add_paragraph()
+    table = add_table_shell(document, widths)
+    current_group = ""
+    for item in items:
+        group = str(item["group"])
+        if group != current_group:
+            current_group = group
+            add_group_row(table, widths, group)
+        add_item_rows(
+            table,
+            widths,
+            str(item["label"]),
+            list(item["content_lines"]),
+            list(item["source_refs"]),
+        )
 
 
 def build_kts_docx(record: dict[str, Any], export_date: str = "") -> bytes:

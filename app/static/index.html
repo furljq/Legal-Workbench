@@ -34,7 +34,7 @@
             <div>
               <p class="eyebrow">当前能力</p>
               <h2 id="capabilityTitle">加载中</h2>
-              <p id="capabilityDescription" class="muted">正在读取 capability registry。</p>
+              <p id="capabilityDescription" class="muted">正在读取工作台能力。</p>
             </div>
             <button type="button" id="checkWorkbench" class="secondary">测试工作台</button>
           </div>
@@ -62,34 +62,9 @@
                   <input id="shaDocumentFile" type="file" accept=".docx,.docx.crdownload,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
                 </label>
               </div>
-              <button type="button" id="uploadDocuments" class="primary">生成候选证据</button>
+              <button type="button" id="uploadDocuments" class="primary">生成 KTS</button>
             </div>
           </section>
-
-          <section class="panel">
-            <h3>事项背景</h3>
-            <div class="form-grid">
-              <label>
-                我方角色
-                <select id="partyRole">
-                  <option value="investor">投资人</option>
-                  <option value="company">公司</option>
-                  <option value="founder">创始人</option>
-                  <option value="unknown">暂不确定</option>
-                </select>
-              </label>
-              <label class="wide">
-                备注
-                <textarea id="matterNotes" rows="4" placeholder="例如：本轮先复现 B 套单轮摘要，暂不生成谈判建议。"></textarea>
-              </label>
-            </div>
-          </section>
-
-          <details class="panel advanced-panel">
-            <summary>高级信息：能力规则</summary>
-            <p class="muted">供维护和调试使用；普通使用无需查看。</p>
-            <pre id="capabilityJson" class="codebox">等待加载。</pre>
-          </details>
 
           <section class="panel">
             <div class="section-head compact">
@@ -99,10 +74,6 @@
               </div>
             </div>
             <div id="resultBox" class="result empty">尚未处理。</div>
-            <details class="advanced-block">
-              <summary>高级信息：当前处理原始数据</summary>
-              <pre id="rawResultJson" class="codebox">尚未处理。</pre>
-            </details>
           </section>
         </section>
       </section>

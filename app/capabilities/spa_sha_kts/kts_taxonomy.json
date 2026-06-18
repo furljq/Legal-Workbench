@@ -75,6 +75,14 @@
       "keywords": ["反腐败", "反商业贿赂", "廉洁", "道德", "合规", "利益输送", "资金往来", "不正当利益交换", "代持", "违约金"]
     },
     {
+      "id": "spa.other",
+      "group": "SPA",
+      "label": "其他",
+      "template_labels": {"single_round": "其他"},
+      "document_types": ["capital_increase_agreement"],
+      "keywords": ["其他", "排他", "独家", "保密", "适用法律", "争议解决", "仲裁", "诉讼", "通知", "送达", "转让", "权利义务转让", "协议生效", "文本效力", "补充协议", "附件"]
+    },
+    {
       "id": "sha.board_composition",
       "group": "SHA",
       "label": "董事会构成",

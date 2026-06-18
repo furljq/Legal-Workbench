@@ -1,0 +1,255 @@
+{
+  "schema_id": "spa_sha_kts_content_quality",
+  "version": "0.1.0",
+  "default_drafting_guidance": "按律师交易文件主要条款摘要文风输出：结论先行，保留金额、比例、期限、主体和例外；避免机械复制原文；如有需确认或偏离惯常之处，在摘要末尾以【注：...】提示。",
+  "items": {
+    "spa.transaction_arrangement": {
+      "drafting_guidance": "先概括交易安排，再列签署方、股权结构或ESOP来源；如Cap Table或投资方明细不完整，应明确写为待确认。",
+      "fields": [
+        {"key": "valuation", "label": "投前/投后估值", "required": true, "aliases": ["投前估值", "投后估值", "估值"]},
+        {"key": "financing_amount", "label": "整体融资额", "required": true, "aliases": ["融资额", "本轮融资", "整体融资"]},
+        {"key": "investors_and_amounts", "label": "投资方及投资金额", "required": true, "aliases": ["投资方", "增资方", "认购价款", "投资款"]},
+        {"key": "capital_change", "label": "注册资本变化", "required": false, "aliases": ["注册资本", "新增注册资本"]},
+        {"key": "signing_parties", "label": "签署方", "required": true, "aliases": ["签署方", "协议各方", "创始股东"]},
+        {"key": "cap_table", "label": "现有股东结构/Cap Table", "required": true, "aliases": ["股权结构", "股东构成", "Cap Table"]},
+        {"key": "esop_source", "label": "ESOP来源", "required": false, "aliases": ["ESOP", "员工持股平台", "员工激励股权"]}
+      ],
+      "lawyer_note_prompts": ["投资方明细、整体融资额或Cap Table缺失时提示待确认。"]
+    },
+    "spa.closing_conditions": {
+      "drafting_guidance": "只总结交割前提本身，不要混入付款、工商登记等交割执行事项；模板通常需要提示CP是否偏少。",
+      "fields": [
+        {"key": "internal_approval", "label": "内部审议/批准", "required": true, "aliases": ["内部审批", "董事会", "股东会决议"]},
+        {"key": "external_approval", "label": "外部批准许可", "required": true, "aliases": ["批准许可", "授权", "备案"]},
+        {"key": "no_mae", "label": "无重大不利事件", "required": true, "aliases": ["重大不利", "重大不利影响"]},
+        {"key": "customary_missing_cp", "label": "惯常但未见明确约定的CP", "required": false, "aliases": ["法律意见书", "尽职调查", "投委会", "IC"]}
+      ],
+      "lawyer_note_prompts": ["如未见法律意见书、尽调满意、投委会/IC通过等惯常CP，应提示客户确认是否补充。"]
+    },
+    "spa.closing": {
+      "drafting_guidance": "按付款通知、付款/交割日、股东名册及出资证明书、工商变更四类事项组织；区分交割条件和交割后事项。不要把登记费用、税费或违约追责费用写入本事项，该等内容应留给“费用条款”或“违约责任”。",
+      "fields": [
+        {"key": "payment_notice", "label": "付款通知安排", "required": true, "aliases": ["付款通知", "缴款通知"]},
+        {"key": "payment_and_closing", "label": "付款及交割日", "required": true, "aliases": ["交割日", "支付投资款", "缴付"]},
+        {"key": "register_and_certificate", "label": "股东名册/出资证明书", "required": true, "aliases": ["股东名册", "出资证明书"]},
+        {"key": "registration", "label": "工商变更登记", "required": true, "aliases": ["工商变更", "登记机关", "市场监督"]},
+        {"key": "post_closing_nature", "label": "交割后事项属性", "required": false, "aliases": ["交割后", "完成登记"]}
+      ],
+      "lawyer_note_prompts": ["如股东名册或出资证明书在交割后提供，提示是否要求交割时提供；工商变更通常为交割后事项。"]
+    },
+    "spa.representations_warranties": {
+      "drafting_guidance": "不要泛泛写第4条包含若干陈述保证；应提炼非惯常或重点陈述保证，并单列过渡期限制事项。",
+      "fields": [
+        {"key": "authority", "label": "签署授权和法律能力", "required": true, "aliases": ["法律能力", "授权", "批准"]},
+        {"key": "capital_legality", "label": "增资款及持股合法性", "required": true, "aliases": ["增资款", "合法", "代持", "禁止持股"]},
+        {"key": "information_accuracy", "label": "资料真实准确", "required": true, "aliases": ["资料真实", "准确", "完整"]},
+        {"key": "transition_covenants", "label": "过渡期限制事项", "required": true, "aliases": ["过渡期", "未经同意", "不得"]},
+        {"key": "notification_obligation", "label": "重大事项通知义务", "required": false, "aliases": ["通知", "重大不利影响", "重大进展"]}
+      ],
+      "lawyer_note_prompts": ["如需要结合LDD补充陈述保证，应写入律师注。"]
+    },
+    "spa.post_closing_covenants": {
+      "drafting_guidance": "按承诺类型归纳，保留特殊期限、主体和里程碑；不要只写概括句。",
+      "fields": [
+        {"key": "use_of_proceeds", "label": "增资款用途限制", "required": true, "aliases": ["资金用途", "增资款不得"]},
+        {"key": "capital_contribution", "label": "历史/现有股东实缴承诺", "required": true, "aliases": ["实缴", "认缴出资"]},
+        {"key": "non_compete_and_priority", "label": "竞业限制/业务唯一性", "required": false, "aliases": ["竞业", "竞争", "唯一实体", "优先级"]},
+        {"key": "service_and_team", "label": "顾问/保密/IP/团队安排", "required": false, "aliases": ["顾问合同", "保密协议", "知识产权归属", "团队"]},
+        {"key": "ip_transfer", "label": "知识产权转移", "required": false, "aliases": ["知识产权转移", "IP"]},
+        {"key": "regulatory_milestones", "label": "业务许可/备案里程碑", "required": false, "aliases": ["许可", "备案", "卫星", "发射"]},
+        {"key": "continued_service", "label": "创始团队持续任职", "required": false, "aliases": ["持续任职", "合格上市"]}
+      ],
+      "lawyer_note_prompts": ["如核心人员名单、第一轮交割日或LDD补充事项不明确，应提示待确认。"]
+    },
+    "spa.termination": {
+      "drafting_guidance": "只保留可解除/终止的主要场景；不要重复违约责任细节。",
+      "fields": [
+        {"key": "material_breach", "label": "严重违约解除", "required": true, "aliases": ["严重违约", "根本违约"]},
+        {"key": "mutual_termination", "label": "协商一致解除", "required": false, "aliases": ["协商一致", "一致同意"]},
+        {"key": "registration_failure", "label": "工商变更未完成解除", "required": false, "aliases": ["工商变更", "单方解除"]},
+        {"key": "long_stop", "label": "Long-Stop Date/CP届满安排", "required": false, "aliases": ["最后期限", "Long-Stop", "先决条件"]}
+      ],
+      "lawyer_note_prompts": ["如无基于CP满足情况的Long-Stop Date，应提示是否补充。"]
+    },
+    "spa.liability": {
+      "drafting_guidance": "概括违约赔偿机制，重点抽连带责任、特殊赔偿、责任上限；不要把解除程序重复一遍。",
+      "fields": [
+        {"key": "general_liability", "label": "一般违约赔偿", "required": true, "aliases": ["违约责任", "赔偿损失"]},
+        {"key": "joint_liability", "label": "连带赔偿责任", "required": true, "aliases": ["连带", "共同且连带"]},
+        {"key": "special_indemnity", "label": "特殊赔偿责任", "required": false, "aliases": ["特殊赔偿", "补偿", "LDD"]},
+        {"key": "liability_cap", "label": "责任上限", "required": false, "aliases": ["责任上限", "最高"]}
+      ],
+      "lawyer_note_prompts": ["如特殊赔偿责任需结合LDD确定，应提示待确认。"]
+    },
+    "spa.expenses": {
+      "drafting_guidance": "重点判断是否有投资方费用承担条款；税费、工商登记费、违约追责费用不能替代投资方费用承担结论。",
+      "fields": [
+        {"key": "investor_expenses", "label": "投资方费用承担", "required": true, "aliases": ["投资方费用", "律师费", "交易费用"]},
+        {"key": "taxes_and_registration", "label": "税费/登记费用", "required": false, "aliases": ["税费", "登记费用"]},
+        {"key": "enforcement_costs", "label": "违约追责费用", "required": false, "aliases": ["诉讼费用", "保全费用", "中介费用"]}
+      ],
+      "lawyer_note_prompts": ["未见投资方费用承担时，应直接提示供客户知悉。"]
+    },
+    "spa.compliance": {
+      "drafting_guidance": "提炼廉洁合规的特殊违约触发、救济和违约金，不要完整复述行为规范。",
+      "fields": [
+        {"key": "prohibited_conduct", "label": "禁止行为", "required": true, "aliases": ["利益输送", "代持", "资金往来", "不正当利益"]},
+        {"key": "termination_right", "label": "终止/解除权", "required": false, "aliases": ["终止", "解除"]},
+        {"key": "redemption_link", "label": "回购联动", "required": false, "aliases": ["回购义务", "回购"]},
+        {"key": "penalty", "label": "违约金", "required": true, "aliases": ["10%", "违约金"]}
+      ],
+      "lawyer_note_prompts": ["如存在特殊廉洁条款，应提示客户知悉其触发后果。"]
+    },
+    "spa.other": {
+      "drafting_guidance": "只提炼增资协议中未被其他SPA事项覆盖、但仍值得写入KTS的剩余条款；普通模板性条款应简洁处理，不要把股东协议中的投资人权利写入本事项。",
+      "fields": [
+        {"key": "exclusivity", "label": "排他/独家安排", "required": false, "aliases": ["排他", "独家", "独占"]},
+        {"key": "confidentiality", "label": "保密义务", "required": false, "aliases": ["保密", "保密义务"]},
+        {"key": "governing_law_dispute", "label": "适用法律/争议解决", "required": false, "aliases": ["适用法律", "争议解决", "仲裁", "诉讼"]},
+        {"key": "notice", "label": "通知送达", "required": false, "aliases": ["通知", "送达", "通讯地址"]},
+        {"key": "assignment", "label": "权利义务转让限制", "required": false, "aliases": ["转让", "权利义务转让", "未经同意"]},
+        {"key": "effectiveness_misc", "label": "协议生效/文本效力/附件", "required": false, "aliases": ["协议生效", "文本效力", "补充协议", "附件"]}
+      ],
+      "lawyer_note_prompts": ["如剩余条款仅为常规模板条款，不要过度写成交易特有安排；如存在排他、特殊保密、争议解决或转让限制等特别安排，应保留主体、期限和限制后果。"]
+    },
+    "sha.board_composition": {
+      "drafting_guidance": "用一句话说明董事会席位、提名方和董事长；另写子公司董事会是否一致。",
+      "fields": [
+        {"key": "board_size", "label": "董事会人数", "required": true, "aliases": ["董事会", "名成员", "席"]},
+        {"key": "seat_allocation", "label": "席位分配/提名方", "required": true, "aliases": ["提名", "委派", "推选"]},
+        {"key": "chairperson", "label": "董事长", "required": true, "aliases": ["董事长"]},
+        {"key": "subsidiary_board", "label": "子公司董事会一致安排", "required": false, "aliases": ["子公司", "董事会结构保持一致"]},
+        {"key": "investor_board_right", "label": "本方董事席位/观察员", "required": false, "aliases": ["观察员", "董事席位"]}
+      ],
+      "lawyer_note_prompts": ["如本方未取得董事席位或观察员，应提示是否要求。"]
+    },
+    "sha.board_reserved_matters": {
+      "drafting_guidance": "先写通过机制，再列董事会层面的veto事项；不要混入股东会保护性事项。",
+      "fields": [
+        {"key": "approval_mechanism", "label": "通过机制", "required": true, "aliases": ["投资人董事同意", "董事会批准"]},
+        {"key": "amount_thresholds", "label": "金额门槛", "required": true, "aliases": ["50万元", "100万元", "单笔", "累计"]},
+        {"key": "management_matters", "label": "高管任免/薪酬", "required": false, "aliases": ["任免高管", "薪酬"]},
+        {"key": "loans_guarantees", "label": "贷款/担保", "required": false, "aliases": ["贷款", "担保"]},
+        {"key": "asset_disposal", "label": "资产处置/权利负担", "required": false, "aliases": ["资产", "处置", "担保"]}
+      ],
+      "lawyer_note_prompts": ["如投资人董事席位不确定，应提示该veto机制能否实际行使。"]
+    },
+    "sha.shareholder_reserved_matters": {
+      "drafting_guidance": "必须区分全体投资人同意和多数投资人同意两套机制，并按机制列事项。",
+      "fields": [
+        {"key": "approval_mechanism", "label": "通过机制", "required": true, "aliases": ["全体投资人", "多数投资人", "三分之二"]},
+        {"key": "unanimous_matters", "label": "全体投资人同意事项", "required": true, "aliases": ["全体", "修改章程", "增减注册资本", "分红"]},
+        {"key": "majority_matters", "label": "多数投资人同意事项", "required": true, "aliases": ["多数", "合并", "分立", "上市方案", "ESOP"]},
+        {"key": "investor_veto_practicality", "label": "本方veto可行性", "required": false, "aliases": ["多数优先股股东", "veto"]}
+      ],
+      "lawyer_note_prompts": ["如本方可能无法单独构成多数投资人，应提示veto实际可行性。"]
+    },
+    "sha.preemptive_right": {
+      "drafting_guidance": "概括优先认购比例、是否有二次认购权、主要例外；不要展开完整通知程序。",
+      "fields": [
+        {"key": "pro_rata_right", "label": "按持股比例优先认购", "required": true, "aliases": ["持股比例", "优先认购"]},
+        {"key": "secondary_right", "label": "二次认购权", "required": true, "aliases": ["二次认购"]},
+        {"key": "exceptions", "label": "例外情形", "required": false, "aliases": ["员工持股计划", "不适用"]}
+      ],
+      "lawyer_note_prompts": ["如无二次认购权，应提示是否要求补充。"]
+    },
+    "sha.transfer_restriction": {
+      "drafting_guidance": "分受限主体和投资方转股限制两部分写，避免与优先购买/共售机制混淆。",
+      "fields": [
+        {"key": "restricted_parties", "label": "受限转股主体", "required": true, "aliases": ["创始人", "现有股东", "除公司外"]},
+        {"key": "restriction_period", "label": "限制期间", "required": true, "aliases": ["QIPO前", "合格上市前"]},
+        {"key": "consent_requirement", "label": "同意要求", "required": true, "aliases": ["未经同意", "全体投资人"]},
+        {"key": "investor_transfer", "label": "投资方转股限制", "required": true, "aliases": ["投资方转让", "不受限制"]},
+        {"key": "permitted_transfer", "label": "允许转让/特殊例外", "required": false, "aliases": ["允许转让", "触发事件"]}
+      ],
+      "lawyer_note_prompts": ["如投资方转让不受限制或受限主体较窄，应提示客户知悉。"]
+    },
+    "sha.rofr_tag": {
+      "drafting_guidance": "分别写优先购买权和共同出售权机制；只保留核心期限、比例和二次购买权。",
+      "fields": [
+        {"key": "rofr_holder", "label": "优先购买权人", "required": true, "aliases": ["优先购买权人", "投资人"]},
+        {"key": "secondary_purchase", "label": "二次购买权", "required": true, "aliases": ["继续优先购买", "二次购买"]},
+        {"key": "tag_holder", "label": "共同出售权人", "required": true, "aliases": ["共同出售", "共售"]},
+        {"key": "tag_ratio", "label": "共同出售比例", "required": true, "aliases": ["比例", "注册资本之和"]},
+        {"key": "control_change_tag", "label": "控制权变更特殊共售", "required": false, "aliases": ["控制权变更", "全部股权"]}
+      ],
+      "lawyer_note_prompts": ["如未见控制权变更时全额共售安排，应提示是否补充。"]
+    },
+    "sha.information_audit": {
+      "drafting_guidance": "按信息权、检查权、独立审计权三层写，保留报送期限和费用承担。",
+      "fields": [
+        {"key": "annual_report", "label": "经审计年报", "required": true, "aliases": ["年报", "90日"]},
+        {"key": "quarterly_report", "label": "未经审计季报", "required": true, "aliases": ["季报", "30日"]},
+        {"key": "budget", "label": "预算/经营计划", "required": true, "aliases": ["预算", "经营计划"]},
+        {"key": "inspection", "label": "检查权", "required": true, "aliases": ["检查", "会计账簿"]},
+        {"key": "audit", "label": "独立审计权", "required": true, "aliases": ["审计", "中介机构"]},
+        {"key": "monthly_report", "label": "月报", "required": false, "aliases": ["月报"]}
+      ],
+      "lawyer_note_prompts": ["如无月报或信息权需符合内部合规要求，应提示客户确认。"]
+    },
+    "sha.liquidation_preference": {
+      "drafting_guidance": "按清算事件、顺位、优先清算额、剩余分配、特殊约定写；不要遗漏特殊补偿安排。",
+      "fields": [
+        {"key": "liquidation_events", "label": "清算事件", "required": true, "aliases": ["清算事件", "控制权变更", "资产出售"]},
+        {"key": "priority_order", "label": "清算顺位", "required": true, "aliases": ["后轮", "前轮", "优先"]},
+        {"key": "preference_amount", "label": "优先清算额", "required": true, "aliases": ["投资款", "8%", "年单利", "红利"]},
+        {"key": "residual_distribution", "label": "剩余财产分配", "required": true, "aliases": ["剩余", "出资比例"]},
+        {"key": "special_make_whole", "label": "特殊补偿/新项目权益", "required": false, "aliases": ["新项目", "差额", "零对价"]}
+      ],
+      "lawyer_note_prompts": ["如清算顺位定义不清或优先清算额偏投资方有利，应提示客户确认。"]
+    },
+    "sha.anti_dilution": {
+      "drafting_guidance": "先判断反稀释方式，再写调整方式和例外；不要展开完整公式。",
+      "fields": [
+        {"key": "method", "label": "反稀释方式", "required": true, "aliases": ["广义加权平均", "加权平均", "全棘轮"]},
+        {"key": "trigger", "label": "触发情形", "required": true, "aliases": ["低价增资", "低于认购价格"]},
+        {"key": "adjustment_method", "label": "调整方式", "required": true, "aliases": ["发行股权", "转让股权", "名义价格"]},
+        {"key": "exceptions", "label": "例外情形", "required": false, "aliases": ["不适用", "员工持股"]}
+      ],
+      "lawyer_note_prompts": ["如为广义加权平均而非全棘轮，应提示是否可接受。"]
+    },
+    "sha.dividend": {
+      "drafting_guidance": "写清分红批准机制、分配比例和投资方优先取得安排。",
+      "fields": [
+        {"key": "approval", "label": "分红批准机制", "required": true, "aliases": ["股东会", "批准"]},
+        {"key": "distribution_ratio", "label": "分配比例", "required": true, "aliases": ["实缴出资比例", "按比例"]},
+        {"key": "investor_priority", "label": "投资方优先取得分红", "required": false, "aliases": ["全额取得", "其他股东不得"]},
+        {"key": "fixed_preferred_dividend", "label": "固定优先分红", "required": false, "aliases": ["固定回报", "优先分红"]}
+      ],
+      "lawyer_note_prompts": ["如未见固定回报或优先分红权，应提示客户考虑是否需要。"]
+    },
+    "sha.esop": {
+      "drafting_guidance": "写清触发估值/里程碑、增发比例、增发价格和审批要求。",
+      "fields": [
+        {"key": "trigger_valuation", "label": "后续融资估值/里程碑", "required": true, "aliases": ["投前估值", "后续融资", "里程碑"]},
+        {"key": "esop_percentage", "label": "ESOP增发比例", "required": true, "aliases": ["5%", "10%", "股权"]},
+        {"key": "issue_price", "label": "增发价格", "required": true, "aliases": ["审计净资产", "每单位注册资本价格"]},
+        {"key": "approval_requirement", "label": "审批要求", "required": false, "aliases": ["批准", "员工股权激励计划"]}
+      ],
+      "lawyer_note_prompts": ["如后续ESOP增发额度较高或条件特殊，应提示客户确认。"]
+    },
+    "sha.redemption": {
+      "drafting_guidance": "必须写清触发事项、义务人、价格公式、支付期限、逾期责任和顺位。",
+      "fields": [
+        {"key": "trigger", "label": "回购触发事项", "required": true, "aliases": ["利益输送", "代持", "资金往来", "触发事件"]},
+        {"key": "obligor", "label": "回购义务人", "required": true, "aliases": ["回购义务人"]},
+        {"key": "price_formula", "label": "回购价格", "required": true, "aliases": ["投资款", "8%", "净资产", "孰高"]},
+        {"key": "exercise_and_payment", "label": "行使及付款期限", "required": true, "aliases": ["回购通知", "6个月", "60日"]},
+        {"key": "default_penalty", "label": "逾期责任", "required": false, "aliases": ["日万分之三", "违约金"]},
+        {"key": "priority", "label": "回购顺位", "required": false, "aliases": ["顺位", "相对比例"]}
+      ],
+      "lawyer_note_prompts": ["如特殊回购设立背景不明，应提示需与公司沟通确认。"]
+    },
+    "sha.other": {
+      "drafting_guidance": "逐项判断常规回购权、领售权、最惠国待遇、创始人全职付出、不竞争义务是否明确约定；可直接写成“股东协议无……”句式。",
+      "fields": [
+        {"key": "ordinary_redemption", "label": "常规回购权", "required": true, "aliases": ["常规回购", "IPO联动", "重大违约"]},
+        {"key": "drag_along", "label": "领售权", "required": true, "aliases": ["领售", "拖售"]},
+        {"key": "mfn", "label": "最惠国待遇", "required": true, "aliases": ["最惠国", "更优惠"]},
+        {"key": "full_time", "label": "创始人全职付出", "required": true, "aliases": ["全职", "持续任职"]},
+        {"key": "non_compete", "label": "不竞争义务", "required": true, "aliases": ["不竞争", "竞业"]}
+      ],
+      "lawyer_note_prompts": ["常规回购权必须区别于特殊廉洁回购；创始人全职付出与不竞争义务应分别判断。"]
+    }
+  }
+}
