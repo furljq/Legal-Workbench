@@ -110,11 +110,22 @@ def _call_ai_structure(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
         {"role": "user", "content": user_content},
     ]
 
-    response = chat_json(messages, temperature=0.0)
-    items = response.get("items", [])
-    if not isinstance(items, list):
-        raise AIClientError("AI structure response missing items array")
-    return items
+    for attempt in range(3):
+        try:
+            response = chat_json(messages, temperature=0.0)
+            items = response.get("items", [])
+            if not isinstance(items, list):
+                if attempt < 2:
+                    continue
+                raise AIClientError("AI structure response missing items array")
+            return items
+        except AIClientError:
+            if attempt < 2:
+                import time
+                time.sleep(2)
+                continue
+            raise
+    return []
 
 
 def _validate_ai_items(
