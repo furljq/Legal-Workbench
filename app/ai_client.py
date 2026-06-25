@@ -158,27 +158,34 @@ def chat_json(
 
 
 def test_connection(timeout_seconds: int = 60) -> dict[str, Any]:
-    try:
-        result = chat_json(
-            [
-                {"role": "system", "content": "你只输出JSON。"},
-                {"role": "user", "content": '请返回 {"ok": true, "task": "legal_workbench_ai_test"}'},
-            ],
-            temperature=0,
-            timeout_seconds=timeout_seconds,
-        )
-    except AIClientError as exc:
-        return {
-            "ok": False,
-            "message": "模型服务测试失败。",
-            "error": str(exc),
-            "model": ai_model(),
-            "api_type": safe_api_type(),
-        }
+    import time
+    last_error = ""
+    for attempt in range(3):
+        try:
+            result = chat_json(
+                [
+                    {"role": "system", "content": "你只输出JSON。"},
+                    {"role": "user", "content": '请返回 {"ok": true, "task": "legal_workbench_ai_test"}'},
+                ],
+                temperature=0,
+                timeout_seconds=timeout_seconds,
+            )
+            if result.get("ok"):
+                return {
+                    "ok": True,
+                    "message": "模型服务可用。",
+                    "model": ai_model(),
+                    "api_type": safe_api_type(),
+                }
+        except AIClientError as exc:
+            last_error = str(exc)
+        if attempt < 2:
+            time.sleep(2)
 
     return {
-        "ok": bool(result.get("ok")),
-        "message": "模型服务可用。" if result.get("ok") else "模型服务返回内容未通过校验。",
+        "ok": False,
+        "message": "模型服务测试失败。",
+        "error": last_error or "模型服务返回内容未通过校验。",
         "model": ai_model(),
         "api_type": safe_api_type(),
     }
