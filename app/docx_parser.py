@@ -17,28 +17,169 @@ def normalize_space(value: str) -> str:
 
 
 def classify_heading(text: str, style_name: str) -> int | None:
-    normalized = normalize_space(text)
+    """Only detect headings from explicit Word Heading styles."""
     style = (style_name or "").lower()
-    if not normalized:
+    if not normalize_space(text):
         return None
-
     style_match = re.search(r"heading\s*(\d+)|标题\s*(\d+)", style)
     if style_match:
         value = style_match.group(1) or style_match.group(2)
         return int(value) if value else 1
-
-    patterns = [
-        (1, r"^第[一二三四五六七八九十百零〇]+[章节篇部分]\b"),
-        (1, r"^[一二三四五六七八九十]+、"),
-        (2, r"^第[一二三四五六七八九十百零〇]+条\b"),
-        (2, r"^\([一二三四五六七八九十]+\)"),
-        (2, r"^\d+[.．、]\s*\S+"),
-        (3, r"^\d+[.．]\d+"),
-    ]
-    for level, pattern in patterns:
-        if re.search(pattern, normalized):
-            return level
     return None
+
+
+CHINESE_COUNTING = "零一二三四五六七八九十"
+CHINESE_COUNTING_THOUSAND_MAP = {
+    1: "一", 2: "二", 3: "三", 4: "四", 5: "五",
+    6: "六", 7: "七", 8: "八", 9: "九", 10: "十",
+    11: "十一", 12: "十二", 13: "十三", 14: "十四", 15: "十五",
+    16: "十六", 17: "十七", 18: "十八", 19: "十九", 20: "二十",
+    21: "二十一", 22: "二十二", 23: "二十三", 24: "二十四", 25: "二十五",
+}
+
+
+def _format_number(value: int, fmt: str) -> str:
+    """Format a number according to Word numFmt."""
+    if fmt == "decimal":
+        return str(value)
+    if fmt == "lowerLetter":
+        if 1 <= value <= 26:
+            return chr(ord('a') + value - 1)
+        return str(value)
+    if fmt == "upperLetter":
+        if 1 <= value <= 26:
+            return chr(ord('A') + value - 1)
+        return str(value)
+    if fmt == "lowerRoman":
+        romans = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x",
+                  "xi", "xii", "xiii", "xiv", "xv", "xvi", "xvii", "xviii", "xix", "xx"]
+        if 1 <= value <= len(romans):
+            return romans[value - 1]
+        return str(value)
+    if fmt == "upperRoman":
+        romans = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"]
+        if 1 <= value <= len(romans):
+            return romans[value - 1]
+        return str(value)
+    if fmt in ("chineseCounting", "chineseCountingThousand"):
+        return CHINESE_COUNTING_THOUSAND_MAP.get(value, str(value))
+    if fmt == "decimalEnclosedCircleChinese":
+        circled = "①②③④⑤⑥⑦⑧⑨⑩"
+        if 1 <= value <= len(circled):
+            return circled[value - 1]
+        return str(value)
+    return str(value)
+
+
+class NumberingResolver:
+    """Resolves Word automatic numbering to text prefixes."""
+
+    def __init__(self, document: Any) -> None:
+        self._abstract_defs: dict[str, list[dict[str, str]]] = {}
+        self._num_to_abstract: dict[str, str] = {}
+        self._counters: dict[str, list[int]] = {}
+        self._parse_numbering(document)
+
+    def _parse_numbering(self, document: Any) -> None:
+        try:
+            from docx.oxml.ns import qn
+        except ImportError:
+            return
+
+        numbering_part = document.part.numbering_part
+        if numbering_part is None:
+            return
+        numbering_xml = numbering_part._element
+
+        for abstract_num in numbering_xml.findall(qn('w:abstractNum')):
+            abstract_id = abstract_num.get(qn('w:abstractNumId'), '')
+            levels: list[dict[str, str]] = []
+            for lvl in abstract_num.findall(qn('w:lvl')):
+                ilvl = lvl.get(qn('w:ilvl'), '0')
+                num_fmt_el = lvl.find(qn('w:numFmt'))
+                lvl_text_el = lvl.find(qn('w:lvlText'))
+                start_el = lvl.find(qn('w:start'))
+                levels.append({
+                    'ilvl': ilvl,
+                    'numFmt': num_fmt_el.get(qn('w:val'), 'decimal') if num_fmt_el is not None else 'decimal',
+                    'lvlText': lvl_text_el.get(qn('w:val'), '%1.') if lvl_text_el is not None else '%1.',
+                    'start': start_el.get(qn('w:val'), '1') if start_el is not None else '1',
+                })
+            levels.sort(key=lambda x: int(x['ilvl']))
+            self._abstract_defs[abstract_id] = levels
+
+        for num in numbering_xml.findall(qn('w:num')):
+            num_id = num.get(qn('w:numId'), '')
+            abstract_ref = num.find(qn('w:abstractNumId'))
+            if abstract_ref is not None:
+                self._num_to_abstract[num_id] = abstract_ref.get(qn('w:val'), '')
+
+    def resolve(self, paragraph: Any) -> tuple[str, int | None]:
+        """Return (numbering_prefix, ilvl) for a paragraph, or ('', None) if none."""
+        try:
+            from docx.oxml.ns import qn
+        except ImportError:
+            return '', None
+
+        p_pr = paragraph._element.find(qn('w:pPr'))
+        if p_pr is None:
+            return '', None
+        num_pr = p_pr.find(qn('w:numPr'))
+        if num_pr is None:
+            return '', None
+
+        num_id_el = num_pr.find(qn('w:numId'))
+        ilvl_el = num_pr.find(qn('w:ilvl'))
+        if num_id_el is None:
+            return '', None
+
+        num_id = num_id_el.get(qn('w:val'), '0')
+        ilvl = int(ilvl_el.get(qn('w:val'), '0')) if ilvl_el is not None else 0
+
+        if num_id == '0':
+            return '', None
+
+        abstract_id = self._num_to_abstract.get(num_id, '')
+        levels = self._abstract_defs.get(abstract_id, [])
+        if not levels or ilvl >= len(levels):
+            return '', None
+
+        counter_key = f"{num_id}"
+        if counter_key not in self._counters:
+            self._counters[counter_key] = [
+                int(lvl.get('start', '1')) - 1 for lvl in levels
+            ]
+
+        counters = self._counters[counter_key]
+        while len(counters) <= ilvl:
+            counters.append(0)
+
+        counters[ilvl] += 1
+        for i in range(ilvl + 1, len(counters)):
+            start_val = int(levels[i]['start']) if i < len(levels) else 1
+            counters[i] = start_val - 1
+
+        level_def = levels[ilvl]
+        lvl_text = level_def['lvlText']
+        num_fmt = level_def['numFmt']
+
+        # For multi-level patterns like %1.%2, use decimal for sub-levels
+        # since Chinese legal docs typically render these as "1.1" not "一.一"
+        is_multilevel = lvl_text.count('%') > 1
+
+        result = lvl_text
+        for i in range(min(ilvl + 1, len(counters))):
+            placeholder = f"%{i + 1}"
+            if placeholder in result:
+                fmt = levels[i]['numFmt'] if i < len(levels) else 'decimal'
+                if is_multilevel and fmt in ('chineseCounting', 'chineseCountingThousand'):
+                    fmt = 'decimal'
+                result = result.replace(placeholder, _format_number(counters[i], fmt))
+
+        if result and not result.endswith((' ', '\t')):
+            result = result + ' '
+
+        return result.strip(), ilvl
 
 
 def guess_document_type(file_name: str, paragraphs: list[dict[str, Any]]) -> dict[str, str]:
@@ -77,13 +218,17 @@ def parse_docx_file(path: Path, original_name: str | None = None) -> dict[str, A
     body_blocks: list[dict[str, Any]] = []
     paragraph_index = 0
     table_index = 0
+    numbering = NumberingResolver(document)
 
     def parse_paragraph(paragraph, block_index: int) -> dict[str, Any] | None:
         nonlocal paragraph_index
         paragraph_index += 1
-        text = normalize_space(paragraph.text)
-        if not text:
+        raw_text = normalize_space(paragraph.text)
+        if not raw_text:
             return None
+
+        num_prefix, ilvl = numbering.resolve(paragraph)
+        text = f"{num_prefix} {raw_text}".strip() if num_prefix else raw_text
 
         style_name = getattr(getattr(paragraph, "style", None), "name", "") or ""
         heading_level = classify_heading(text, style_name)
@@ -100,6 +245,9 @@ def parse_docx_file(path: Path, original_name: str | None = None) -> dict[str, A
             "text": text,
             "style": style_name,
         }
+        if num_prefix:
+            block_item["numbering_prefix"] = num_prefix
+            block_item["numbering_ilvl"] = ilvl
         if heading_level is not None:
             item["heading_level"] = heading_level
             block_item["heading_level"] = heading_level

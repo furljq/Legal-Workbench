@@ -28,6 +28,7 @@ from kts_docx_exporter import KtsDocxExportError, build_kts_docx
 from kts_extractor import build_kts_candidates, build_kts_extraction
 from source_index import build_source_index
 from source_refs import clean_clause_refs
+from structure_analyzer import structurize_document, save_debug_markdown
 from work_state import (
     load_current_kts_candidates,
     load_current_kts_extraction,
@@ -37,6 +38,7 @@ from work_state import (
     save_current_kts_extraction,
     save_current_parse,
     save_current_source_index,
+    save_current_structure_analysis,
     timestamp,
 )
 
@@ -389,6 +391,19 @@ def public_source_block_ids(evidence: dict[str, object]) -> set[str]:
     return {str(value) for value in values if str(value)}
 
 
+def truncate_at_sentence(text: str, max_chars: int) -> str:
+    """Truncate text at the nearest sentence boundary within max_chars."""
+    if not text or len(text) <= max_chars:
+        return text
+    boundaries = "。；;！？!?"
+    best = max_chars
+    for i in range(min(max_chars, len(text)) - 1, max(0, max_chars // 2), -1):
+        if text[i] in boundaries:
+            best = i + 1
+            break
+    return text[:best]
+
+
 def public_source_evidence(source_evidence: object) -> list[dict[str, object]]:
     if not isinstance(source_evidence, list):
         return []
@@ -416,8 +431,9 @@ def public_source_evidence(source_evidence: object) -> list[dict[str, object]]:
                 "file_name": evidence.get("file_name", ""),
                 "document_role": evidence.get("document_role", {}),
                 "source_locator": evidence.get("source_locator", ""),
-                "quote": quote,
-                "context": context,
+                "quote": truncate_at_sentence(quote, 200),
+                "context": truncate_at_sentence(context, 300),
+                "key_excerpt": str(evidence.get("key_excerpt") or ""),
                 "tables": evidence.get("tables", []),
                 "ai_relevance": evidence.get("ai_relevance", ""),
             }
@@ -852,6 +868,32 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 )
 
             error_count = sum(1 for item in documents if item.get("status") == "error")
+            update_run_progress(
+                run_id,
+                stage="structure_analysis",
+                stage_label="分析文档结构",
+                stage_index=1,
+                progress_percent=20,
+                message="正在分析文档结构。",
+            )
+            structure_records = []
+            for doc_idx, document in enumerate(
+                (d for d in documents if d.get("status") == "parsed"), start=1
+            ):
+                structure = structurize_document(document)
+                structure_records.append(structure)
+                save_debug_markdown(structure, doc_idx)
+            save_current_structure_analysis({
+                "phase": "structure_analysis",
+                "documents": [
+                    {
+                        "file_name": s.get("file_name", ""),
+                        "nodes": s.get("nodes", []),
+                        "stats": s.get("stats", {}),
+                    }
+                    for s in structure_records
+                ],
+            })
             debug_record = save_current_parse(
                 {
                     "capability_id": capability_id,
@@ -888,59 +930,36 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                 progress_percent=25,
                 message="正在建立原文证据索引。",
             )
-            source_index_record = save_current_source_index(build_source_index(debug_record))
+            source_index_record = save_current_source_index(build_source_index(structure_records))
             update_run_progress(
                 run_id,
-                stage="model_review",
-                stage_label="模型语义复核",
+                stage="kts_extraction",
+                stage_label="生成 KTS 摘要",
                 stage_index=3,
-                progress_percent=30,
-                message="正在逐项复核 KTS 候选证据。",
+                progress_percent=27,
+                message="正在检索候选证据并生成摘要。",
             )
 
             def update_kts_progress(progress: dict[str, object]) -> None:
                 completed = int(progress.get("completed_items", 0) or 0)
                 total = int(progress.get("total_items", 0) or 0)
-                percent = 30 + (60 * completed / max(1, total))
-                update_run_progress(
-                    run_id,
-                    stage="model_review",
-                    stage_label="模型语义复核",
-                    stage_index=3,
-                    progress_percent=percent,
-                    completed_items=completed,
-                    total_items=total,
-                    worker_count=progress.get("worker_count", 1),
-                    message=f"已完成 {completed}/{total} 个 KTS 事项。",
-                )
-
-            candidates_record = save_current_kts_candidates(
-                build_kts_candidates(source_index_record, progress_callback=update_kts_progress)
-            )
-            update_run_progress(
-                run_id,
-                stage="extraction",
-                stage_label="生成摘要",
-                stage_index=4,
-                progress_percent=90,
-                message="正在生成 KTS 摘要。",
-            )
-
-            def update_extraction_progress(progress: dict[str, object]) -> None:
-                completed = int(progress.get("completed_items", 0) or 0)
-                total = int(progress.get("total_items", 0) or 0)
-                stage = str(progress.get("stage") or "extraction")
-                stage_label = str(progress.get("stage_label") or "生成摘要")
+                stage = str(progress.get("stage") or "kts_extraction")
+                stage_label = str(progress.get("stage_label") or "生成 KTS 摘要")
                 if stage == "style_polish":
-                    stage_index = 5
-                    percent = 97 + (2 * completed / max(1, total))
+                    stage_index = 4
+                    percent = 95 + (4 * completed / max(1, total))
                     worker_count = None
                     message = f"正在批量润色 {total} 个 KTS 事项。"
+                elif stage == "rule_match":
+                    stage_index = 3
+                    percent = 27 + (3 * completed / max(1, total))
+                    worker_count = 1
+                    message = f"已检索 {completed}/{total} 个事项的候选证据。"
                 else:
-                    stage_index = 4
-                    percent = 90 + (7 * completed / max(1, total))
+                    stage_index = 3
+                    percent = 30 + (65 * completed / max(1, total))
                     worker_count = progress.get("worker_count", 1)
-                    message = f"已处理 {completed}/{total} 个 KTS 事项。"
+                    message = f"已完成 {completed}/{total} 个 KTS 事项。"
                 update_run_progress(
                     run_id,
                     stage=stage,
@@ -953,11 +972,15 @@ class WorkbenchHandler(BaseHTTPRequestHandler):
                     message=message,
                 )
 
+            candidates_record = save_current_kts_candidates(
+                build_kts_candidates(source_index_record, progress_callback=update_kts_progress)
+            )
+
             extraction_record = save_current_kts_extraction(
                 build_kts_extraction(
                     candidates_record,
                     source_index_record,
-                    progress_callback=update_extraction_progress,
+                    progress_callback=update_kts_progress,
                 )
             )
             update_run_progress(

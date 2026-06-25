@@ -1,4 +1,4 @@
-"""Build traceable source blocks and retrieval shards from parsed documents."""
+"""Build traceable source blocks and retrieval shards from structured documents."""
 
 from __future__ import annotations
 
@@ -11,11 +11,6 @@ MAX_SHARD_CHARS = 800
 MIN_SHARD_CHARS = 80
 HARD_SPLIT_OVERLAP = 160
 
-CLAUSE_MARKER_RE = re.compile(
-    r"(?=(?:第[一二三四五六七八九十百千万零〇两\d]+条|"
-    r"\d+(?:\.\d+){0,5}[.、．]\s*|"
-    r"[（(][一二三四五六七八九十百千万零〇两\d]+[）)]))"
-)
 STRONG_BOUNDARY_RE = re.compile(r"(?<=[。；;！？!?])")
 
 
@@ -67,13 +62,7 @@ def split_text_for_search(text: str) -> list[str]:
     if len(normalized) <= MAX_SHARD_CHARS:
         return [normalized]
 
-    marked = CLAUSE_MARKER_RE.sub("\n", normalized)
-    pieces: list[str] = []
-    for line in marked.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        pieces.extend(part.strip() for part in STRONG_BOUNDARY_RE.split(line) if part.strip())
+    pieces = [part.strip() for part in STRONG_BOUNDARY_RE.split(normalized) if part.strip()]
 
     segments: list[str] = []
     current = ""
@@ -105,109 +94,85 @@ def split_text_for_search(text: str) -> list[str]:
     return final_segments
 
 
-def paragraph_block(
-    document: dict[str, Any],
-    doc_id: str,
-    block_order: int,
-    paragraph: dict[str, Any],
-) -> dict[str, Any] | None:
-    text = normalize_for_match(str(paragraph.get("text") or ""))
-    if not text:
-        return None
-    source = {"paragraph_index": paragraph.get("paragraph_index", paragraph.get("index"))}
-    if paragraph.get("heading_level") is not None:
-        source["heading_level"] = paragraph.get("heading_level")
-    return {
-        "block_id": f"{doc_id}-B{block_order:04d}",
-        "doc_id": doc_id,
-        "file_name": document.get("file_name", ""),
-        "document_role": document.get("document_role", {}),
-        "document_type": document.get("document_type", {}),
-        "kind": "paragraph",
-        "order": block_order,
-        "text": text,
-        "normalized_text": text,
-        "source": source,
-        "source_locator": f"原文检索：{short_quote(text)}",
-    }
-
-
-def table_row_block(
-    document: dict[str, Any],
-    doc_id: str,
-    block_order: int,
-    table_index: int,
-    row: dict[str, Any],
-) -> dict[str, Any] | None:
-    cells = compact_cells(list(row.get("cells", [])))
-    if not cells:
-        return None
-    text = " | ".join(cells)
-    return {
-        "block_id": f"{doc_id}-B{block_order:04d}",
-        "doc_id": doc_id,
-        "file_name": document.get("file_name", ""),
-        "document_role": document.get("document_role", {}),
-        "document_type": document.get("document_type", {}),
-        "kind": "table_row",
-        "order": block_order,
-        "text": text,
-        "normalized_text": text,
-        "source": {
-            "table_index": table_index,
-            "row_index": row.get("row_index"),
-            "cells": cells,
-        },
-        "source_locator": f"表格第{table_index}张第{row.get('row_index', '')}行：{short_quote(text)}",
-    }
-
-
-def build_document_raw_blocks(document: dict[str, Any], doc_index: int) -> tuple[list[dict[str, Any]], list[str]]:
+def build_document_raw_blocks(structure_record: dict[str, Any], doc_index: int) -> tuple[list[dict[str, Any]], list[str]]:
     doc_id = f"D{doc_index:02d}"
     raw_blocks: list[dict[str, Any]] = []
     warnings: list[str] = []
     block_order = 1
 
-    body_blocks = document.get("body_blocks")
-    if isinstance(body_blocks, list) and body_blocks:
-        for block in body_blocks:
-            if not isinstance(block, dict):
+    body_blocks = structure_record.get("body_blocks", [])
+    block_mapping = {m["block_index"]: m for m in structure_record.get("block_mapping", []) if isinstance(m, dict)}
+    nodes_by_id = {n["id"]: n for n in structure_record.get("nodes", []) if isinstance(n, dict)}
+
+    file_name = structure_record.get("file_name", "")
+    document_role = structure_record.get("document_role", {})
+    document_type = structure_record.get("document_type", {})
+
+    for block in body_blocks:
+        if not isinstance(block, dict):
+            continue
+        bi = block.get("block_index")
+        kind = block.get("kind", "")
+
+        mapping_entry = block_mapping.get(bi, {})
+        parent_node_id = mapping_entry.get("parent_node_id") or mapping_entry.get("node_id")
+        parent_node = nodes_by_id.get(parent_node_id, {}) if parent_node_id else {}
+        clause_context = parent_node.get("title", "") if parent_node else ""
+
+        if kind == "paragraph":
+            text = normalize_for_match(str(block.get("text") or ""))
+            if not text:
                 continue
-            if block.get("kind") == "paragraph":
-                item = paragraph_block(document, doc_id, block_order, block)
-                if item is not None:
-                    raw_blocks.append(item)
-                    block_order += 1
-                continue
-            if block.get("kind") == "table":
-                table_index = int(block.get("table_index") or 0)
-                for row in block.get("rows", []):
-                    if not isinstance(row, dict):
-                        continue
-                    item = table_row_block(document, doc_id, block_order, table_index, row)
-                    if item is not None:
-                        raw_blocks.append(item)
-                        block_order += 1
-    else:
-        warnings.append("当前解析结果未保留段落与表格的正文顺序，表格上下文只能近似处理。")
-        for paragraph in document.get("paragraphs", []):
-            if not isinstance(paragraph, dict):
-                continue
-            item = paragraph_block(document, doc_id, block_order, paragraph)
-            if item is not None:
-                raw_blocks.append(item)
-                block_order += 1
-        for table in document.get("tables", []):
-            if not isinstance(table, dict):
-                continue
-            table_index = int(table.get("index") or 0)
-            for row in table.get("rows", []):
+            source = {"paragraph_index": block.get("paragraph_index", block.get("index"))}
+            heading_level = mapping_entry.get("level")
+            if heading_level:
+                source["heading_level"] = heading_level
+            raw_blocks.append({
+                "block_id": f"{doc_id}-B{block_order:04d}",
+                "doc_id": doc_id,
+                "file_name": file_name,
+                "document_role": document_role,
+                "document_type": document_type,
+                "kind": "paragraph",
+                "order": block_order,
+                "text": text,
+                "normalized_text": text,
+                "source": source,
+                "source_locator": f"{clause_context} | {short_quote(text)}" if clause_context else f"{short_quote(text)}",
+                "clause_context": clause_context,
+                "node_id": parent_node_id,
+            })
+            block_order += 1
+
+        elif kind == "table":
+            table_index = int(block.get("table_index") or 0)
+            for row in block.get("rows", []):
                 if not isinstance(row, dict):
                     continue
-                item = table_row_block(document, doc_id, block_order, table_index, row)
-                if item is not None:
-                    raw_blocks.append(item)
-                    block_order += 1
+                cells = compact_cells(list(row.get("cells", [])))
+                if not cells:
+                    continue
+                text = " | ".join(cells)
+                raw_blocks.append({
+                    "block_id": f"{doc_id}-B{block_order:04d}",
+                    "doc_id": doc_id,
+                    "file_name": file_name,
+                    "document_role": document_role,
+                    "document_type": document_type,
+                    "kind": "table_row",
+                    "order": block_order,
+                    "text": text,
+                    "normalized_text": text,
+                    "source": {
+                        "table_index": table_index,
+                        "row_index": row.get("row_index"),
+                        "cells": cells,
+                    },
+                    "source_locator": f"{clause_context} | 表格第{table_index}张第{row.get('row_index', '')}行" if clause_context else f"表格第{table_index}张第{row.get('row_index', '')}行",
+                    "clause_context": clause_context,
+                    "node_id": parent_node_id,
+                })
+                block_order += 1
 
     long_block_count = sum(1 for block in raw_blocks if len(str(block.get("text") or "")) > MAX_SHARD_CHARS)
     if long_block_count:
@@ -277,25 +242,19 @@ def build_search_shards(raw_blocks: list[dict[str, Any]]) -> list[dict[str, Any]
     return shards
 
 
-def build_source_index(parse_record: dict[str, Any]) -> dict[str, Any]:
-    parsed_documents = [
-        document
-        for document in parse_record.get("result", {}).get("documents", [])
-        if isinstance(document, dict) and document.get("status") == "parsed"
-    ]
-
+def build_source_index(structure_records: list[dict[str, Any]]) -> dict[str, Any]:
     documents: list[dict[str, Any]] = []
-    for doc_index, document in enumerate(parsed_documents, start=1):
+    for doc_index, structure_record in enumerate(structure_records, start=1):
         doc_id = f"D{doc_index:02d}"
-        raw_blocks, warnings = build_document_raw_blocks(document, doc_index)
+        raw_blocks, warnings = build_document_raw_blocks(structure_record, doc_index)
         search_shards = build_search_shards(raw_blocks)
         canonical_stream = build_canonical_stream(raw_blocks)
         documents.append(
             {
                 "doc_id": doc_id,
-                "file_name": document.get("file_name", ""),
-                "document_role": document.get("document_role", {}),
-                "document_type": document.get("document_type", {}),
+                "file_name": structure_record.get("file_name", ""),
+                "document_role": structure_record.get("document_role", {}),
+                "document_type": structure_record.get("document_type", {}),
                 "raw_block_count": len(raw_blocks),
                 "search_shard_count": len(search_shards),
                 "canonical_char_count": canonical_stream["char_count"],
@@ -307,8 +266,7 @@ def build_source_index(parse_record: dict[str, Any]) -> dict[str, Any]:
         )
 
     return {
-        "phase": "v0.4-source-index",
-        "source_parse_updated_at": parse_record.get("updated_at", ""),
+        "phase": "v0.5-source-index",
         "summary": {
             "document_count": len(documents),
             "raw_block_count": sum(int(document["raw_block_count"]) for document in documents),

@@ -743,47 +743,33 @@ def build_kts_candidates(
         for item in taxonomy.get("items", [])
         if isinstance(item, dict)
     ]
-    worker_count = min(ai_max_workers(), len(taxonomy_items)) if ai_configured() and taxonomy_items else 1
     if progress_callback:
         progress_callback(
             {
-                "stage": "model_review",
-                "stage_label": "模型语义复核",
+                "stage": "rule_match",
+                "stage_label": "规则检索候选",
                 "completed_items": 0,
                 "total_items": len(taxonomy_items),
-                "worker_count": worker_count,
+                "worker_count": 1,
             }
         )
 
-    if ai_configured():
-        items = build_candidate_items_adaptive(
-            taxonomy_items,
-            source_index,
-            worker_count,
-            progress_callback,
-        )
-    else:
-        items = []
-        for item in taxonomy_items:
-            items.append(build_kts_candidate_item(item, source_index))
-            if progress_callback:
-                progress_callback(
-                    {
-                        "stage": "model_review",
-                        "stage_label": "模型语义复核",
-                        "completed_items": len(items),
-                        "total_items": len(taxonomy_items),
-                        "worker_count": worker_count,
-                    }
-                )
+    items = []
+    for item in taxonomy_items:
+        items.append(build_kts_candidate_item(item, source_index))
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "rule_match",
+                    "stage_label": "规则检索候选",
+                    "completed_items": len(items),
+                    "total_items": len(taxonomy_items),
+                    "worker_count": 1,
+                }
+            )
 
-    model_statuses = [
-        str(item.get("model_review", {}).get("status", ""))
-        for item in items
-        if isinstance(item.get("model_review"), dict)
-    ]
     return {
-        "phase": "v0.7-kts-candidates",
+        "phase": "v0.8-kts-candidates",
         "taxonomy_id": taxonomy.get("taxonomy_id", ""),
         "taxonomy_version": taxonomy.get("version", ""),
         "source_index_updated_at": source_index.get("updated_at", ""),
@@ -793,20 +779,6 @@ def build_kts_candidates(
             "no_candidate_item_count": sum(1 for item in items if not item["candidate_count"]),
             "candidate_count": sum(int(item["candidate_count"]) for item in items),
             "rule_candidate_count": sum(int(item["rule_candidate_count"]) for item in items),
-            "model_review": {
-                "worker_count": worker_count,
-                "reviewed_item_count": model_statuses.count("reviewed"),
-                "scanned_item_count": sum(
-                    1 for status in model_statuses if status.startswith("semantic_scan")
-                ),
-                "unavailable_item_count": model_statuses.count("model_unavailable"),
-                "error_item_count": model_statuses.count("model_error"),
-                "added_candidate_count": sum(
-                    int(item.get("model_review", {}).get("candidate_added_count", 0))
-                    for item in items
-                    if isinstance(item.get("model_review"), dict)
-                ),
-            },
         },
         "items": items,
     }
@@ -814,7 +786,6 @@ def build_kts_candidates(
 
 def build_kts_candidate_item(item: dict[str, Any], source_index: dict[str, Any]) -> dict[str, Any]:
     rule_candidates = build_item_candidates(item, source_index)
-    candidates, model_review = apply_ai_semantic_recall(item, rule_candidates, source_index)
     return {
         "taxonomy_id": item.get("id", ""),
         "group": item.get("group", ""),
@@ -824,12 +795,12 @@ def build_kts_candidate_item(item: dict[str, Any], source_index: dict[str, Any])
         "document_types": item.get("document_types", []),
         "extraction_mode": item.get("extraction_mode", "evidence"),
         "absence_checks": item.get("absence_checks", []),
-        "retrieval_status": "candidate_found" if candidates else "no_candidate",
+        "retrieval_status": "candidate_found" if rule_candidates else "no_candidate",
         "rule_candidate_count": len(rule_candidates),
-        "candidate_count": len(candidates),
+        "candidate_count": len(rule_candidates),
         "query_terms": collect_terms(item),
-        "model_review": model_review,
-        "candidates": candidates,
+        "model_review": {"status": "skipped_unified"},
+        "candidates": rule_candidates,
     }
 
 
@@ -991,6 +962,7 @@ def polish_kts_draft_contents(
                         "不得删除原文中的金额、比例、期限、主体、否定结论和【注：...】内容。",
                         "可以把长句拆成更自然的短句，可以用1. 2. 3.组织并列信息。",
                         "保留律师KTS摘要文风：结论先行、简洁、准确、法言法语。",
+                        "保留字段标签：内容的分行结构；不要把多个字段合并为一段，也不要拆散原有的主项-子项层级。",
                         "如原内容已经足够清楚，可原样返回。",
                         "每个输入事项都必须返回一条结果。",
                         "输出JSON格式：{\"items\":[{\"taxonomy_id\":\"...\",\"polished_content\":\"...\"}]}",
@@ -1852,6 +1824,94 @@ def evidence_tables_for_candidate(
     return tables
 
 
+MAX_SCAN_EXTRACT_SHARDS = 80
+
+
+def scan_and_extract_with_ai(
+    item: dict[str, Any],
+    source_index: dict[str, Any],
+) -> dict[str, Any]:
+    """For items with no rule candidates: send shards and ask AI to find + extract."""
+    if not ai_configured():
+        return {
+            "status": "unclear",
+            "extracted_facts": normalize_extracted_facts({}),
+            "draft_content": "",
+            "review_notes": ["未找到候选原文且模型不可用，需律师复核。"],
+        }
+
+    shards = source_shards_for_ai_scan(item, source_index)[:MAX_SCAN_EXTRACT_SHARDS]
+    if not shards:
+        return {
+            "status": "unclear",
+            "extracted_facts": normalize_extracted_facts({}),
+            "draft_content": "",
+            "review_notes": ["未找到可检索的文档分片。"],
+        }
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是融资交易KTS摘要起草助手。"
+                "关键词检索未命中该事项的候选证据，现在给你文档原文分片，请直接判断是否有相关内容并提取。"
+                "如果文档中确实没有该事项的约定，status设为unclear并在review_notes说明。"
+                "必须输出JSON。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "task": "从文档分片中查找与目标KTS事项相关的内容，评估并抽取事实，起草摘要。",
+                    "rules": [
+                        "浏览所有source_shards，找出与目标KTS事项相关的片段。",
+                        "如果找到相关内容，按content_schema字段抽取事实并起草draft_content。",
+                        "如果确实未见相关约定，status设为unclear，draft_content留空，review_notes写明未见约定。",
+                        "不得编造未在source_shards中出现的交易条件。",
+                        "文风应接近律师交易文件主要条款摘要：简洁、准确、法言法语。",
+                    ],
+                    "kts_item": {
+                        "taxonomy_id": item.get("taxonomy_id", ""),
+                        "label": item.get("label", ""),
+                        "template_labels": item.get("template_labels", {}),
+                        "group": item.get("group", ""),
+                    },
+                    "content_schema": content_schema_for_ai(item),
+                    "source_shards": [shard_for_ai(shard) for shard in shards],
+                },
+                ensure_ascii=False,
+            ),
+        },
+    ]
+
+    try:
+        response = chat_json(messages)
+    except AIClientError as exc:
+        return {
+            "status": "unclear",
+            "extracted_facts": normalize_extracted_facts({}),
+            "draft_content": "",
+            "review_notes": [f"模型扫描抽取失败：{exc}"],
+        }
+
+    status = str(response.get("status") or "unclear")
+    if status not in {"drafted", "needs_review", "unclear"}:
+        status = "unclear"
+    draft_content = str(response.get("draft_content") or "").strip()
+    extracted_facts = normalize_extracted_facts(response.get("extracted_facts"))
+    evidence_assessment = response.get("evidence_assessment", [])
+    if not isinstance(evidence_assessment, list):
+        evidence_assessment = []
+    return {
+        "status": status,
+        "extracted_facts": extracted_facts,
+        "draft_content": draft_content,
+        "evidence_assessment": evidence_assessment,
+        "review_notes": normalize_string_list(response.get("review_notes")),
+    }
+
+
 def extract_facts_with_ai(
     item: dict[str, Any],
     candidates: list[dict[str, Any]],
@@ -1860,12 +1920,7 @@ def extract_facts_with_ai(
     if item.get("extraction_mode") == "absence_check":
         return extract_absence_checks_with_ai(item, candidates, source_index)
     if not candidates:
-        return {
-            "status": "unclear",
-            "extracted_facts": normalize_extracted_facts({}),
-            "draft_content": "",
-            "review_notes": ["未找到候选原文；当前版本不直接认定未见约定，需律师复核。"],
-        }
+        return scan_and_extract_with_ai(item, source_index)
     if not ai_configured():
         return {
             "status": "needs_review",
@@ -1880,7 +1935,7 @@ def extract_facts_with_ai(
             "role": "system",
             "content": (
                 "你是融资交易KTS摘要起草助手。"
-                "你必须先按给定字段清单逐项抽取事实，再生成可放入KTS表格的摘要。"
+                "你的任务是：1) 评估候选证据与目标事项的相关性；2) 从相关证据中按字段抽取事实；3) 起草KTS摘要。"
                 "你只能依据给定候选证据抽取事实和起草摘要，不得编造未给出的交易条件。"
                 "文风应接近律师交易文件主要条款摘要：简洁、准确、法言法语。"
                 "必须输出JSON。"
@@ -1890,15 +1945,16 @@ def extract_facts_with_ai(
             "role": "user",
             "content": json.dumps(
                 {
-                    "task": "基于候选证据为单个KTS事项抽取事实，并起草事项内容。",
+                    "task": "评估证据相关性，抽取事实，起草KTS事项摘要。",
                     "rules": [
+                        "先对每条evidence评估relevance（high/medium/low/irrelevant），并为相关证据提取key_excerpt（50-150字的最短必要原文片段，保留完整句子），再基于high和medium证据抽取事实。",
                         "只依据给定evidence，不得使用外部知识或猜测。",
                         "必须逐项返回content_schema.fields中的全部字段；field_values中的key必须使用给定字段key。",
                         "字段status只能为found、not_found、unclear、not_applicable；证据明确时用found，证据没有体现时用not_found，证据不足或冲突时用unclear。",
                         "字段value应写该字段的提炼结果，不要粘贴整段原文；source_candidate_ids填写支持该字段的candidate_id。",
                         "必须遵守content_schema.drafting_guidance的事项边界；即使evidence窗口中出现其他KTS事项的事实，也不得写入当前事项的draft_content或字段value。",
                         "费用、税费、违约追责费用、违约赔偿、解除救济等内容，只有在当前KTS事项明确要求时才可纳入；否则应留给对应事项。",
-                        "draft_content应综合关键字段，写成可放入KTS表格“内容”列的中文摘要；避免机械罗列通知程序和低价值原文。",
+                        "draft_content应按字段分层输出，格式为：每个主要字段占一行，用“字段标签：内容”格式（如“回购触发事项：xxx”）；如某字段下有多个子项，子项另起一行，不带标签前缀。这样导出时主项会自动编为1. 2. 3.，子项编为(1) (2) (3)。避免机械罗列通知程序和低价值原文。",
                         "如存在未约定、表述不清、偏离惯常或需客户确认之处，同时写入missing_or_unclear、lawyer_notes和review_notes；重要提示可在draft_content末尾用【注：...】呈现。",
                         "能从原文识别条款编号或标题时，写入clause_refs；不能识别则返回空数组，不得猜测条款号。",
                         "clause_refs只写条款编号或条款标题，不得包含文件名、candidate_id、source_locator或原文摘录。",
@@ -1981,6 +2037,18 @@ def build_kts_extraction_item(
         )
 
     extraction = extract_facts_with_ai(item, candidates, source_index)
+    # Merge key_excerpt from evidence_assessment into evidence items
+    assessment_by_id = {}
+    for assess in extraction.get("evidence_assessment", []):
+        if isinstance(assess, dict) and assess.get("candidate_id"):
+            assessment_by_id[assess["candidate_id"]] = assess
+    for ev in evidence:
+        cid = ev.get("candidate_id", "")
+        assess = assessment_by_id.get(cid, {})
+        if assess.get("key_excerpt"):
+            ev["key_excerpt"] = assess["key_excerpt"]
+        if assess.get("relevance"):
+            ev["ai_relevance"] = assess["relevance"]
     extracted_facts = extraction["extracted_facts"]
     schema_coverage = build_schema_coverage(item, extracted_facts)
     review_notes = [

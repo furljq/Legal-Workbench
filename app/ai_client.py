@@ -15,7 +15,7 @@ DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_API_TYPE = "chat_completions"
 DEFAULT_TEMPERATURE = 0.1
-DEFAULT_TIMEOUT_SECONDS = 180
+DEFAULT_TIMEOUT_SECONDS = 300
 MAX_MODEL_WORKER_LIMIT = 16
 API_TYPES = {"chat_completions", "responses"}
 TRANSIENT_HTTP_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -191,6 +191,65 @@ def safe_api_type() -> str:
         return "invalid"
 
 
+def _read_sse_stream(response, timeout_seconds: int) -> str:
+    """Read Server-Sent Events stream and return concatenated content."""
+    from http.client import IncompleteRead
+    chunks: list[str] = []
+    try:
+        for raw_line in response:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if isinstance(line, bytes):
+                line = line.decode("utf-8", errors="replace")
+            if line.startswith("data: "):
+                data_str = line[6:]
+                if data_str.strip() == "[DONE]":
+                    break
+                try:
+                    data = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                delta_content = _extract_stream_delta(data)
+                if delta_content:
+                    chunks.append(delta_content)
+    except IncompleteRead:
+        pass
+    except (OSError, TimeoutError) as exc:
+        if not chunks:
+            raise AIClientError(f"Stream read failed: {exc}") from exc
+    return "".join(chunks)
+
+
+def _extract_stream_delta(data: dict[str, Any]) -> str:
+    """Extract content delta from a streaming chunk (chat_completions or responses)."""
+    # chat_completions format
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices:
+        delta = choices[0].get("delta", {})
+        if isinstance(delta, dict):
+            content = delta.get("content")
+            if isinstance(content, str):
+                return content
+
+    # responses format
+    delta = data.get("delta")
+    if isinstance(delta, str):
+        return delta
+    if isinstance(delta, dict):
+        text = delta.get("text") or delta.get("content")
+        if isinstance(text, str):
+            return text
+
+    # responses output_text_delta event
+    if data.get("type") == "response.output_text.delta":
+        text = data.get("delta")
+        if isinstance(text, str):
+            return text
+
+    return ""
+
+
 def call_chat_completions_http(
     messages: list[dict[str, str]],
     api_key: str,
@@ -202,6 +261,7 @@ def call_chat_completions_http(
         "messages": messages,
         "temperature": temperature,
         "response_format": {"type": "json_object"},
+        "stream": True,
     }
     request = urllib.request.Request(
         ai_base_url() + "/chat/completions",
@@ -210,18 +270,17 @@ def call_chat_completions_http(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            response_data = json.loads(response.read().decode("utf-8"))
+        response = urllib.request.urlopen(request, timeout=timeout_seconds)
+        content = _read_sse_stream(response, timeout_seconds)
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise AIClientError(f"Model service returned HTTP {exc.code}: {detail}") from exc
     except (OSError, TimeoutError, json.JSONDecodeError) as exc:
         raise AIClientError(f"Model service request failed: {exc}") from exc
 
-    try:
-        return str(response_data["choices"][0]["message"]["content"] or "")
-    except (KeyError, IndexError, TypeError) as exc:
-        raise AIClientError("Model service response did not contain message content.") from exc
+    if not content:
+        raise AIClientError("Model service response did not contain message content.")
+    return content
 
 
 def messages_to_prompt(messages: list[dict[str, str]]) -> str:
@@ -245,6 +304,7 @@ def call_responses_http(
         "model": ai_model(),
         "input": messages_to_prompt(messages),
         "temperature": temperature,
+        "stream": True,
     }
     request = urllib.request.Request(
         ai_base_url() + "/responses",
@@ -253,15 +313,14 @@ def call_responses_http(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            response_data = json.loads(response.read().decode("utf-8"))
+        response = urllib.request.urlopen(request, timeout=timeout_seconds)
+        content = _read_sse_stream(response, timeout_seconds)
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise AIClientError(f"Model service returned HTTP {exc.code}: {detail}") from exc
     except (OSError, TimeoutError, json.JSONDecodeError) as exc:
         raise AIClientError(f"Model service request failed: {exc}") from exc
 
-    content = extract_responses_text(response_data)
     if not content:
         raise AIClientError("Model service response did not contain output text.")
     return content

@@ -846,7 +846,7 @@ function renderSourceEvidence(evidenceItems) {
             const sourceLabel = [roleLabel, evidence.file_name || "未命名文件"]
               .filter(Boolean)
               .join(" · ");
-            const summary = evidenceSummaryText(evidence, tables);
+            const summary = evidence.key_excerpt || evidenceSummaryText(evidence, tables);
             const searchText = evidenceSearchText(evidence, fileLabel);
             return `
               <article class="evidence-item">

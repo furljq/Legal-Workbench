@@ -23,8 +23,10 @@ PARENTHETICAL_MARKER_RE = re.compile(r"\s*([（(][一二三四五六七八九十
 BRACKETED_NOTE_RE = re.compile(r"【[^】]{1,1200}】")
 NOTE_LINE_RE = re.compile(r"\s*(【[^】]*注[：:][^】]*】)")
 PRENUMBERED_LINE_RE = re.compile(r"^(\d+[.、]\s*|（[一二三四五六七八九十\d]+）|\([0-9]+\))")
+SUB_NUMBERED_LINE_RE = re.compile(r"^(\d+\.\d+)")
 SOURCE_REF_MAX_LENGTH = 96
 SOURCE_REF_MAX_COUNT = 5
+INDENT_PER_LEVEL = Cm(0.5)
 
 
 class KtsDocxExportError(ValueError):
@@ -98,18 +100,66 @@ def split_parenthetical_markers(text: str) -> str:
 
 
 def number_readable_lines(lines: list[str]) -> list[str]:
+    """Number content lines with two-level scheme: 1. for top-level, (1) for sub-items.
+
+    Lines with label:value structure are top-level items (numbered 1. 2. 3.).
+    Consecutive non-label lines (2+) following a top-level item are sub-items,
+    numbered (1) (2) (3). A single non-label line after a top-level item is
+    just a continuation and gets its own top-level number.
+    """
     if len(lines) <= 1:
         return lines
-    numbered: list[str] = []
-    next_number = 1
-    for line in lines:
-        if is_note_line(line) or PRENUMBERED_LINE_RE.match(line):
-            numbered.append(line)
-        else:
-            numbered.append(f"{next_number}. {line}")
-            next_number += 1
-    return numbered
 
+    LABEL_VALUE_RE = re.compile(r"^.{2,15}[：:]")
+
+    # First pass: classify each line
+    roles: list[str] = []
+    for line in lines:
+        if is_note_line(line):
+            roles.append("note")
+        elif LABEL_VALUE_RE.match(line):
+            roles.append("label")
+        else:
+            roles.append("other")
+
+    # Second pass: determine which "other" runs are sub-item lists (2+ consecutive)
+    is_sub_item: list[bool] = [False] * len(lines)
+    i = 0
+    while i < len(lines):
+        if roles[i] == "other":
+            run_start = i
+            while i < len(lines) and roles[i] == "other":
+                i += 1
+            if i - run_start >= 2:
+                for j in range(run_start, i):
+                    is_sub_item[j] = True
+        else:
+            i += 1
+
+    # Third pass: number
+    numbered: list[str] = []
+    top_number = 1
+    sub_number = 0
+
+    for idx, line in enumerate(lines):
+        if roles[idx] == "note":
+            numbered.append(line)
+            continue
+
+        if roles[idx] == "label":
+            numbered.append(f"{top_number}. {line}")
+            top_number += 1
+            sub_number = 0
+        elif is_sub_item[idx]:
+            sub_number += 1
+            stripped = PRENUMBERED_LINE_RE.sub("", line).strip()
+            numbered.append(f"({sub_number}) {stripped}")
+        else:
+            numbered.append(f"{top_number}. {line}")
+            top_number += 1
+            sub_number = 0
+
+    return numbered
 
 def format_kts_content(value: object) -> list[str]:
     return number_readable_lines(split_readable_lines(value))
@@ -142,25 +192,35 @@ def export_label(item: dict[str, Any]) -> str:
     return str(item.get("label") or item.get("taxonomy_id") or "未命名事项").strip()
 
 
-def clean_source_ref(value: object) -> str:
-    text = clean_clause_ref(value)
-    if len(text) <= SOURCE_REF_MAX_LENGTH:
+CLAUSE_NUMBER_RE = re.compile(r"^(第?[\d一二三四五六七八九十百]+[.、．条][\d.]*\s*)")
+
+
+def extract_clause_number(value: object) -> str:
+    """Extract only the clause number prefix from a ref string."""
+    text = str(value or "").strip()
+    m = CLAUSE_NUMBER_RE.match(text)
+    if m:
+        return m.group(1).strip()
+    # If the whole string is short and looks like a number ref, keep it
+    if re.match(r"^[\d.]+$", text) and len(text) <= 12:
         return text
-    return text[: SOURCE_REF_MAX_LENGTH - 1].rstrip() + "…"
+    return ""
 
 
 def export_source_refs(item: dict[str, Any]) -> list[str]:
+    """Extract only clause numbers for source refs — no prose content."""
     refs = item.get("clause_refs", [])
     if not isinstance(refs, list):
-        return []
+        refs = []
+
     clean_refs: list[str] = []
     seen: set[str] = set()
     for ref in refs:
-        clean_ref = clean_source_ref(ref)
-        if not clean_ref or clean_ref in seen:
+        number = extract_clause_number(ref)
+        if not number or number in seen:
             continue
-        seen.add(clean_ref)
-        clean_refs.append(clean_ref)
+        seen.add(number)
+        clean_refs.append(number)
         if len(clean_refs) >= SOURCE_REF_MAX_COUNT:
             break
     return clean_refs
@@ -200,6 +260,20 @@ def set_cell_text(cell, text: str, bold: bool = False, align=WD_ALIGN_PARAGRAPH.
     run._element.rPr.rFonts.set(qn("w:eastAsia"), EAST_ASIA_FONT)
 
 
+def _line_indent_level(line: str) -> int:
+    """Determine indentation level based on numbering pattern."""
+    stripped = line.strip()
+    if re.match(r"^\d+\.\d+\.\d+", stripped):
+        return 2
+    if re.match(r"^\d+\.\d+", stripped):
+        return 1
+    if re.match(r"^[（(][一二三四五六七八九十\d]+[）)]", stripped):
+        return 1
+    if re.match(r"^\([ivxl]+\)", stripped):
+        return 2
+    return 0
+
+
 def append_cell_lines(cell, lines: list[str]) -> None:
     cell.text = ""
     if not lines:
@@ -210,6 +284,9 @@ def append_cell_lines(cell, lines: list[str]) -> None:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph.paragraph_format.space_after = Pt(4)
         paragraph.paragraph_format.line_spacing = 1.15
+        indent_level = _line_indent_level(line)
+        if indent_level > 0:
+            paragraph.paragraph_format.left_indent = Cm(0.5 * indent_level)
         run = paragraph.add_run(line)
         run.font.name = EAST_ASIA_FONT
         run.font.size = Pt(10)
@@ -219,25 +296,15 @@ def append_cell_lines(cell, lines: list[str]) -> None:
 def append_source_refs(cell, refs: list[str]) -> None:
     if not refs:
         return
-    heading = cell.add_paragraph()
-    heading.paragraph_format.space_before = Pt(6)
-    heading.paragraph_format.space_after = Pt(2)
-    heading_run = heading.add_run("信息来源：")
-    heading_run.bold = True
-    heading_run.font.name = EAST_ASIA_FONT
-    heading_run.font.size = Pt(9)
-    heading_run.font.color.rgb = RGBColor(104, 112, 105)
-    heading_run._element.rPr.rFonts.set(qn("w:eastAsia"), EAST_ASIA_FONT)
-
-    for index, ref in enumerate(refs, start=1):
-        paragraph = cell.add_paragraph()
-        paragraph.paragraph_format.space_after = Pt(2)
-        paragraph.paragraph_format.line_spacing = 1.05
-        run = paragraph.add_run(f"{index}. {ref}")
-        run.font.name = EAST_ASIA_FONT
-        run.font.size = Pt(9)
-        run.font.color.rgb = RGBColor(104, 112, 105)
-        run._element.rPr.rFonts.set(qn("w:eastAsia"), EAST_ASIA_FONT)
+    paragraph = cell.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(6)
+    paragraph.paragraph_format.space_after = Pt(2)
+    paragraph.paragraph_format.line_spacing = 1.05
+    run = paragraph.add_run("信息来源：" + "  ".join(refs))
+    run.font.name = EAST_ASIA_FONT
+    run.font.size = Pt(9)
+    run.font.color.rgb = RGBColor(104, 112, 105)
+    run._element.rPr.rFonts.set(qn("w:eastAsia"), EAST_ASIA_FONT)
 
 
 def set_cell_shading(cell, fill: str) -> None:

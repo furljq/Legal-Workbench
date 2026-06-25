@@ -10,6 +10,7 @@ from config import DEBUG_DIR
 
 
 CURRENT_PARSE_PATH = DEBUG_DIR / "current_parse.json"
+CURRENT_STRUCTURE_ANALYSIS_PATH = DEBUG_DIR / "current_structure_analysis.json"
 CURRENT_SOURCE_INDEX_PATH = DEBUG_DIR / "current_source_index.json"
 CURRENT_KTS_CANDIDATES_PATH = DEBUG_DIR / "current_kts_candidates.json"
 CURRENT_KTS_EXTRACTION_PATH = DEBUG_DIR / "current_kts_extraction.json"
@@ -21,6 +22,10 @@ def timestamp() -> str:
 
 def save_current_parse(payload: dict[str, Any]) -> dict[str, Any]:
     return save_current_state(CURRENT_PARSE_PATH, payload)
+
+
+def save_current_structure_analysis(payload: dict[str, Any]) -> dict[str, Any]:
+    return save_current_state(CURRENT_STRUCTURE_ANALYSIS_PATH, payload)
 
 
 def save_current_source_index(payload: dict[str, Any]) -> dict[str, Any]:
@@ -50,6 +55,10 @@ def save_current_state(path, payload: dict[str, Any]) -> dict[str, Any]:
 
 def load_current_parse() -> dict[str, Any] | None:
     return load_current_state(CURRENT_PARSE_PATH)
+
+
+def load_current_structure_analysis() -> dict[str, Any] | None:
+    return load_current_state(CURRENT_STRUCTURE_ANALYSIS_PATH)
 
 
 def load_current_source_index() -> dict[str, Any] | None:
