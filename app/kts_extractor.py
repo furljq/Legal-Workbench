@@ -1954,7 +1954,7 @@ def extract_facts_with_ai(
                         "字段value应写该字段的提炼结果，不要粘贴整段原文；source_candidate_ids填写支持该字段的candidate_id。",
                         "必须遵守content_schema.drafting_guidance的事项边界；即使evidence窗口中出现其他KTS事项的事实，也不得写入当前事项的draft_content或字段value。",
                         "费用、税费、违约追责费用、违约赔偿、解除救济等内容，只有在当前KTS事项明确要求时才可纳入；否则应留给对应事项。",
-                        "draft_content应按字段分层输出，格式为：每个主要字段占一行，用“字段标签：内容”格式（如“回购触发事项：xxx”）；如某字段下有多个子项，子项另起一行，不带标签前缀。这样导出时主项会自动编为1. 2. 3.，子项编为(1) (2) (3)。避免机械罗列通知程序和低价值原文。",
+                        "draft_content应按字段分层输出，格式为：每个主要字段占一行，用“字段标签：内容”格式（如“回购触发事项：xxx”）；如某字段下有多个子项，子项另起一行，不带标签前缀。这样导出时主项会自动编为1. 2. 3.，子项编为(1) (2) (3)。避免机械罗列通知程序和低价值原文；status为not_found的字段不要写入draft_content，不要出现未见约定未载明待确认等表述。",
                         "如存在未约定、表述不清、偏离惯常或需客户确认之处，同时写入missing_or_unclear、lawyer_notes和review_notes；重要提示可在draft_content末尾用【注：...】呈现。",
                         "能从原文识别条款编号或标题时，写入clause_refs；不能识别则返回空数组，不得猜测条款号。",
                         "clause_refs只写条款编号或条款标题，不得包含文件名、candidate_id、source_locator或原文摘录。",

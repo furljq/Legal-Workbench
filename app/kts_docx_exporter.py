@@ -161,8 +161,33 @@ def number_readable_lines(lines: list[str]) -> list[str]:
 
     return numbered
 
+NOT_FOUND_PATTERNS = re.compile(r"(未见|未载明|待确认|未明确约定|候选证据未见).{0,20}(约定|确认|载明|明确)?")
+
+
+def _is_not_found_line(line: str) -> bool:
+    """Check if a line is purely a not-found placeholder with no substantive content."""
+    stripped = line.strip()
+    if not stripped:
+        return True
+    # Remove label prefix (e.g. "签署方：") to check the content part
+    content_part = re.sub(r"^.{2,15}[：:]", "", stripped).strip()
+    if not content_part:
+        return True
+    # If the content part is dominated by not-found language
+    if NOT_FOUND_PATTERNS.search(content_part):
+        clean = NOT_FOUND_PATTERNS.sub("", content_part).strip()
+        clean = re.sub(r"[，。；、:：\s]+", " ", clean).strip()
+        # Keep only if remaining text has substantive facts (numbers, names, dates)
+        has_facts = bool(re.search(r"[\d%％万亿元年月日]", clean))
+        if not has_facts and len(clean) < 15:
+            return True
+    return False
+
+
 def format_kts_content(value: object) -> list[str]:
-    return number_readable_lines(split_readable_lines(value))
+    lines = split_readable_lines(value)
+    lines = [line for line in lines if not _is_not_found_line(line)]
+    return number_readable_lines(lines)
 
 
 def saved_human_review(item: dict[str, Any]) -> dict[str, Any] | None:
