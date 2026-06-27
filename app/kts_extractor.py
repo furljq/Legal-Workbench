@@ -3666,6 +3666,25 @@ def guard_shareholder_reserved_matters(
     clean_shareholder_reserved_client_veto_tone(extraction, candidates)
 
 
+def append_shareholder_major_protection_subpoints(lines: list[str], text: str) -> bool:
+    body = text.strip().rstrip("。")
+    body = body.removeprefix("第(2)-(12)项覆盖").strip()
+    if "重组/控制权变更" not in body or "发行数字资产" not in body:
+        return False
+    capital, transaction = body.split("、重组/控制权变更", 1)
+    transaction = "重组/控制权变更" + transaction
+    other = ""
+    if "、发行数字资产" in transaction:
+        transaction, other_tail = transaction.split("、发行数字资产", 1)
+        other = "发行数字资产" + other_tail
+    lines.append("重大保护事项：第(2)-(12)项适用多数投资人同意。")
+    lines.append("资本/清算事项：" + capital.rstrip("、，,。") + "。")
+    lines.append("交易/治理事项：" + transaction.rstrip("、，,。") + "。")
+    if other:
+        lines.append("其他重大事项：" + other.rstrip("、，,。") + "。")
+    return True
+
+
 def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -3683,7 +3702,8 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
         if stripped.startswith("保护事项：第(1)项覆盖") and "；第(2)-(12)项覆盖" in stripped:
             first, second = stripped.split("；第(2)-(12)项覆盖", 1)
             lines.append("投资人权利事项：" + first.split("：", 1)[1].rstrip("。") + "。")
-            lines.append("重大保护事项：第(2)-(12)项覆盖" + second.rstrip("。") + "。")
+            if not append_shareholder_major_protection_subpoints(lines, "第(2)-(12)项覆盖" + second):
+                lines.append("重大保护事项：第(2)-(12)项覆盖" + second.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("机制层级："):
@@ -3712,6 +3732,43 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
             lines.append("表决层级：" + intro.rstrip("。") + "。")
             lines.append("特定投资人同意机制：" + first.rstrip("。") + "。")
             lines.append("多数投资人同意机制：" + second.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("通过机制：第(1)项须") and "；第(2)-(12)项须" in stripped and "；两类多数" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            first, rest = body.split("；第(2)-(12)项须", 1)
+            second, threshold = rest.split("；两类多数", 1)
+            lines.append("每轮投资人事项：" + first.rstrip("。") + "。")
+            lines.append("多数投资人事项：第(2)-(12)项须" + second.rstrip("。") + "。")
+            lines.append("多数门槛：两类多数" + threshold.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("特定投资人事项：") and "、清算/解散/终止" in stripped and "需获" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            matter_body, approval = body.rsplit("需获", 1)
+            capital, major = matter_body.split("、清算/解散/终止", 1)
+            approval = "需获" + approval
+            lines.append("章程/资本事项：" + capital.rstrip("、，,。") + approval + "。")
+            lines.append("清算/业务/分红事项：清算/解散/终止" + major.rstrip("、，,。") + approval + "。")
+            changed = True
+            continue
+        if stripped.startswith("投资人门槛：") and "；优先股指" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            threshold, preferred = body.split("；优先股指", 1)
+            lines.append("多数门槛：" + threshold.rstrip("。") + "。")
+            lines.append("优先股口径：优先股指" + preferred.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("重大保护事项：第(2)-(12)项覆盖"):
+            if append_shareholder_major_protection_subpoints(lines, stripped.split("：", 1)[1]):
+                changed = True
+                continue
+        if stripped.startswith("特别否决：") and "；后续融资" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            veto, termination = body.split("；", 1)
+            veto = veto.replace("还需", "需")
+            lines.append("特别否决事项：" + veto.rstrip("。") + "。")
+            lines.append("特别否决终止：" + termination.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("重大交易：") and has_protection_line:

@@ -2047,8 +2047,8 @@ def test_shareholder_reserved_guard_removes_client_veto_practicality_blocker() -
 
     assert "本方" not in extraction["draft_content"]
     assert "veto" not in extraction["draft_content"]
-    assert "投资人门槛：" in extraction["draft_content"]
-    assert "优先股指[[公司或组织_AI]或组织_AP]持有的股权" in extraction["draft_content"]
+    assert "多数门槛：" in extraction["draft_content"]
+    assert "优先股口径：优先股指[[公司或组织_AI]或组织_AP]持有的股权" in extraction["draft_content"]
     assert "表决层级：" in extraction["draft_content"]
     assert "特定投资人同意机制：" in extraction["draft_content"]
     assert "多数投资人同意机制：" in extraction["draft_content"]
@@ -2686,6 +2686,9 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
     assert "达上述门槛" not in items[0]["draft_content"]
     assert "投资人权利事项：" in items[1]["draft_content"]
     assert "重大保护事项：" in items[1]["draft_content"]
+    assert "资本/清算事项：" in items[1]["draft_content"]
+    assert "交易/治理事项：" in items[1]["draft_content"]
+    assert "其他重大事项：" in items[1]["draft_content"]
     assert "重大交易：" not in items[1]["draft_content"]
     assert "适用主体：" in items[2]["draft_content"]
     assert "触发情形：" in items[2]["draft_content"]
@@ -2693,6 +2696,57 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
     assert "两星及算力条件：" in items[3]["draft_content"]
     assert "两星及算力增发额度：" in items[3]["draft_content"]
     assert "后。" not in items[3]["draft_content"]
+
+
+def test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.shareholder_reserved_matters",
+            "draft_content": (
+                "特定投资人事项：修改章程、增减注册资本、清算/解散/终止、主营业务实质变更或终止、"
+                "分红及利润分配需获[[公司或组织_AI]或组织_AP]同意。\n"
+                "投资人门槛：多数[[公司或组织_AI]或组织_AK]定义为持有超过三分之二优先股的股东；"
+                "优先股指[[公司或组织_AI]或组织_AP]持有的股权。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.shareholder_reserved_matters",
+            "draft_content": (
+                "通过机制：第(1)项须每一轮次投资人多数同意；第(2)-(12)项须投资人多数同意；"
+                "两类多数均为相关投资人合计持股三分之二或以上。\n"
+                "重大保护事项：第(2)-(12)项覆盖章程修改、增减资及稀释性发行、减资回购注销、清算分红、"
+                "重组/控制权变更、上市方案、董事会构成、主营业务重大变化、发行数字资产及其他重大事项。\n"
+                "特别否决：第(2)/(5)/(10)项中涉及整体性变更主营或核心业务的事项，还需[[公司或组织_AE]或组织_G]和[商标品牌_G]同意；"
+                "后续融资新增投资人董事后该单独否决权终止。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    current_style = items[0]["draft_content"]
+    assert "章程/资本事项：修改章程、增减注册资本需获[[公司或组织_AI]或组织_AP]同意。" in current_style
+    assert "清算/业务/分红事项：清算/解散/终止、主营业务实质变更或终止、分红及利润分配需获[[公司或组织_AI]或组织_AP]同意。" in current_style
+    assert "多数门槛：多数[[公司或组织_AI]或组织_AK]定义为持有超过三分之二优先股的股东。" in current_style
+    assert "优先股口径：优先股指[[公司或组织_AI]或组织_AP]持有的股权。" in current_style
+    assert "特定投资人事项：" not in current_style
+    assert "投资人门槛：" not in current_style
+
+    a_style = items[1]["draft_content"]
+    assert "每轮投资人事项：第(1)项须每一轮次投资人多数同意。" in a_style
+    assert "多数投资人事项：第(2)-(12)项须投资人多数同意。" in a_style
+    assert "多数门槛：两类多数均为相关投资人合计持股三分之二或以上。" in a_style
+    assert "重大保护事项：第(2)-(12)项适用多数投资人同意。" in a_style
+    assert "资本/清算事项：章程修改、增减资及稀释性发行、减资回购注销、清算分红。" in a_style
+    assert "交易/治理事项：重组/控制权变更、上市方案、董事会构成、主营业务重大变化。" in a_style
+    assert "其他重大事项：发行数字资产及其他重大事项。" in a_style
+    assert "特别否决事项：第(2)/(5)/(10)项中涉及整体性变更主营或核心业务的事项，需[[公司或组织_AE]或组织_G]和[商标品牌_G]同意。" in a_style
+    assert "特别否决终止：后续融资新增投资人董事后该单独否决权终止。" in a_style
+    assert "通过机制：" not in a_style
+    assert "特别否决：" not in a_style
 
 
 def test_post_polish_compacts_mfn_and_new_project_special_rights() -> None:
@@ -3246,6 +3300,7 @@ if __name__ == "__main__":
     test_post_polish_splits_long_confidentiality_and_information_lines()
     test_post_polish_compacts_spa_other_dispute_and_notice_language()
     test_post_polish_splits_reserved_matters_and_mfn_lines()
+    test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto()
     test_post_polish_compacts_mfn_and_new_project_special_rights()
     test_post_polish_splits_remaining_long_substantive_lines()
     test_post_polish_compacts_anti_dilution_formula_and_compensation_lines()
