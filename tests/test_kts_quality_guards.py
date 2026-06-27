@@ -1451,6 +1451,35 @@ def test_liquidation_preference_guard_fills_events_and_new_project() -> None:
     assert not extraction["review_notes"]
 
 
+def test_post_polish_liquidation_review_focuses_cross_reference_issue() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.liquidation_preference",
+            "draft_content": (
+                "清算事件：公司解散、清算、破产及视为清算事件触发优先清算。\n"
+                "清算顺位及金额：本轮优先清算权人先于天使轮优先清算权人取得优先清算额。\n"
+                "剩余分配：优先清算权人取得全部优先额后仍参与剩余财产分配。\n"
+                "【待核：条款交叉引用“第11.1条”疑与清算分配条款编号不一致。】"
+            ),
+            "review_notes": ["需律师重点复核交叉引用编号、参与型优先清算安排及优先清算权人主体占位符。"],
+            "missing_or_unclear": [
+                "交叉引用“第11.1条”与当前上下文的清算分配条款编号不一致。",
+                "未见优先清算额包含固定倍数、年单利或其他固定回报。",
+                "未见新项目权益或零对价补偿安排。",
+            ],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    item = items[0]
+    assert item["review_notes"] == ["需律师核对第10.2/10.3条对“第11.1条”的交叉引用是否为编号误植。"]
+    assert item["missing_or_unclear"] == ["第10.2/10.3条对“第11.1条”的交叉引用疑与清算分配条款编号不一致。"]
+    assert "参与型优先清算" not in "\n".join(item["review_notes"])
+    assert "主体占位符" not in "\n".join(item["review_notes"])
+    assert item["draft_content"].count("【待核：") == 1
+
+
 def test_founder_obligations_guard_completes_service_and_non_compete_summary() -> None:
     extraction = {
         "status": "needs_review",
@@ -1631,6 +1660,7 @@ if __name__ == "__main__":
     test_representations_core_guard_fills_authority_and_capital_legality()
     test_shareholder_reserved_guard_resolves_ap_required_matters()
     test_liquidation_preference_guard_fills_events_and_new_project()
+    test_post_polish_liquidation_review_focuses_cross_reference_issue()
     test_founder_obligations_guard_completes_service_and_non_compete_summary()
     test_post_polish_guard_rewrites_founder_stale_review_tone()
     test_post_polish_removes_nonblocking_workpaper_review_notes()

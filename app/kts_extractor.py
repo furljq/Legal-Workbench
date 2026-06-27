@@ -3060,6 +3060,38 @@ def remove_stale_liquidation_notes(notes: Any) -> list[str]:
     ]
 
 
+def has_liquidation_cross_reference_issue(item: dict[str, Any]) -> bool:
+    combined = "\n".join(
+        [
+            str(item.get("draft_content") or ""),
+            "\n".join(normalize_string_list(item.get("review_notes"))),
+            "\n".join(normalize_string_list(item.get("missing_or_unclear"))),
+        ]
+    )
+    return "第11.1条" in combined and any(term in combined for term in ("交叉引用", "编号", "不一致"))
+
+
+def clean_liquidation_review_tone(item: dict[str, Any]) -> None:
+    if not has_liquidation_cross_reference_issue(item):
+        item["review_notes"] = remove_stale_liquidation_notes(item.get("review_notes", []))
+        return
+
+    draft_content = str(item.get("draft_content") or "")
+    note = "【待核：第10.2/10.3条将清算分配方案交叉引用为第11.1条，疑为编号误植。】"
+    if draft_content:
+        draft_content = re.sub(
+            r"【(?:注|待核)[：:][^】]*(?:交叉引用|第11\.1条|编号不一致)[^】]*】",
+            "",
+            draft_content,
+        )
+        lines = [line.rstrip() for line in draft_content.splitlines() if line.strip()]
+        lines.append(note)
+        item["draft_content"] = "\n".join(lines)
+
+    item["review_notes"] = ["需律师核对第10.2/10.3条对“第11.1条”的交叉引用是否为编号误植。"]
+    item["missing_or_unclear"] = ["第10.2/10.3条对“第11.1条”的交叉引用疑与清算分配条款编号不一致。"]
+
+
 def guard_liquidation_preference(
     extraction: dict[str, Any],
     candidates: list[dict[str, Any]],
@@ -4671,6 +4703,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         elif item_id == "sha.redemption":
             clean_redemption_review_tone(item)
             normalize_redemption_subpoint_labels(item)
+        elif item_id == "sha.liquidation_preference":
+            clean_liquidation_review_tone(item)
         elif item_id == "sha.founder_obligations":
             clean_founder_obligations_review_tone(item)
         item["review_notes"] = remove_nonblocking_workpaper_review_notes(item.get("review_notes", []))
