@@ -5158,21 +5158,47 @@ def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
     nonblocking_prefixes = (
         "已按",
         "已剔除",
+        "已排除",
+        "已依据",
+        "已根据",
         "摘要已",
+        "摘要仅",
+        "摘要未",
         "当前摘要已",
+        "本事项已",
         "本摘要已",
+        "本摘要仅",
         "已完成",
         "已将",
         "已仅",
         "已逐",
         "未将",
+        "未纳入",
+        "系统根据",
     )
-    return [
-        note
-        for note in normalized
-        if not note.startswith(nonblocking_prefixes)
-        and "已作为缺失检查结论处理" not in note
-    ]
+    cleaned: list[str] = []
+    for note in normalized:
+        if note.startswith(nonblocking_prefixes):
+            continue
+        if any(
+            marker in note
+            for marker in (
+                "已作为缺失检查结论处理",
+                "已作为缺失检查项提示",
+                "absence_ok字段",
+                "draft_content",
+            )
+        ):
+            continue
+        if re.match(r"^C\d+", note):
+            continue
+        if re.search(r"C\d+", note) and any(
+            marker in note for marker in ("未纳入", "不直接支持", "非", "用于识别")
+        ):
+            continue
+        note = note.replace("候选证据", "材料")
+        cleaned.append(note)
+    return cleaned
 
 
 def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:

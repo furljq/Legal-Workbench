@@ -1909,6 +1909,14 @@ def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
                 "本摘要已排除违约赔偿、解除及商标使用等非本KTS事项内容。",
                 "已仅基于high和medium证据形成摘要；C02未纳入当前摘要。",
                 "未见过渡期限制事项的，已作为缺失检查结论处理。",
+                "已排除股东会保护性事项及违约责任/费用承担内容。",
+                "C07为反稀释权条款，未纳入本事项摘要。",
+                "摘要未展开通知期限和视为放弃等程序性细节，已保留于extracted_facts。",
+                "本事项已剔除知识产权陈述、违约赔偿和公司治理保留事项等其他KTS事项内容。",
+                "摘要仅基于候选证据中的第3.4.5条起草。",
+                "系统根据全篇关键词补充未见明确约定事项。",
+                "固定优先分红为absence_ok字段，证据未见明确约定，已作为缺失检查项提示。",
+                "工商变更未完成解除条款中的具体时限未在候选证据中体现。",
                 "需律师重点复核工商变更登记作为付款先决条件的交易顺序。",
             ],
         }
@@ -1916,7 +1924,10 @@ def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
 
     apply_post_polish_quality_guards(items)
 
-    assert items[0]["review_notes"] == ["需律师重点复核工商变更登记作为付款先决条件的交易顺序。"]
+    assert items[0]["review_notes"] == [
+        "工商变更未完成解除条款中的具体时限未在材料中体现。",
+        "需律师重点复核工商变更登记作为付款先决条件的交易顺序。",
+    ]
 
 
 def test_post_polish_normalizes_esop_milestone_labels() -> None:
