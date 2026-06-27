@@ -4064,6 +4064,14 @@ def normalize_information_audit_subpoints(item: dict[str, Any]) -> None:
             lines.append("预算计划：" + "；".join(parts[2:]).rstrip("。") + "。")
             changed = True
             continue
+        if label == "信息权" and len(parts) >= 2 and "，并在每" in parts[0]:
+            annual, quarterly = parts[0].split("，并在", 1)
+            annual = annual.removeprefix("公司应在").removeprefix("公司应于").rstrip("。")
+            lines.append("年度报告：" + annual + "。")
+            lines.append("季度报告：" + quarterly.rstrip("。") + "。")
+            lines.append("预算计划：" + "；".join(parts[1:]).rstrip("。") + "。")
+            changed = True
+            continue
         if label == "检查权" and "，现场了解" in stripped and "，并可由" in stripped:
             procedure, rest = stripped.split("，现场了解", 1)
             scope, advisors = rest.rsplit("，并可由", 1)
@@ -4072,6 +4080,20 @@ def normalize_information_audit_subpoints(item: dict[str, Any]) -> None:
             lines.append("检查程序：" + procedure_body + "。")
             lines.append("检查范围：现场了解" + scope.rstrip("。") + "。")
             lines.append("顾问协助：可由" + advisors.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "检查权" and "，并可在正常工作时间" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            records, inspection = body.split("，并可在", 1)
+            lines.append("基础查阅：" + records.rstrip("。") + "。")
+            lines.append("现场检查：可在" + inspection.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "独立审计权" and len(parts) >= 2 and "，一年不超过一次" in parts[0]:
+            audit, frequency = parts[0].split("，一年不超过一次", 1)
+            lines.append("审计触发：" + audit.rstrip("。") + "。")
+            lines.append("审计频次：一年不超过一次" + frequency.rstrip("。") + "。")
+            lines.append("费用承担：" + "；".join(parts[1:]).rstrip("。") + "。")
             changed = True
             continue
         if label == "检查程序":

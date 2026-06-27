@@ -2349,6 +2349,37 @@ def test_post_polish_normalizes_already_split_inspection_procedure() -> None:
     assert "通知后。" not in items[0]["draft_content"]
 
 
+def test_post_polish_splits_information_audit_two_part_reports() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.information_audit",
+            "draft_content": (
+                "信息权：公司应在会计年度结束后90日内提供经审计年度合并财报，并在每季度结束后45日内提供未经审计季度合并财报；"
+                "每个会计年度开始前30日内提交下一年度综合预算及年度业务计划。\n"
+                "检查权：信息权人可查阅复制章程、会议记录及财务会计报告，并可在正常工作时间、不影响经营前提下查看核对公司及子公司的资产、财务账簿和经营记录。\n"
+                "独立审计权：信息权人确有必要并事先书面说明后，可派内部审计人员或聘请独立审计师审计，一年不超过一次；"
+                "费用原则上由信息权人承担，发现财务造假或重大审计差异时由公司承担。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "年度报告：" in draft
+    assert "季度报告：" in draft
+    assert "预算计划：" in draft
+    assert "基础查阅：" in draft
+    assert "现场检查：" in draft
+    assert "审计触发：" in draft
+    assert "审计频次：" in draft
+    assert "费用承担：" in draft
+    assert "信息权：" not in draft
+    assert "检查权：" not in draft
+    assert "独立审计权：" not in draft
+
+
 def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
     items = [
         {
