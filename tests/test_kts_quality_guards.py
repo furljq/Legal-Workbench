@@ -972,9 +972,13 @@ def test_transaction_arrangement_guard_fills_complete_investor_amounts() -> None
                     "status": "unclear",
                     "value": "已见部分投资方。",
                 }
-            ]
+            ],
+            "lawyer_notes": ["需确认本次增资的整体融资额、投前/投后估值及各投资方投资金额。"],
+            "missing_or_unclear": ["完整投资方清单仍需确认。"],
         },
         "review_notes": ["以下关键字段需要律师确认：投资方及投资金额。"],
+        "lawyer_notes": ["需确认本次增资的整体融资额、投前/投后估值及各投资方投资金额。"],
+        "missing_or_unclear": ["完整投资方清单仍需确认。"],
     }
     candidates = [
         {
@@ -1007,6 +1011,21 @@ def test_transaction_arrangement_guard_fills_complete_investor_amounts() -> None
     assert "其余投资方包括投资人G、投资人H、投资人I、投资人J" in extraction["draft_content"]
     assert "完整投资方清单" not in extraction["draft_content"]
     assert not extraction["review_notes"]
+    assert not extraction["lawyer_notes"]
+    assert not extraction["missing_or_unclear"]
+    assert not extraction["extracted_facts"]["lawyer_notes"]
+    assert not extraction["extracted_facts"]["missing_or_unclear"]
+
+    item = {"taxonomy_id": "spa.transaction_arrangement", **extraction}
+    apply_post_polish_quality_guards([item])
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "spa.transaction_arrangement"},
+        item,
+        candidates,
+    )
+    apply_post_polish_quality_guards([item])
+    assert item["draft_content"].count("投资方概览：") == 1
+    assert item["draft_content"].count("其余投资方：") == 1
 
 
 def test_transaction_arrangement_guard_fills_bracketed_investor_amounts() -> None:

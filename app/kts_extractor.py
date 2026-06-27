@@ -2261,7 +2261,11 @@ def guard_transaction_investor_amounts(
     )
     draft_content = remove_stale_transaction_investor_draft_notes(str(extraction.get("draft_content") or ""))
     investor_line = transaction_investor_amounts_line(rows)
-    if "投资方明细" not in draft_content or any(marker in draft_content for marker in ("已见部分投资方", "完整投资方清单")):
+    has_investor_summary = any(
+        marker in draft_content
+        for marker in ("投资方明细", "投资方及金额", "投资方概览", "主要投资方")
+    )
+    if not has_investor_summary or any(marker in draft_content for marker in ("已见部分投资方", "完整投资方清单")):
         draft_content = replace_or_insert_kts_line(
             draft_content,
             investor_line,
@@ -2272,6 +2276,12 @@ def guard_transaction_investor_amounts(
     if fixed:
         extraction["draft_content"] = draft_content
         extraction["review_notes"] = remove_stale_transaction_review_notes(extraction.get("review_notes", []))
+        extraction["lawyer_notes"] = remove_stale_transaction_review_notes(extraction.get("lawyer_notes", []))
+        extraction["missing_or_unclear"] = remove_stale_transaction_review_notes(extraction.get("missing_or_unclear", []))
+        extracted_facts["lawyer_notes"] = remove_stale_transaction_review_notes(extracted_facts.get("lawyer_notes", []))
+        extracted_facts["missing_or_unclear"] = remove_stale_transaction_review_notes(
+            extracted_facts.get("missing_or_unclear", [])
+        )
     return fixed
 
 
@@ -2371,6 +2381,12 @@ def guard_transaction_arrangement(
     if fixed or draft_content != str(extraction.get("draft_content") or ""):
         extraction["draft_content"] = draft_content
         extraction["review_notes"] = remove_stale_transaction_review_notes(extraction.get("review_notes", []))
+        extraction["lawyer_notes"] = remove_stale_transaction_review_notes(extraction.get("lawyer_notes", []))
+        extraction["missing_or_unclear"] = remove_stale_transaction_review_notes(extraction.get("missing_or_unclear", []))
+        extracted_facts["lawyer_notes"] = remove_stale_transaction_review_notes(extracted_facts.get("lawyer_notes", []))
+        extracted_facts["missing_or_unclear"] = remove_stale_transaction_review_notes(
+            extracted_facts.get("missing_or_unclear", [])
+        )
 
 
 def remove_spa_other_workpaper_tone(extraction: dict[str, Any]) -> None:
@@ -5308,6 +5324,22 @@ def ensure_transaction_core_terms_after_polish(item: dict[str, Any]) -> None:
         split_lines.append(stripped)
     if split_changed:
         draft_content = "\n".join(split_lines)
+        changed = True
+
+    lines = [line for line in draft_content.splitlines() if line.strip()]
+    deduped_lines: list[str] = []
+    investor_label_indexes: set[str] = set()
+    for line in lines:
+        stripped = line.strip()
+        label = stripped.split("：", 1)[0] if "：" in stripped else ""
+        if label == "投资方概览" or label == "其余投资方" or re.fullmatch(r"主要投资方\d*", label):
+            if label in investor_label_indexes:
+                changed = True
+                continue
+            investor_label_indexes.add(label)
+        deduped_lines.append(stripped)
+    if deduped_lines != lines:
+        draft_content = "\n".join(deduped_lines)
         changed = True
 
     draft_content, capital_changed = normalize_transaction_capital_change_line(draft_content, extracted_facts)
