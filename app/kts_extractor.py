@@ -5262,6 +5262,27 @@ def trim_drafted_lawyer_notes(item: dict[str, Any]) -> None:
     item["lawyer_notes"] = [note for index, note in enumerate(notes) if index in keep_indexes]
 
 
+def normalize_closing_conditions_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if (
+            stripped.startswith("重大不利事件：")
+            and "不存在任何限制、禁止或致使" in stripped
+            and "无法实施的重大不利事件" in stripped
+        ):
+            lines.append("重大不利：不得存在限制、禁止或实质阻碍本次增资实施的事件。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def residual_rights_fallback_content(item: dict[str, Any]) -> str:
     if str(item.get("taxonomy_id") or "") != "sha.other":
         return ""
@@ -5934,6 +5955,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         item_id = str(item.get("taxonomy_id") or item.get("id") or "")
         if item_id == "spa.transaction_arrangement":
             ensure_transaction_core_terms_after_polish(item)
+        elif item_id == "spa.closing_conditions":
+            normalize_closing_conditions_subpoints(item)
         elif item_id == "spa.closing":
             normalize_closing_payment_subpoints(item)
         elif item_id == "spa.compliance":

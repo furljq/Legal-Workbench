@@ -2334,6 +2334,25 @@ def test_post_polish_splits_long_confidentiality_and_information_lines() -> None
     assert "通知后。" not in items[1]["draft_content"]
 
 
+def test_post_polish_summarizes_closing_conditions_mac_line() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.closing_conditions",
+            "draft_content": (
+                "内部审批：公司须完成内部审批。\n"
+                "重大不利事件：不存在任何限制、禁止或致使[公司或组织_AM]本次增资无法实施的重大不利事件。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "重大不利：不得存在限制、禁止或实质阻碍本次增资实施的事件。" in draft
+    assert "不存在任何限制、禁止或致使" not in draft
+
+
 def test_post_polish_normalizes_already_split_inspection_procedure() -> None:
     items = [
         {
