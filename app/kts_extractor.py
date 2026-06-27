@@ -2994,6 +2994,13 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
             lines.append("财务/资产事项：超过门槛的" + finance.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("资产处置：") and "达上述门槛" in stripped:
+            lines.append(
+                "资产处置：除需股东会批准的交易外，资产、业务、股份或权益处置及设置权利负担"
+                "达到单笔人民币50万元或12个月累计人民币100万元门槛，或超出已批预算和经营计划的，需投资人董事同意。"
+            )
+            changed = True
+            continue
         lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
