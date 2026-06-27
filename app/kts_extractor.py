@@ -3429,6 +3429,18 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
             lines.append("重大保护事项：第(2)-(12)项覆盖" + second.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("机制层级："):
+            lines.append("表决层级：" + stripped.split("：", 1)[1].rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("1.1.7事项："):
+            lines.append("特定投资人同意机制：" + stripped.split("：", 1)[1].rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("1.1.8事项："):
+            lines.append("多数投资人同意机制：" + stripped.split("：", 1)[1].rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("多数投资人事项：") and "、上市方案" in stripped and len(stripped) > 95:
             body = stripped.split("：", 1)[1]
             before, after = body.split("、上市方案", 1)
@@ -3440,9 +3452,9 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
             body = stripped.split("：", 1)[1].rstrip("。")
             intro, rest = body.split("；1.1.7事项需", 1)
             first, second = rest.split("，1.1.8事项需", 1)
-            lines.append("机制层级：" + intro.rstrip("。") + "。")
-            lines.append("1.1.7事项：" + first.rstrip("。") + "。")
-            lines.append("1.1.8事项：" + second.rstrip("。") + "。")
+            lines.append("表决层级：" + intro.rstrip("。") + "。")
+            lines.append("特定投资人同意机制：" + first.rstrip("。") + "。")
+            lines.append("多数投资人同意机制：" + second.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("重大交易：") and has_protection_line:
@@ -3934,9 +3946,38 @@ def normalize_information_audit_subpoints(item: dict[str, Any]) -> None:
             lines.append("预算计划：" + "；".join(parts[2:]).rstrip("。") + "。")
             changed = True
             continue
+        if label == "检查权" and "，现场了解" in stripped and "，并可由" in stripped:
+            procedure, rest = stripped.split("，现场了解", 1)
+            scope, advisors = rest.rsplit("，并可由", 1)
+            procedure_body = procedure.split("：", 1)[1].rstrip("。")
+            procedure_body = normalize_information_audit_inspection_procedure(procedure_body)
+            lines.append("检查程序：" + procedure_body + "。")
+            lines.append("检查范围：现场了解" + scope.rstrip("。") + "。")
+            lines.append("顾问协助：可由" + advisors.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "检查程序":
+            body = stripped.split("：", 1)[1].rstrip("。")
+            normalized_body = normalize_information_audit_inspection_procedure(body)
+            if normalized_body != body:
+                lines.append("检查程序：" + normalized_body + "。")
+                changed = True
+                continue
         lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_information_audit_inspection_procedure(procedure_body: str) -> str:
+    body = procedure_body.strip().rstrip("。")
+    compact = re.sub(r"\s+", "", body)
+    has_notice = "提前5个工作日书面通知" in compact
+    has_operation_limit = "不影响正常经营" in compact or "不影响公司正常经营" in compact
+    if has_notice and has_operation_limit:
+        return "投资方应提前5个工作日书面通知，且不得影响公司正常经营"
+    if "通知后" in compact and has_notice and "正常经营" in compact:
+        return "投资方应提前5个工作日书面通知，且不得影响公司正常经营"
+    return body
 
 
 def has_redemption_obligor_definition(candidates: list[dict[str, Any]]) -> bool:
@@ -5425,6 +5466,10 @@ def normalize_liability_subpoints(item: dict[str, Any]) -> None:
             rest = rest.strip("。；; ")
             if rest:
                 lines.append("继续履行：" + rest.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "一般赔偿":
+            lines.append("违约赔偿：" + body.rstrip("。") + "。")
             changed = True
             continue
         if label == "连带责任" and "；" in body:

@@ -1814,16 +1814,20 @@ def test_shareholder_reserved_guard_removes_client_veto_practicality_blocker() -
     ]
 
     apply_deterministic_quality_guards(item, extraction, candidates)
+    extraction["taxonomy_id"] = "sha.shareholder_reserved_matters"
+    apply_post_polish_quality_guards([extraction])
 
     assert "本方" not in extraction["draft_content"]
     assert "veto" not in extraction["draft_content"]
     assert "投资人门槛：" in extraction["draft_content"]
     assert "优先股指[[公司或组织_AI]或组织_AP]持有的股权" in extraction["draft_content"]
+    assert "表决层级：" in extraction["draft_content"]
+    assert "特定投资人同意机制：" in extraction["draft_content"]
+    assert "多数投资人同意机制：" in extraction["draft_content"]
+    assert "1.1.7事项：" not in extraction["draft_content"]
     assert not extraction["review_notes"]
     assert not extraction["missing_or_unclear"]
-    assert extraction["lawyer_notes"] == [
-        "保护性事项采用双层机制：部分事项由特定主体[[公司或组织_AI]或组织_AP]同意，部分事项由三分之二表决权加多数[[公司或组织_AI]或组织_AK]同意；KTS中不宜概括为全体投资人一致同意。"
-    ]
+    assert all("本方" not in note and "veto" not in note for note in extraction["lawyer_notes"])
 
     facts = extraction["extracted_facts"]
     for key in ("summary_points", "unclear_points", "lawyer_notes", "missing_or_unclear"):
@@ -2240,7 +2244,9 @@ def test_post_polish_splits_long_confidentiality_and_information_lines() -> None
             "draft_content": (
                 "信息权：公司应于每一会计年度结束后90日内提供经投资方认可会计师事务所审计的年度财务报表和审计报告；"
                 "每一会计季度结束后30日内提供未经审计季度财务合并报表和季度业务报告；"
-                "每一会计年度结束前30日内提供下一年度运营预算和业务计划。"
+                "每一会计年度结束前30日内提供下一年度运营预算和业务计划。\n"
+                "检查权：投资方可在不影响正常经营、提前5个工作日书面通知后，现场了解业务、财务和管理情况，"
+                "检查及复制账簿、凭证、会议记录等资料（涉密项目除外），并可由负有保密义务的会计师、律师等辅助。"
             ),
             "review_notes": [],
         },
@@ -2254,7 +2260,31 @@ def test_post_polish_splits_long_confidentiality_and_information_lines() -> None
     assert "年度报告：" in items[1]["draft_content"]
     assert "季度报告：" in items[1]["draft_content"]
     assert "预算计划：" in items[1]["draft_content"]
+    assert "检查程序：" in items[1]["draft_content"]
+    assert "检查程序：投资方应提前5个工作日书面通知，且不得影响公司正常经营。" in items[1]["draft_content"]
+    assert "检查范围：" in items[1]["draft_content"]
+    assert "顾问协助：" in items[1]["draft_content"]
     assert "信息权：" not in items[1]["draft_content"]
+    assert "检查权：" not in items[1]["draft_content"]
+    assert "通知后。" not in items[1]["draft_content"]
+
+
+def test_post_polish_normalizes_already_split_inspection_procedure() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.information_audit",
+            "draft_content": (
+                "检查程序：投资方可在不影响正常经营、提前5个工作日书面通知后。\n"
+                "检查范围：现场了解业务、财务和管理情况，检查及复制账簿、凭证、会议记录等资料（涉密项目除外）。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert "检查程序：投资方应提前5个工作日书面通知，且不得影响公司正常经营。" in items[0]["draft_content"]
+    assert "通知后。" not in items[0]["draft_content"]
 
 
 def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
@@ -2497,6 +2527,8 @@ def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:
     assert all(len(line) <= 95 for line in exported_lines)
     assert "主要投资方1：" in items[0]["draft_content"]
     assert "未披露债务：" in items[1]["draft_content"]
+    assert "违约赔偿：" in items[1]["draft_content"]
+    assert "一般赔偿：" not in items[1]["draft_content"]
     assert "责任独立性：" in items[1]["draft_content"]
     assert "公司/创始人连带责任：各增资人仅就自身行为负责" not in items[1]["draft_content"]
     assert "限制期间：" in items[2]["draft_content"]
