@@ -19,6 +19,7 @@ from source_refs import clean_clause_ref
 EAST_ASIA_FONT = "宋体"
 TITLE_FONT = "黑体"
 GROUP_ORDER = {"SPA": 0, "SHA": 1}
+SKIP_EMPTY_OUTPUT_CATEGORIES = {"conditional_output", "optional_conditional_output"}
 PARENTHETICAL_MARKER_RE = re.compile(r"\s*([（(][一二三四五六七八九十\d]+[）)])")
 BRACKETED_NOTE_RE = re.compile(r"【[^】]{1,1200}】")
 NOTE_LINE_RE = re.compile(r"\s*(【[^】]*注[：:][^】]*】)")
@@ -217,6 +218,13 @@ def export_label(item: dict[str, Any]) -> str:
     return str(item.get("label") or item.get("taxonomy_id") or "未命名事项").strip()
 
 
+def should_skip_empty_export_item(item: dict[str, Any]) -> bool:
+    output_policy = item.get("output_policy", {})
+    if not isinstance(output_policy, dict):
+        return False
+    return str(output_policy.get("category") or "") in SKIP_EMPTY_OUTPUT_CATEGORIES
+
+
 CLAUSE_NUMBER_RE = re.compile(r"^(第?[\d一二三四五六七八九十百]+[.、．条][\d.]*\s*)")
 
 
@@ -260,13 +268,16 @@ def export_items(record: dict[str, Any]) -> list[dict[str, Any]]:
     for index, item in enumerate(raw_items):
         if not isinstance(item, dict):
             continue
+        content_lines = export_content_lines(item)
+        if not content_lines and should_skip_empty_export_item(item):
+            continue
         group = str(item.get("group") or "其他").strip() or "其他"
         items.append(
             {
                 "index": index,
                 "group": group,
                 "label": export_label(item),
-                "content_lines": export_content_lines(item),
+                "content_lines": content_lines,
                 "source_refs": export_source_refs(item),
             }
         )

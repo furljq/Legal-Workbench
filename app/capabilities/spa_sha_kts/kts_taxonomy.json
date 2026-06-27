@@ -8,7 +8,7 @@
       "label": "本次交易安排",
       "template_labels": {"single_round": "本次交易安排"},
       "document_types": ["capital_increase_agreement"],
-      "keywords": ["本次交易", "交易安排", "增资", "认购", "投资款", "融资额", "投前估值", "投后估值", "注册资本", "股权结构", "签署方", "ESOP", "员工持股平台"]
+      "keywords": ["本次交易", "交易安排", "增资", "认购", "投资款", "融资额", "投前估值", "投后估值", "注册资本", "股权结构", "签署方", "协议各方", "共同订立", "截至本协议签署日", "签署日前", "持股比例", "股东持股", "ESOP", "员工持股平台"]
     },
     {
       "id": "spa.closing_conditions",
@@ -16,7 +16,7 @@
       "label": "交割先决条件",
       "template_labels": {"single_round": "交割先决条件"},
       "document_types": ["capital_increase_agreement"],
-      "keywords": ["交割先决条件", "先决条件", "条件满足", "内部批准", "批准许可", "投委会", "尽职调查", "法律意见书", "重大不利"]
+      "keywords": ["交割先决条件", "先决条件", "条件满足", "内部批准", "批准许可", "投委会", "尽职调查", "法律意见书", "重大不利", "工商变更", "外商投资信息报告", "外汇登记"]
     },
     {
       "id": "spa.closing",
@@ -32,7 +32,7 @@
       "label": "陈述及保证",
       "template_labels": {"single_round": "陈述及保证"},
       "document_types": ["capital_increase_agreement"],
-      "keywords": ["陈述", "保证", "陈述保证", "声明", "资料真实", "知识产权", "合规", "授权", "过渡期", "代持", "重大不利影响"]
+      "keywords": ["陈述", "保证", "陈述保证", "声明", "资料真实", "知识产权", "合规", "授权", "过渡期", "过渡期保证", "正常开展业务", "事先书面同意", "代持", "重大不利影响"]
     },
     {
       "id": "spa.post_closing_covenants",
@@ -104,7 +104,7 @@
       "label": "股东会保护性事项",
       "template_labels": {"single_round": "股东会保护性事项"},
       "document_types": ["shareholders_agreement"],
-      "keywords": ["股东会保护性事项", "股东会重大事项", "股东会", "股东同意", "全体投资人", "多数投资人", "三分之二", "特别决议", "保护性事项", "veto"]
+      "keywords": ["股东会保护性事项", "股东会重大事项", "股东会", "股东同意", "全体投资人", "每一轮次投资人", "特定投资人", "多数投资人", "三分之二", "特别决议", "保护性事项", "veto"]
     },
     {
       "id": "sha.preemptive_right",
@@ -120,7 +120,7 @@
       "label": "股权转让限制",
       "template_labels": {"single_round": "股权转让限制"},
       "document_types": ["shareholders_agreement"],
-      "keywords": ["股权转让", "转让限制", "转股限制", "转股受限", "锁定", "QIPO前", "合格上市前", "竞对", "不受限制"]
+      "keywords": ["股权转让", "转让限制", "转股限制", "转股受限", "锁定", "QIPO前", "合格上市前", "在合格上市之前", "经全体投资人同意", "拟向任何第三方", "转让通知", "拟售股权", "转股方", "预期买方", "竞对", "不受限制"]
     },
     {
       "id": "sha.rofr_tag",
@@ -131,12 +131,20 @@
       "keywords": ["优先购买权", "优先购买", "共同出售权", "共同出售", "共售权", "随售权", "共同售卖", "二次购买权", "控制权变更", "ROFR"]
     },
     {
+      "id": "sha.drag_along",
+      "group": "SHA",
+      "label": "领售权/拖售权",
+      "template_labels": {"single_round": "领售权/拖售权"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["领售权", "拖售权", "强制出售", "被领售股东", "领售股东", "拖售", "领售", "drag-along", "drag along"]
+    },
+    {
       "id": "sha.information_audit",
       "group": "SHA",
       "label": "信息权及审计权",
       "template_labels": {"single_round": "信息权及审计权"},
       "document_types": ["shareholders_agreement"],
-      "keywords": ["信息权", "检查权", "审计权", "独立审计权", "财务报表", "经审计年报", "未经审计季报", "预算", "月报"]
+      "keywords": ["信息权", "检查权", "审计权", "独立审计权", "财务报表", "经审计年报", "未经审计季报", "预算", "月报", "查看核对", "经营记录", "访问"]
     },
     {
       "id": "sha.liquidation_preference",
@@ -152,7 +160,7 @@
       "label": "反稀释权",
       "template_labels": {"single_round": "反稀释权"},
       "document_types": ["shareholders_agreement"],
-      "keywords": ["反稀释", "反稀释权", "棘轮", "全棘轮", "加权平均", "广义加权平均", "调整价格", "价格调整"]
+      "keywords": ["反稀释", "反稀释权", "棘轮", "全棘轮", "加权平均", "广义加权平均", "价格重设", "调整后每单位认购价格", "调整价格", "价格调整"]
     },
     {
       "id": "sha.dividend",
@@ -163,12 +171,20 @@
       "keywords": ["分红", "分红权", "利润分配", "股利", "实缴出资比例", "不得分红", "优先分红"]
     },
     {
+      "id": "sha.founder_obligations",
+      "group": "SHA",
+      "label": "创始人及核心人员义务",
+      "template_labels": {"single_round": "创始人及核心人员义务"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["创始人", "核心人员", "全职", "持续任职", "不竞争", "竞业", "受限股权", "股权成熟", "成熟期", "离职", "过错理由", "知识产权归属", "保密"]
+    },
+    {
       "id": "sha.esop",
       "group": "SHA",
       "label": "ESOP特别约定",
       "template_labels": {"single_round": "ESOP特别约定"},
       "document_types": ["shareholders_agreement"],
-      "keywords": ["员工股权激励", "股权激励", "期权池", "员工持股", "ESOP", "员工激励", "后续融资", "投前估值", "增发"]
+      "keywords": ["员工股权激励", "股权激励", "期权池", "员工持股", "ESOP", "员工激励", "后续融资", "投前估值", "里程碑", "25POPS", "100POPS", "30亿元", "60亿元", "增发"]
     },
     {
       "id": "sha.redemption",
@@ -176,7 +192,23 @@
       "label": "特殊回购权",
       "template_labels": {"single_round": "特殊回购权"},
       "document_types": ["shareholders_agreement"],
-      "keywords": ["特殊回购权", "回购触发事项", "回购义务人", "回购价格", "回购价款", "回购权行使", "回购顺位", "利益输送", "股权代持", "不正当利益交换", "日万分之三"]
+      "keywords": ["特殊回购权", "回购触发事项", "回购义务人", "回购价格", "回购价款", "回购权行使", "回购顺位", "违反本条", "第2.3条履行回购义务", "履行回购义务", "利益输送", "股权代持", "不正当利益交换", "不当利益", "资金往来", "日万分之三"]
+    },
+    {
+      "id": "sha.registration_rights",
+      "group": "SHA",
+      "label": "登记权",
+      "template_labels": {"single_round": "登记权"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["登记权", "注册权", "上市登记", "注册登记", "registration rights", "要求登记", "附带登记"]
+    },
+    {
+      "id": "sha.mfn_special_rights",
+      "group": "SHA",
+      "label": "最惠国及特殊投资人权利",
+      "template_labels": {"single_round": "最惠国及特殊投资人权利"},
+      "document_types": ["shareholders_agreement"],
+      "keywords": ["最惠国", "更优惠", "同等享有", "同等权利", "Side Letter", "side letter", "新项目优先投资权", "优先征询权", "优先投资", "登记权", "特殊权利"]
     },
     {
       "id": "sha.other",
