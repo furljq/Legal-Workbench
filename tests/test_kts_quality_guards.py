@@ -1610,6 +1610,30 @@ def test_post_polish_splits_redemption_exercise_and_payment_deadlines() -> None:
     assert "付款期限：回购义务人收到回购通知后1个月内签署相关协议，并于60日内全额支付回购价款。" in items[0]["draft_content"]
 
 
+def test_post_polish_splits_redemption_price_formula_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.redemption",
+            "draft_content": (
+                "回购价格：按“回购股权对应投资总额×(1+8%×投资年数)-已取得股息或分红”与“股权回购协议签订日前最近一期经审计净资产×要求回购股权比例”孰高确定。\n"
+                "价格及付款：回购价款按两项孰高确定：回购股权对应投资总额×(1+8%×投资年数)-已取得股息/分红，或最近一期经审计净资产×要求回购股权比例；回购通知后60日内全额支付。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "回购价格：投资成本公式与净资产公式孰高。" in draft
+    assert "投资成本公式：回购股权对应投资总额×(1+8%×投资年数)，并扣减已取得股息或分红。" in draft
+    assert "净资产公式：股权回购协议签订日前最近一期经审计净资产×要求回购股权比例。" in draft
+    assert "付款期限：回购通知后60日内全额支付。" in draft
+    assert "回购价格：按“" not in draft
+    assert "价格及付款：" not in draft
+
+
 def test_rofr_tag_guard_resolves_ap_ak_alias() -> None:
     extraction = {
         "status": "needs_review",
@@ -3318,6 +3342,7 @@ if __name__ == "__main__":
     test_candidate_context_centers_on_source_quote()
     test_post_polish_deduplicates_redemption_trigger_lines()
     test_post_polish_splits_redemption_exercise_and_payment_deadlines()
+    test_post_polish_splits_redemption_price_formula_lines()
     test_transaction_arrangement_adds_header_and_cap_table_candidates()
     test_transaction_arrangement_guard_fills_signing_parties_and_cap_table()
     test_rofr_tag_adds_sha_definition_candidate()

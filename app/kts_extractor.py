@@ -4753,6 +4753,33 @@ def split_redemption_obligor_and_exercise_line(line: str) -> list[str] | None:
     ]
 
 
+def split_redemption_price_formula_line(line: str) -> list[str] | None:
+    if not line.startswith(("回购价格：", "价格及付款：", "回购价款：")):
+        return None
+    body = line.split("：", 1)[1].strip().rstrip("。")
+    compact_body = re.sub(r"\s+", "", body)
+    if not ("投资总额" in compact_body and "净资产" in compact_body and "孰高" in compact_body):
+        return None
+
+    deadline_line = ""
+    if "；" in body:
+        price_body, possible_deadline = body.rsplit("；", 1)
+        if "支付" in possible_deadline or "付款" in possible_deadline:
+            body = price_body.strip()
+            possible_deadline = possible_deadline.strip("。；; ")
+            if possible_deadline:
+                deadline_line = "付款期限：" + possible_deadline + "。"
+
+    lines = [
+        "回购价格：投资成本公式与净资产公式孰高。",
+        "投资成本公式：回购股权对应投资总额×(1+8%×投资年数)，并扣减已取得股息或分红。",
+        "净资产公式：股权回购协议签订日前最近一期经审计净资产×要求回购股权比例。",
+    ]
+    if deadline_line:
+        lines.append(deadline_line)
+    return lines
+
+
 def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -4787,6 +4814,11 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
         split_obligor = split_redemption_obligor_line(line)
         if split_obligor:
             lines.extend(split_obligor)
+            changed = True
+            continue
+        split_price_formula = split_redemption_price_formula_line(line)
+        if split_price_formula:
+            lines.extend(split_price_formula)
             changed = True
             continue
         elif line.startswith("价格与付款："):
