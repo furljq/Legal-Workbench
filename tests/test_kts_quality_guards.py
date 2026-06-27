@@ -1828,8 +1828,10 @@ def test_post_polish_splits_redemption_exercise_and_payment_deadlines() -> None:
 
     apply_post_polish_quality_guards(items)
 
-    assert "行权期限：触发事件发生后30日内通知投资方。" in items[0]["draft_content"]
-    assert "付款期限：回购义务人收到回购通知后1个月内签署相关协议，并于60日内全额支付回购价款。" in items[0]["draft_content"]
+    assert "触发通知：回购义务人应在触发事件发生后30日内通知投资方。" in items[0]["draft_content"]
+    assert "签约期限：回购义务人收到回购通知后1个月内签署相关协议。" in items[0]["draft_content"]
+    assert "付款期限：回购义务人收到回购通知后60日内全额支付回购价款。" in items[0]["draft_content"]
+    assert "行权期限：" not in items[0]["draft_content"]
 
 
 def test_post_polish_splits_redemption_price_formula_lines() -> None:

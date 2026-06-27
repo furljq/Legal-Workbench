@@ -5193,8 +5193,22 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
         elif line.startswith("回购期限：") and "；回购义务人" in line:
             body = line.split("：", 1)[1].rstrip("。")
             exercise, payment = body.split("；", 1)
-            lines.append("行权期限：" + exercise.rstrip("。") + "。")
-            lines.append("付款期限：" + payment.rstrip("。") + "。")
+            if "触发事件发生后30日内通知投资方" in exercise and "1个月内签署" in payment and "60日内全额支付" in payment:
+                lines.append("触发通知：回购义务人应在触发事件发生后30日内通知投资方。")
+                lines.append("签约期限：回购义务人收到回购通知后1个月内签署相关协议。")
+                lines.append("付款期限：回购义务人收到回购通知后60日内全额支付回购价款。")
+            else:
+                lines.append("行权期限：" + exercise.rstrip("。") + "。")
+                lines.append("付款期限：" + payment.rstrip("。") + "。")
+            changed = True
+            continue
+        elif line.startswith("行权期限：") and "触发事件发生后30日内通知投资方" in line:
+            lines.append("触发通知：回购义务人应在触发事件发生后30日内通知投资方。")
+            changed = True
+            continue
+        elif line.startswith("付款期限：") and "1个月内签署" in line and "60日内全额支付" in line:
+            lines.append("签约期限：回购义务人收到回购通知后1个月内签署相关协议。")
+            lines.append("付款期限：回购义务人收到回购通知后60日内全额支付回购价款。")
             changed = True
             continue
         elif line.startswith("回购价格及付款期限："):
