@@ -2482,6 +2482,52 @@ def test_post_polish_splits_long_confidentiality_and_information_lines() -> None
     assert "通知后。" not in items[1]["draft_content"]
 
 
+def test_post_polish_compacts_spa_other_dispute_and_notice_language() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.other",
+            "draft_content": (
+                "保密及披露：各方对交易磋商、履约、尽调取得的信息及协议内容承担保密义务，期限至原提供方公开为公众所知；"
+                "公开披露增资事项和细节需取得相关投资方及核心人员书面同意。\n"
+                "争议解决：争议发生后15日内协商不成的，提交[地址_H]国际经济贸易仲裁委员会（[地址_H]国际仲裁中心）"
+                "在[地址_H]仲裁，中文，三名仲裁员，裁决终局。\n"
+                "通知送达：通知应书面作出，电子通讯成功发送、专人签收或交速递后七日视为送达；"
+                "地址或邮箱变更应在5日内通知，并作为仲裁、司法文书送达地址。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.other",
+            "draft_content": (
+                "争议解决：争议先友好协商；争议发生后15日内未解决的，任一方可提交[地址_N]仲裁委员会"
+                "按届时有效仲裁规则仲裁，非争议事项继续履行。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.other",
+            "draft_content": "公开披露：公开披露增资事项和细节需取得相关投资方及核心人员书面同意。",
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    first = items[0]["draft_content"]
+    assert "保密范围：各方对交易磋商、履约、尽调取得的信息及协议内容承担保密义务，期限至原提供方公开为公众所知。" in first
+    assert "公开披露：增资事项和细节需取得相关投资方及核心人员书面同意。" in first
+    assert "争议解决：争议发生后15日内协商不成的，提交约定仲裁机构仲裁，仲裁裁决终局。" in first
+    assert "通知送达：书面通知可通过电子通讯、专人或速递送达；地址/邮箱变更应提前通知，并作为仲裁及司法文书送达地址。" in first
+    assert "保密及披露：" not in first
+    assert "[地址_H]国际经济贸易仲裁委员会" not in first
+    assert "三名仲裁员" not in first
+    assert "速递后七日视为送达" not in first
+
+    assert items[1]["draft_content"] == "争议解决：争议先友好协商；15日内未解决的，提交约定仲裁机构仲裁，非争议事项继续履行。"
+    assert items[2]["draft_content"] == "公开披露：增资事项和细节需取得相关投资方及核心人员书面同意。"
+
+
 def test_post_polish_summarizes_closing_conditions_mac_line() -> None:
     items = [
         {
@@ -3057,6 +3103,7 @@ if __name__ == "__main__":
     test_post_polish_deduplicates_missing_notes_already_in_review_notes()
     test_post_polish_normalizes_esop_milestone_labels()
     test_post_polish_splits_long_confidentiality_and_information_lines()
+    test_post_polish_compacts_spa_other_dispute_and_notice_language()
     test_post_polish_splits_reserved_matters_and_mfn_lines()
     test_post_polish_splits_remaining_long_substantive_lines()
     test_post_polish_compacts_compliance_kts_language()

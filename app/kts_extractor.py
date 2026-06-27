@@ -2703,9 +2703,32 @@ def normalize_spa_other_confidentiality_subpoints(item: dict[str, Any]) -> None:
     for line in draft_content.splitlines():
         stripped = line.strip()
         label, parts = split_semicolon_body(stripped)
-        if label == "保密及披露" and len(parts) >= 2 and len(stripped) > 90:
+        if label == "保密及披露" and len(parts) >= 2:
             lines.append("保密范围：" + parts[0].rstrip("。") + "。")
-            lines.append("允许披露：" + "；".join(parts[1:]).rstrip("。") + "。")
+            disclosure_body = "；".join(parts[1:]).rstrip("。")
+            if parts[1].startswith("公开披露"):
+                disclosure_label = "公开披露"
+                disclosure_body = disclosure_body.removeprefix("公开披露").lstrip(" ：:，,") or disclosure_body
+            else:
+                disclosure_label = "允许披露"
+            lines.append(disclosure_label + "：" + disclosure_body + "。")
+            changed = True
+            continue
+        if stripped.startswith("公开披露：公开披露"):
+            disclosure_body = stripped.split("：", 1)[1].rstrip("。")
+            disclosure_body = disclosure_body.removeprefix("公开披露").lstrip(" ：:，,") or disclosure_body
+            lines.append("公开披露：" + disclosure_body + "。")
+            changed = True
+            continue
+        if stripped.startswith("争议解决：") and "15日" in stripped and "仲裁" in stripped:
+            if "友好协商" in stripped:
+                lines.append("争议解决：争议先友好协商；15日内未解决的，提交约定仲裁机构仲裁，非争议事项继续履行。")
+            else:
+                lines.append("争议解决：争议发生后15日内协商不成的，提交约定仲裁机构仲裁，仲裁裁决终局。")
+            changed = True
+            continue
+        if stripped.startswith("通知送达：") and "电子通讯" in stripped and "速递" in stripped:
+            lines.append("通知送达：书面通知可通过电子通讯、专人或速递送达；地址/邮箱变更应提前通知，并作为仲裁及司法文书送达地址。")
             changed = True
             continue
         if stripped.startswith("适用法律/争议：") and "；争议发生后" in stripped:
