@@ -1948,6 +1948,99 @@ def test_post_polish_normalizes_esop_milestone_labels() -> None:
     assert items[0]["review_notes"] == ["两项10%额度可能导致较高稀释，且累计关系未明，建议律师关注。"]
 
 
+def test_post_polish_splits_long_confidentiality_and_information_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.other",
+            "draft_content": (
+                "保密及披露：协议条件、条款、存在性及因本次增资获悉的未公开信息均属保密信息；"
+                "法律、监管要求及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外，"
+                "披露方应确保接收方承担不低于协议标准的保密义务。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.information_audit",
+            "draft_content": (
+                "信息权：公司应于每一会计年度结束后90日内提供经投资方认可会计师事务所审计的年度财务报表和审计报告；"
+                "每一会计季度结束后30日内提供未经审计季度财务合并报表和季度业务报告；"
+                "每一会计年度结束前30日内提供下一年度运营预算和业务计划。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert "保密范围：" in items[0]["draft_content"]
+    assert "允许披露：" in items[0]["draft_content"]
+    assert "保密及披露：" not in items[0]["draft_content"]
+    assert "年度报告：" in items[1]["draft_content"]
+    assert "季度报告：" in items[1]["draft_content"]
+    assert "预算计划：" in items[1]["draft_content"]
+    assert "信息权：" not in items[1]["draft_content"]
+
+
+def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.board_reserved_matters",
+            "draft_content": (
+                "金额门槛：借款、对外投资单笔超过人民币100万元或任一财务年度累计超过人民币500万元；"
+                "资产处置或设负担单笔超过人民币200万元或年度累计超过人民币500万元；"
+                "预算外费用单笔超过已批准年度预算总额5%或年度累计超过10%。\n"
+                "保护事项：高管任免及薪酬、审计机构聘解及会计政策变更、关联交易、员工股权/期权计划及年度发放比例、年度预算/决算、业务计划、超过门槛的借款/投资、集团外第三方贷款、担保及重大资产处置均需投资人董事同意。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.shareholder_reserved_matters",
+            "draft_content": (
+                "保护事项：第(1)项覆盖修改投资人权利或设置不利限制；"
+                "第(2)-(12)项覆盖章程修改、增减资及稀释性发行、减资回购注销、清算分红、"
+                "重组/控制权变更、上市方案、董事会构成、主营业务重大变化、发行数字资产及其他重大事项。\n"
+                "重大交易：合并、分立、重组、变更形式、控制权变更、重大资产处置、视为清算事件、上市方案亦纳入保护事项。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.mfn_special_rights",
+            "draft_content": (
+                "最惠国待遇：除[[公司或组织_AE]或组织_AD]另有约定外，任一[[公司或组织_AE]或组织_K]"
+                "如发现现有股东，或以不高于其适用原始认购价格认缴新增注册资本的未来股东，"
+                "享有优于或超出其在协议项下权利、权益或待遇的更优权利，可主张自动同等享有。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.esop",
+            "draft_content": (
+                "首发试验星条件：发射成功并完成新一轮融资后。\n"
+                "两星及算力里程碑：两颗卫星发射成功并在轨稳定工作、在轨运行卫星总算力达到100POPS以上（FP4精度下），"
+                "且以不低于投前人民币60亿元估值完成新一轮融资后，公司有权向员工持股平台定向增资，使其新增持有公司10%股权。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert "借款/投资门槛：" in items[0]["draft_content"]
+    assert "资产处置门槛：" in items[0]["draft_content"]
+    assert "预算外费用门槛：" in items[0]["draft_content"]
+    assert "治理保护事项：" in items[0]["draft_content"]
+    assert "财务/资产事项：" in items[0]["draft_content"]
+    assert "投资人权利事项：" in items[1]["draft_content"]
+    assert "重大保护事项：" in items[1]["draft_content"]
+    assert "重大交易：" not in items[1]["draft_content"]
+    assert "适用主体：" in items[2]["draft_content"]
+    assert "触发情形：" in items[2]["draft_content"]
+    assert "最惠国待遇：" not in items[2]["draft_content"]
+    assert "两星及算力条件：" in items[3]["draft_content"]
+    assert "两星及算力增发额度：" in items[3]["draft_content"]
+    assert "后。" not in items[3]["draft_content"]
+
+
 if __name__ == "__main__":
     test_anti_dilution_price_reset_guard()
     test_redemption_compliance_trigger_guard()
@@ -1989,4 +2082,6 @@ if __name__ == "__main__":
     test_post_polish_splits_founder_service_long_line()
     test_post_polish_removes_nonblocking_workpaper_review_notes()
     test_post_polish_normalizes_esop_milestone_labels()
+    test_post_polish_splits_long_confidentiality_and_information_lines()
+    test_post_polish_splits_reserved_matters_and_mfn_lines()
     print("ok")

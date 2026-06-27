@@ -2530,6 +2530,33 @@ def clean_esop_review_tone(extraction: dict[str, Any]) -> None:
     ]
 
 
+def normalize_esop_milestone_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("首发试验星条件：", "两星及算力条件：")) and stripped.endswith("后。"):
+            stripped = stripped[:-2] + "。"
+            changed = True
+        if (
+            stripped.startswith(("首发试验星里程碑：", "两星及算力里程碑："))
+            and "后，公司有权" in stripped
+        ):
+            label, body = stripped.split("：", 1)
+            condition, grant = body.split("后，公司有权", 1)
+            short_label = "首发试验星" if label.startswith("首发") else "两星及算力"
+            lines.append(short_label + "条件：" + condition.rstrip("，,。") + "。")
+            lines.append(short_label + "增发额度：公司有权" + grant.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def normalize_conventional_kts_labels(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -2548,6 +2575,33 @@ def normalize_conventional_kts_labels(item: dict[str, Any]) -> None:
                 stripped = new + "：" + stripped.split("：", 1)[1]
                 changed = True
                 break
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def split_semicolon_body(line: str) -> tuple[str, list[str]]:
+    label, sep, body = line.partition("：")
+    if not sep:
+        return "", []
+    parts = [part.strip(" 。；;") for part in re.split(r"[；;]\s*", body) if part.strip(" 。；;")]
+    return label.strip(), parts
+
+
+def normalize_spa_other_confidentiality_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        label, parts = split_semicolon_body(stripped)
+        if label == "保密及披露" and len(parts) >= 2 and len(stripped) > 90:
+            lines.append("保密范围：" + parts[0].rstrip("。") + "。")
+            lines.append("允许披露：" + "；".join(parts[1:]).rstrip("。") + "。")
+            changed = True
+            continue
         lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
@@ -2683,6 +2737,33 @@ def normalize_board_composition_subpoints(item: dict[str, Any]) -> None:
             changed = True
             continue
         lines.append(line)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        label, parts = split_semicolon_body(stripped)
+        if label == "金额门槛" and len(parts) >= 3:
+            lines.append("借款/投资门槛：" + parts[0].rstrip("。") + "。")
+            lines.append("资产处置门槛：" + parts[1].rstrip("。") + "。")
+            lines.append("预算外费用门槛：" + "；".join(parts[2:]).rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("保护事项：") and "、超过门槛的" in stripped and len(stripped) > 95:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            governance, finance = body.split("、超过门槛的", 1)
+            lines.append("治理保护事项：" + governance.rstrip("。") + "。")
+            lines.append("财务/资产事项：超过门槛的" + finance.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
 
@@ -3188,6 +3269,41 @@ def guard_shareholder_reserved_matters(
     clean_shareholder_reserved_client_veto_tone(extraction, candidates)
 
 
+def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    has_protection_line = any(
+        line.strip().startswith("保护事项：") and "重组/控制权变更" in line
+        for line in draft_content.splitlines()
+    )
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("保护事项：第(1)项覆盖") and "；第(2)-(12)项覆盖" in stripped:
+            first, second = stripped.split("；第(2)-(12)项覆盖", 1)
+            lines.append("投资人权利事项：" + first.split("：", 1)[1].rstrip("。") + "。")
+            lines.append("重大保护事项：第(2)-(12)项覆盖" + second.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("多数投资人事项：") and "、上市方案" in stripped and len(stripped) > 95:
+            body = stripped.split("：", 1)[1]
+            before, after = body.split("、上市方案", 1)
+            lines.append("重大交易事项：" + before.rstrip("。") + "，适用多数投资人同意机制。")
+            lines.append("治理及股权事项：上市方案" + after.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("重大交易：") and has_protection_line:
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(lines)
+
+
 def has_liquidation_event_definition(candidates: list[dict[str, Any]]) -> bool:
     compact_text = re.sub(r"\s+", "", combined_candidate_text(candidates))
     return (
@@ -3635,6 +3751,27 @@ def guard_information_audit_inspection(
     if fixed:
         extraction["draft_content"] = draft_content
         extraction["review_notes"] = remove_stale_information_inspection_notes(extraction.get("review_notes", []))
+
+
+def normalize_information_audit_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        label, parts = split_semicolon_body(stripped)
+        if label == "信息权" and len(parts) >= 3:
+            annual = parts[0].removeprefix("公司应于").rstrip("。")
+            lines.append("年度报告：" + annual + "。")
+            lines.append("季度报告：" + parts[1].rstrip("。") + "。")
+            lines.append("预算计划：" + "；".join(parts[2:]).rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
 
 
 def has_redemption_obligor_definition(candidates: list[dict[str, Any]]) -> bool:
@@ -4319,6 +4456,32 @@ def clean_founder_obligations_review_tone(item: dict[str, Any]) -> None:
     item["missing_or_unclear"] = remove_stale_founder_obligations_notes(item.get("missing_or_unclear", []))
 
 
+def normalize_mfn_special_rights_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if (
+            stripped.startswith("最惠国待遇：")
+            and "如发现" in stripped
+            and "可主张自动同等享有" in stripped
+            and len(stripped) > 95
+        ):
+            body = stripped.split("：", 1)[1]
+            prefix, trigger = body.split("如发现", 1)
+            trigger = re.sub(r"，?可主张自动同等享有。?$", "", trigger).rstrip("。")
+            lines.append("适用主体：" + prefix.rstrip("，,。 ") + "可主张最惠国待遇。")
+            lines.append("触发情形：如发现" + trigger.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def guard_founder_obligations(
     extraction: dict[str, Any],
     candidates: list[dict[str, Any]],
@@ -4888,16 +5051,21 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         elif item_id == "spa.other":
             remove_spa_other_workpaper_tone(item)
             normalize_conventional_kts_labels(item)
+            normalize_spa_other_confidentiality_subpoints(item)
         elif item_id == "sha.board_composition":
             normalize_board_composition_subpoints(item)
         elif item_id == "sha.rofr_tag":
             clean_rofr_tag_workpaper_tone(item)
         elif item_id == "sha.board_reserved_matters":
             remove_board_reserved_workpaper_tone(item)
+            normalize_board_reserved_subpoints(item)
+        elif item_id == "sha.shareholder_reserved_matters":
+            normalize_shareholder_reserved_subpoints(item)
         elif item_id == "sha.anti_dilution":
             clean_anti_dilution_review_tone(item)
         elif item_id == "sha.esop":
             clean_esop_review_tone(item)
+            normalize_esop_milestone_subpoints(item)
         elif item_id == "sha.redemption":
             clean_redemption_review_tone(item)
             normalize_redemption_subpoint_labels(item)
@@ -4905,6 +5073,10 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             clean_liquidation_review_tone(item)
         elif item_id == "sha.founder_obligations":
             clean_founder_obligations_review_tone(item)
+        elif item_id == "sha.information_audit":
+            normalize_information_audit_subpoints(item)
+        elif item_id == "sha.mfn_special_rights":
+            normalize_mfn_special_rights_subpoints(item)
         item["review_notes"] = remove_nonblocking_workpaper_review_notes(item.get("review_notes", []))
 
 
