@@ -2478,6 +2478,33 @@ def test_post_polish_normalizes_esop_milestone_labels() -> None:
     assert items[0]["review_notes"] == ["两项10%额度可能导致较高稀释，且累计关系未明，建议律师关注。"]
 
 
+def test_post_polish_splits_esop_condition_and_usage_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.esop",
+            "draft_content": (
+                "首发试验星条件：发射成功、在轨运行卫星总算力达到25POPS（FP4精度下），且以不低于投前人民币30亿元估值完成新一轮融资。\n"
+                "两星及算力条件：两颗卫星发射成功并在轨稳定工作、在轨运行卫星总算力达到100POPS以上（FP4精度下），且以不低于投前人民币60亿元估值完成新一轮融资。\n"
+                "用途限制：激励股权用于非员工激励、转让、处分或设置权利负担，须经[[公司或组织_AE]或组织_K]多数且包括[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "首发试验星条件：发射成功、在轨运行卫星总算力达到25POPS（FP4精度下）。" in draft
+    assert "首发试验星融资要求：新一轮融资投前估值不低于人民币30亿元。" in draft
+    assert "两星及算力融资要求：新一轮融资投前估值不低于人民币60亿元。" in draft
+    assert "非激励用途：激励股权用于非员工激励须经审批。" in draft
+    assert "转让/负担限制：激励股权转让、处分或设置权利负担须经审批。" in draft
+    assert "审批门槛：须经[[公司或组织_AE]或组织_K]多数且包括[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。" in draft
+    assert "且以不低于投前人民币" not in draft
+    assert "用途限制：" not in draft
+
+
 def test_post_polish_splits_long_confidentiality_and_information_lines() -> None:
     items = [
         {
@@ -3125,7 +3152,10 @@ def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
     apply_post_polish_quality_guards(items)
 
     draft = items[0]["draft_content"]
-    assert "注册资本变化：签署日注册资本为人民币7,950,852.25元；本次增资新增注册资本人民币1,351,644.87元；增资完成后注册资本为人民币9,302,497.12元。" in draft
+    assert "签署日注册资本：人民币7,950,852.25元。" in draft
+    assert "本次新增注册资本：人民币1,351,644.87元。" in draft
+    assert "增资后注册资本：人民币9,302,497.12元。" in draft
+    assert "注册资本变化：" not in draft
     assert "新增[公司或组织_L]持股" not in draft
     assert "签署方：由本轮投资方（甲方）、现有股东、公司及创始股东等共同签署。" in draft
 
@@ -3205,6 +3235,7 @@ def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:
 
     assert all(len(line) <= 95 for line in exported_lines)
     assert "主要投资方1：" in items[0]["draft_content"]
+    assert "主要投资方：" not in items[0]["draft_content"]
     assert "未披露债务：" in items[1]["draft_content"]
     assert "违约赔偿：" in items[1]["draft_content"]
     assert "一般赔偿：" not in items[1]["draft_content"]
@@ -3310,6 +3341,7 @@ if __name__ == "__main__":
     test_post_polish_removes_nonblocking_workpaper_review_notes()
     test_post_polish_deduplicates_missing_notes_already_in_review_notes()
     test_post_polish_normalizes_esop_milestone_labels()
+    test_post_polish_splits_esop_condition_and_usage_lines()
     test_post_polish_splits_long_confidentiality_and_information_lines()
     test_post_polish_compacts_spa_other_dispute_and_notice_language()
     test_post_polish_splits_reserved_matters_and_mfn_lines()

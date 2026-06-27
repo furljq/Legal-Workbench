@@ -2626,6 +2626,23 @@ def normalize_esop_milestone_subpoints(item: dict[str, Any]) -> None:
             stripped = stripped[:-2] + "。"
             changed = True
         if (
+            stripped.startswith(("首发试验星条件：", "两星及算力条件："))
+            and "且以不低于投前人民币" in stripped
+            and "估值完成新一轮融资" in stripped
+        ):
+            label, body = stripped.split("：", 1)
+            short_label = "首发试验星" if label.startswith("首发") else "两星及算力"
+            condition, financing = re.split(r"，?且以", body.rstrip("。"), 1)
+            financing_text = "以" + financing.rstrip("。")
+            valuation_match = re.search(r"不低于投前人民币([^，,。]+?)估值完成新一轮融资", financing_text)
+            lines.append(short_label + "条件：" + condition.rstrip("，,。") + "。")
+            if valuation_match:
+                lines.append(short_label + "融资要求：新一轮融资投前估值不低于人民币" + valuation_match.group(1) + "。")
+            else:
+                lines.append(short_label + "融资要求：" + financing_text.rstrip("。") + "。")
+            changed = True
+            continue
+        if (
             stripped.startswith(("首发试验星里程碑：", "两星及算力里程碑："))
             and "后，公司有权" in stripped
         ):
@@ -2641,6 +2658,17 @@ def normalize_esop_milestone_subpoints(item: dict[str, Any]) -> None:
             plan, grants = body.split("，向创始人/特定主体发放", 1)
             lines.append("计划审批：" + plan.rstrip("。") + "需审批。")
             lines.append("特殊授予审批：向创始人/特定主体发放" + grants.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("用途限制：") and "，须经" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            restricted, approval = body.split("，须经", 1)
+            if "用于非员工激励" in restricted and "转让、处分或设置权利负担" in restricted:
+                lines.append("非激励用途：激励股权用于非员工激励须经审批。")
+                lines.append("转让/负担限制：激励股权转让、处分或设置权利负担须经审批。")
+            else:
+                lines.append("用途限制：" + restricted.rstrip("。") + "须经审批。")
+            lines.append("审批门槛：须经" + approval.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("审批要求：") and "，并符合公司法及章程" in stripped:
@@ -5778,28 +5806,57 @@ def concise_transaction_money(value: str) -> str:
     return text
 
 
+def transaction_capital_change_subpoint_lines(value: str) -> list[str]:
+    text = value.strip()
+    if not text:
+        return []
+    pre_match = re.search(r"签署日注册资本为人民币?([0-9][0-9,]*(?:\.\d+)?)元", text)
+    added_match = re.search(
+        r"(?:新增人民币?([0-9][0-9,]*(?:\.\d+)?)元(?:注册资本)?|新增注册资本人民币?([0-9][0-9,]*(?:\.\d+)?)元)",
+        text,
+    )
+    post_match = re.search(
+        r"(?:增资完成后(?:认缴出资合计|注册资本)?为|增资后注册资本(?:可按证据金额)?推算为)人民币?([0-9][0-9,]*(?:\.\d+)?)元",
+        text,
+    )
+    if pre_match and added_match and post_match:
+        added_amount = added_match.group(1) or added_match.group(2)
+        post_suffix = "（按证据金额推算）" if "推算" in text else ""
+        return [
+            f"签署日注册资本：人民币{pre_match.group(1)}元。",
+            f"本次新增注册资本：人民币{added_amount}元。",
+            f"增资后注册资本：人民币{post_match.group(1)}元{post_suffix}。",
+        ]
+    return []
+
+
 def concise_transaction_capital_change(value: str) -> str:
+    lines = transaction_capital_change_subpoint_lines(value)
+    if lines:
+        return "\n".join(lines)
     text = value.strip()
     if not text:
         return ""
-    pre_match = re.search(r"签署日注册资本为人民币?([0-9][0-9,]*(?:\.\d+)?)元", text)
-    added_match = re.search(r"新增人民币?([0-9][0-9,]*(?:\.\d+)?)元", text)
-    post_match = re.search(r"增资完成后(?:认缴出资合计|注册资本)?为人民币?([0-9][0-9,]*(?:\.\d+)?)元", text)
-    if pre_match and added_match and post_match:
-        return (
-            f"注册资本变化：签署日注册资本为人民币{pre_match.group(1)}元；"
-            f"本次增资新增注册资本人民币{added_match.group(1)}元；"
-            f"增资完成后注册资本为人民币{post_match.group(1)}元。"
-        )
     return text.rstrip("。") + "。"
 
 
 def normalize_transaction_capital_change_line(draft_content: str, extracted_facts: dict[str, Any]) -> tuple[str, bool]:
-    capital_change = concise_transaction_capital_change(extracted_field_value(extracted_facts, "capital_change"))
+    capital_change_value = extracted_field_value(extracted_facts, "capital_change")
+    capital_lines = transaction_capital_change_subpoint_lines(capital_change_value)
+    capital_change = concise_transaction_capital_change(capital_change_value)
     if not capital_change:
         return draft_content, False
     lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
     changed = False
+    normalized_lines: list[str] = []
+    for line in lines:
+        if capital_lines and line.startswith(("注册资本及结构：", "注册资本及股权结构：", "股权结构：", "注册资本变化：")):
+            if "新增" in line or "注册资本" in line:
+                normalized_lines.extend(capital_lines)
+                changed = True
+                continue
+        normalized_lines.append(line)
+    lines = normalized_lines
     for index, line in enumerate(lines):
         if line.startswith(("注册资本及股权结构：", "股权结构：", "注册资本变化：")) and "新增" in line and "持股" in line:
             lines[index] = capital_change
@@ -5900,7 +5957,7 @@ def ensure_transaction_core_terms_after_polish(item: dict[str, Any]) -> None:
             if "；其余" in top:
                 top, rest = top.split("；其余", 1)
                 rest_line = "其余投资方：其余" + rest.rstrip("。") + "。"
-            if len(top) > 90 and "、" in top:
+            if "、" in top:
                 investor_body = top.split("：", 1)[1]
                 for investor_index, investor in enumerate(
                     [part.strip() for part in investor_body.split("、") if part.strip()],
