@@ -135,14 +135,14 @@
       "lawyer_note_prompts": ["如投资人董事席位不确定，应提示该veto机制能否实际行使。"]
     },
     "sha.shareholder_reserved_matters": {
-      "drafting_guidance": "必须区分特定投资人/每轮投资人/多数投资人等不同同意机制，并按机制列保护性事项；不要把“全体投资人一致”当成唯一标准。",
+      "drafting_guidance": "必须区分特定投资人/每轮投资人/多数投资人等不同同意机制，并按机制列保护性事项；不要把“全体投资人一致”当成唯一标准；如未额外提供客户身份或持股，仅中性概括表决门槛，不把客户单独否决能力作为待核事项。",
       "fields": [
         {"key": "approval_mechanism", "label": "通过机制", "required": true, "aliases": ["全体投资人", "每一轮次投资人", "多数投资人", "三分之二"]},
         {"key": "unanimous_matters", "label": "特定/每轮投资人同意事项", "required": true, "aliases": ["全体", "每一轮次", "特定投资人", "修改章程", "增减注册资本", "分红"]},
         {"key": "majority_matters", "label": "多数投资人同意事项", "required": true, "aliases": ["多数", "合并", "分立", "上市方案", "ESOP"]},
-        {"key": "investor_veto_practicality", "label": "本方veto可行性", "required": false, "aliases": ["多数优先股股东", "veto"]}
+        {"key": "investor_threshold_definition", "label": "投资人同意门槛/定义", "required": false, "aliases": ["多数优先股股东", "三分之二", "优先股"]}
       ],
-      "lawyer_note_prompts": ["如本方可能无法单独构成多数投资人，应提示veto实际可行性。"]
+      "lawyer_note_prompts": ["如材料列明不同投资人类别或同意门槛，应中性概括其定义和适用事项。"]
     },
     "sha.preemptive_right": {
       "drafting_guidance": "概括优先认购比例、是否有二次认购权、主要例外；不要展开完整通知程序。",

@@ -2919,6 +2919,7 @@ def remove_stale_shareholder_reserved_notes(notes: Any) -> list[str]:
             any(term in note for term in ("全体投资人同意事项", "全体投资人", "1.1.7机制", "多数投资人同意事项", "每一轮次投资人", "第8.2条"))
             and any(marker in note for marker in ("确认", "未直接", "需要律师确认", "未被模型提取", "缺失", "截断", "复核"))
         )
+        and not is_shareholder_reserved_client_veto_note(note)
     ]
 
 
@@ -2931,6 +2932,114 @@ def has_shareholder_dual_majority_evidence(candidates: list[dict[str, Any]]) -> 
         and "下列(2)-(12)项" in compact_text
         and "(12)" in compact_text
     )
+
+
+def is_shareholder_reserved_client_veto_note(note: str) -> bool:
+    text = str(note or "")
+    if not text or "本方" not in text:
+        return False
+    direct_markers = (
+        "本方veto",
+        "本方单独veto",
+        "本方能否",
+        "本方单独否决",
+        "本方持股比例",
+        "无法判断本方",
+    )
+    if any(marker in text for marker in direct_markers):
+        return True
+    if "身份" in text and any(term in text for term in ("组织_AP", "组织_AK", "投资人")):
+        return True
+    return any(term in text for term in ("veto", "否决", "阻却")) and any(
+        marker in text for marker in ("持股", "身份", "可行性", "能力", "多数", "确认")
+    )
+
+
+def shareholder_reserved_threshold_value(
+    extraction: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> str:
+    extracted_facts = extraction.get("extracted_facts", {})
+    if isinstance(extracted_facts, dict):
+        for key in ("summary_points", "key_terms"):
+            for point in normalize_string_list(extracted_facts.get(key)):
+                if "多数" in point and "优先股" in point and "三分之二" in point and "本方" not in point:
+                    return point.rstrip("。") + "。"
+    compact_text = re.sub(r"\s+", "", combined_candidate_text(candidates))
+    if "1.1.3" in compact_text and "组织_AK" in compact_text and "组织_AP" in compact_text and "优先股" in compact_text:
+        return "多数[[公司或组织_AI]或组织_AK]指持有超过三分之二优先股的股东；优先股指[[公司或组织_AI]或组织_AP]持有的股权。"
+    return ""
+
+
+def clean_shareholder_reserved_client_veto_tone(
+    extraction: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> None:
+    threshold_value = shareholder_reserved_threshold_value(extraction, candidates)
+
+    draft_content = str(extraction.get("draft_content") or "")
+    lines: list[str] = []
+    inserted_threshold = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if threshold_value and stripped.startswith("投资人门槛"):
+            lines.append("投资人门槛：" + threshold_value.rstrip("。") + "。")
+            inserted_threshold = True
+            continue
+        note_match = re.fullmatch(r"【注[：:](?P<body>[^】]*)】", stripped)
+        if note_match and "本方" in note_match.group("body") and any(
+            marker in note_match.group("body") for marker in ("veto", "否决", "阻却")
+        ):
+            definition = note_match.group("body").split("本方", 1)[0].rstrip("；;，,。 ")
+            if definition and any(term in definition for term in ("多数", "三分之二", "优先股")):
+                lines.append("投资人门槛：" + (threshold_value or definition).rstrip("。") + "。")
+                inserted_threshold = True
+            continue
+        if is_shareholder_reserved_client_veto_note(stripped):
+            continue
+        lines.append(stripped)
+
+    if threshold_value and not inserted_threshold and not any(line.startswith("投资人门槛") for line in lines):
+        insert_at = len(lines)
+        for index, line in enumerate(lines):
+            if line.startswith(("多数投资人事项", "多数事项", "保护事项")):
+                insert_at = index + 1
+        lines.insert(insert_at, "投资人门槛：" + threshold_value.rstrip("。") + "。")
+    extraction["draft_content"] = "\n".join(lines)
+
+    extraction["review_notes"] = remove_stale_shareholder_reserved_notes(extraction.get("review_notes", []))
+    extraction["lawyer_notes"] = remove_stale_shareholder_reserved_notes(extraction.get("lawyer_notes", []))
+    extraction["missing_or_unclear"] = remove_stale_shareholder_reserved_notes(extraction.get("missing_or_unclear", []))
+
+    extracted_facts = extraction.get("extracted_facts", {})
+    if not isinstance(extracted_facts, dict):
+        return
+    for key in ("summary_points", "key_terms", "unclear_points", "lawyer_notes", "missing_or_unclear"):
+        extracted_facts[key] = remove_stale_shareholder_reserved_notes(extracted_facts.get(key, []))
+
+    field_values = extracted_facts.get("field_values", [])
+    if not isinstance(field_values, list):
+        return
+    for field in field_values:
+        if not isinstance(field, dict):
+            continue
+        key = str(field.get("key") or "")
+        label = str(field.get("label") or "")
+        value = str(field.get("value") or "")
+        note = str(field.get("note") or "")
+        if key != "investor_veto_practicality" and "本方veto" not in label:
+            continue
+        field["key"] = "investor_threshold_definition"
+        field["label"] = "投资人同意门槛/定义"
+        field["status"] = "found" if threshold_value else "not_applicable"
+        field["value"] = threshold_value or "未见需单列的投资人同意门槛定义。"
+        field["note"] = "系统按投资人门槛作中性摘要。"
+        if is_shareholder_reserved_client_veto_note(value) or "本方" in value:
+            field["value"] = threshold_value or ""
+        if is_shareholder_reserved_client_veto_note(note) or "本方" in note:
+            field["note"] = "系统按投资人门槛作中性摘要。"
 
 
 def guard_shareholder_dual_majority_matters(
@@ -2994,6 +3103,7 @@ def guard_shareholder_dual_majority_matters(
     draft_content = re.sub(r"【注[：:][^】]*(?:候选证据|本方能否|多数门槛|完整文本|缺失序号)[^】]*】", "", draft_content)
     extraction["draft_content"] = "\n".join(line.rstrip() for line in draft_content.splitlines() if line.strip())
     extraction["review_notes"] = remove_stale_shareholder_reserved_notes(extraction.get("review_notes", []))
+    clean_shareholder_reserved_client_veto_tone(extraction, candidates)
 
 
 def guard_shareholder_reserved_matters(
@@ -3016,15 +3126,15 @@ def guard_shareholder_reserved_matters(
         candidate_ids_with_text_markers(candidates, ("1.1.7", "批准分红")),
         "系统根据第1.1.7条保护性事项补足；匿名化文本以AP/投资人同意表述。",
     )
-    if not fixed:
-        return
-    extraction["draft_content"] = replace_or_insert_kts_line(
-        str(extraction.get("draft_content") or ""),
-        "特定投资人同意事项：1.1.7项下事项须包括AP/投资人同意，覆盖章程修改、增减注册资本、清算/解散/终止、实质改变或终止主营业务、分红或利润分配。",
-        ("全体/特定投资人同意事项", "全体投资人同意事项", "特定投资人同意事项"),
-        1,
-    )
+    if fixed:
+        extraction["draft_content"] = replace_or_insert_kts_line(
+            str(extraction.get("draft_content") or ""),
+            "特定投资人同意事项：1.1.7项下事项须包括AP/投资人同意，覆盖章程修改、增减注册资本、清算/解散/终止、实质改变或终止主营业务、分红或利润分配。",
+            ("全体/特定投资人同意事项", "全体投资人同意事项", "特定投资人同意事项"),
+            1,
+        )
     extraction["review_notes"] = remove_stale_shareholder_reserved_notes(extraction.get("review_notes", []))
+    clean_shareholder_reserved_client_veto_tone(extraction, candidates)
 
 
 def has_liquidation_event_definition(candidates: list[dict[str, Any]]) -> bool:

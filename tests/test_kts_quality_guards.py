@@ -1397,6 +1397,126 @@ def test_shareholder_reserved_guard_resolves_dual_majority_mechanism() -> None:
     assert not extraction["review_notes"]
 
 
+def test_shareholder_reserved_guard_removes_client_veto_practicality_blocker() -> None:
+    item = {
+        "taxonomy_id": "sha.shareholder_reserved_matters",
+        "content_schema": {
+            "fields": [
+                {"key": "approval_mechanism", "label": "通过机制", "required": True},
+                {"key": "unanimous_matters", "label": "特定/每轮投资人同意事项", "required": True},
+                {"key": "majority_matters", "label": "多数投资人同意事项", "required": True},
+                {"key": "investor_threshold_definition", "label": "投资人同意门槛/定义", "required": False},
+            ]
+        },
+    }
+    extraction = {
+        "status": "needs_review",
+        "draft_content": (
+            "通过机制：股东会保护性事项分层设置；1.1.7事项需包括[[公司或组织_AI]或组织_AP]同意，"
+            "1.1.8事项需三分之二以上表决权股东同意且包括多数[[公司或组织_AI]或组织_AK]同意。\n"
+            "特定投资人事项：修改章程、增减注册资本、清算/解散/终止、主营业务实质变更或终止、分红及利润分配需获[[公司或组织_AI]或组织_AP]同意。\n"
+            "多数投资人事项：合并分立并购重组、控制权变更、重大资产/权益处置或设负担、上市方案、董事会及ESOP，适用多数投资人同意机制。\n"
+            "【注：多数[[公司或组织_AI]或组织_AK]为持有超过三分之二优先股的股东；本方能否单独veto需结合其优先股持股及身份确认。】"
+        ),
+        "extracted_facts": {
+            "summary_points": [
+                "特定投资人同意机制：1.1.7项下事项需包括[[公司或组织_AI]或组织_AP]同意方可通过。",
+                "多数[[公司或组织_AI]或组织_AK]定义为持有超过三分之二优先股的股东；优先股指[[公司或组织_AI]或组织_AP]持有的股权。",
+                "本方veto可行性取决于其是否可单独或联合阻却多数[[公司或组织_AI]或组织_AK]同意，现有证据未显示本方持股。",
+            ],
+            "unclear_points": [
+                "[[公司或组织_AI]或组织_AP]、[[公司或组织_AI]或组织_AK]及本方之间的身份对应关系未在证据中直接展开。"
+            ],
+            "field_values": [
+                {
+                    "key": "approval_mechanism",
+                    "label": "通过机制",
+                    "status": "found",
+                    "value": "存在分层保护性表决机制。",
+                },
+                {
+                    "key": "unanimous_matters",
+                    "label": "特定/每轮投资人同意事项",
+                    "status": "found",
+                    "value": "需包括[[公司或组织_AI]或组织_AP]同意。",
+                },
+                {
+                    "key": "majority_matters",
+                    "label": "多数投资人同意事项",
+                    "status": "found",
+                    "value": "需三分之二以上表决权并包括多数[[公司或组织_AI]或组织_AK]同意。",
+                },
+                {
+                    "key": "investor_veto_practicality",
+                    "label": "本方veto可行性",
+                    "status": "unclear",
+                    "value": "未显示本方是否持有足够优先股。",
+                    "note": "需结合本方持股比例判断实际否决权。",
+                },
+            ],
+            "lawyer_notes": [
+                "保护性事项采用双层机制：部分事项由特定主体[[公司或组织_AI]或组织_AP]同意，部分事项由三分之二表决权加多数[[公司或组织_AI]或组织_AK]同意；KTS中不宜概括为全体投资人一致同意。",
+                "如本方无法单独构成多数[[公司或组织_AI]或组织_AK]或无法阻却超过三分之二优先股同意，其对1.1.8事项的veto实际可行性需进一步确认。",
+            ],
+            "missing_or_unclear": [
+                "未见本方持股比例、优先股持股比例及其是否属于[[公司或组织_AI]或组织_AP]/[[公司或组织_AI]或组织_AK]，无法判断本方单独veto能力。"
+            ],
+        },
+        "review_notes": ["本方veto可行性证据不足，建议律师结合投资人清单和持股比例确认。"],
+        "missing_or_unclear": [
+            "未见本方持股比例、优先股持股比例及其是否属于[[公司或组织_AI]或组织_AP]/[[公司或组织_AI]或组织_AK]，无法判断本方单独veto能力。"
+        ],
+        "lawyer_notes": [
+            "保护性事项采用双层机制：部分事项由特定主体[[公司或组织_AI]或组织_AP]同意，部分事项由三分之二表决权加多数[[公司或组织_AI]或组织_AK]同意；KTS中不宜概括为全体投资人一致同意。",
+            "如本方无法单独构成多数[[公司或组织_AI]或组织_AK]或无法阻却超过三分之二优先股同意，其对1.1.8事项的veto实际可行性需进一步确认。",
+        ],
+    }
+    candidates = [
+        {
+            "candidate_id": "sha.shareholder_reserved_matters-C01",
+            "text": (
+                "1.1.3 多数[[公司或组织_AI]或组织_AK]定义为持有超过三分之二优先股的股东；"
+                "优先股指[[公司或组织_AI]或组织_AP]持有的股权。"
+                "1.1.7 [公司或组织_AI]的以下事项应当包括[[公司或组织_AI]或组织_AP]的同意方可通过："
+                "(1) 修改章程；(2) 增加或者减少注册资本；(3) 清算、解散、终止；"
+                "(4) 实质改变或终止主营业务；(5) 批准分红或任何利润分配。"
+                "1.1.8 以下事项必须经代表三分之二或以上表决权的股东同意，"
+                "其中必须包括按持股比例计算的多数[[公司或组织_AI]或组织_AK]同意方可通过。"
+            ),
+        }
+    ]
+
+    apply_deterministic_quality_guards(item, extraction, candidates)
+
+    assert "本方" not in extraction["draft_content"]
+    assert "veto" not in extraction["draft_content"]
+    assert "投资人门槛：" in extraction["draft_content"]
+    assert "优先股指[[公司或组织_AI]或组织_AP]持有的股权" in extraction["draft_content"]
+    assert not extraction["review_notes"]
+    assert not extraction["missing_or_unclear"]
+    assert extraction["lawyer_notes"] == [
+        "保护性事项采用双层机制：部分事项由特定主体[[公司或组织_AI]或组织_AP]同意，部分事项由三分之二表决权加多数[[公司或组织_AI]或组织_AK]同意；KTS中不宜概括为全体投资人一致同意。"
+    ]
+
+    facts = extraction["extracted_facts"]
+    for key in ("summary_points", "unclear_points", "lawyer_notes", "missing_or_unclear"):
+        assert all("本方" not in point for point in facts[key])
+        assert all("veto" not in point for point in facts[key])
+
+    fields = {field["key"]: field for field in facts["field_values"]}
+    assert "investor_veto_practicality" not in fields
+    assert fields["investor_threshold_definition"]["status"] == "found"
+    assert "三分之二优先股" in fields["investor_threshold_definition"]["value"]
+
+    coverage = build_schema_coverage(item, facts)
+    assert normalize_final_status(
+        "needs_review",
+        coverage,
+        extraction["draft_content"],
+        extraction["review_notes"],
+    ) == "drafted"
+
+
 def test_liquidation_preference_guard_fills_events_and_new_project() -> None:
     extraction = {
         "status": "needs_review",
