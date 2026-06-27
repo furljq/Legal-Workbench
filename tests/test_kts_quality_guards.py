@@ -1657,7 +1657,7 @@ def test_rofr_tag_guard_fills_tag_along_terms() -> None:
     fields = {field["key"]: field for field in extraction["extracted_facts"]["field_values"]}
     assert fields["tag_holder"]["status"] == "found"
     assert fields["tag_ratio"]["status"] == "found"
-    assert "共售数量按" in extraction["draft_content"]
+    assert "约定比例共同出售" in extraction["draft_content"]
     assert "未明确显示" not in extraction["draft_content"]
     assert not extraction["review_notes"]
 
@@ -2758,6 +2758,40 @@ def test_post_polish_compacts_preemptive_right_kts_language() -> None:
     assert "拟新增注册资本总额乘以" not in items[1]["draft_content"]
 
 
+def test_post_polish_compacts_rofr_tag_formula_language() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.rofr_tag",
+            "draft_content": (
+                "共同出售权：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知；"
+                "共售数量按“拟售股权数×共售股东持股注册资本/(转股方持股注册资本+实际共售股东持股注册资本总和)”计算。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.rofr_tag",
+            "draft_content": (
+                "共售比例及控制权变更：一般共售数量按未被优先购买股权乘以其持股占卖方及全体拟共售权人持股总和的比例计算；"
+                "如出售导致[公司或组织_AE]控制权变更，共售权人可出售其持有的全部股权。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["draft_content"] == (
+        "共同出售权：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知，"
+        "并按转股方及实际共售方持股口径计算的约定比例共同出售。"
+    )
+    assert items[1]["draft_content"] == (
+        "共售比例及控制权变更：一般共售按卖方及拟共售权人持股比例计算；"
+        "如出售导致控制权变更，共售权人可出售其全部股权。"
+    )
+    assert "拟售股权数×" not in items[0]["draft_content"]
+    assert "一般共售数量按" not in items[1]["draft_content"]
+
+
 def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
     items = [
         {
@@ -2974,6 +3008,7 @@ if __name__ == "__main__":
     test_post_polish_compacts_compliance_kts_language()
     test_post_polish_compacts_termination_kts_language()
     test_post_polish_compacts_preemptive_right_kts_language()
+    test_post_polish_compacts_rofr_tag_formula_language()
     test_post_polish_normalizes_transaction_capital_and_signing_lines()
     test_post_polish_keeps_export_lines_readable_for_dense_kts_items()
     test_post_polish_splits_inline_notes_and_liquidation_special_arrangements()

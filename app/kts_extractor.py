@@ -3149,8 +3149,8 @@ def remove_stale_tag_along_notes(notes: Any) -> list[str]:
 
 def replace_rofr_tag_along_line(draft_content: str) -> str:
     line = (
-        "共同出售权：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知；"
-        "共售数量按“拟售股权数×共售股东持股注册资本/(转股方持股注册资本+实际共售股东持股注册资本总和)”计算。"
+        "共同出售权：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知，"
+        "并按转股方及实际共售方持股口径计算的约定比例共同出售。"
     )
     return replace_or_insert_kts_line(
         draft_content,
@@ -5787,6 +5787,33 @@ def normalize_preemptive_right_subpoints(item: dict[str, Any]) -> None:
         item["draft_content"] = "\n".join(line for line in lines if line)
 
 
+def normalize_rofr_tag_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("共同出售权：") and "共售数量按" in stripped:
+            lines.append(
+                "共同出售权：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知，"
+                "并按转股方及实际共售方持股口径计算的约定比例共同出售。"
+            )
+            changed = True
+            continue
+        if stripped.startswith("共售比例及控制权变更：") and "一般共售数量按" in stripped:
+            lines.append(
+                "共售比例及控制权变更：一般共售按卖方及拟共售权人持股比例计算；"
+                "如出售导致控制权变更，共售权人可出售其全部股权。"
+            )
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def normalize_liability_subpoints(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -6245,6 +6272,7 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_board_composition_subpoints(item)
         elif item_id == "sha.rofr_tag":
             clean_rofr_tag_workpaper_tone(item)
+            normalize_rofr_tag_subpoints(item)
         elif item_id == "sha.drag_along":
             normalize_drag_along_subpoints(item)
         elif item_id == "sha.board_reserved_matters":
