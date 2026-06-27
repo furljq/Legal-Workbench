@@ -2279,6 +2279,86 @@ def test_shareholder_reserved_guard_resolves_dual_majority_mechanism() -> None:
     assert item["draft_content"].count("重大保护事项：") == 1
 
 
+def test_shareholder_reserved_guard_overrides_incomplete_found_dual_majority() -> None:
+    extraction = {
+        "status": "needs_review",
+        "draft_content": (
+            "通过机制：第8.2条保护性事项须经每一轮次投资人多数同意。\n"
+            "每轮投资人事项：包括修改投资人权利、修改章程、增减资和解散清算。\n"
+            "重大交易事项：覆盖合并、分立、重组、控制权变更及发行数字资产。\n"
+            "【注：未完整显示“每一轮次投资人多数”的具体比例门槛，且第(8)至第(10)项未展示。】"
+        ),
+        "extracted_facts": {
+            "field_values": [
+                {
+                    "key": "approval_mechanism",
+                    "label": "通过机制",
+                    "status": "found",
+                    "value": "第8.2条保护性事项须经每一轮次投资人多数同意。",
+                },
+                {
+                    "key": "unanimous_matters",
+                    "label": "特定/每轮投资人同意事项",
+                    "status": "found",
+                    "value": "修改投资人权利、修改章程、增减资、解散清算。",
+                },
+                {
+                    "key": "majority_matters",
+                    "label": "多数投资人同意事项",
+                    "status": "found",
+                    "value": "合并、分立、重组、控制权变更及发行数字资产。",
+                },
+            ],
+            "missing_or_unclear": [
+                "“每一轮次投资人多数”的完整定义在证据中不完整，具体门槛无法确认。",
+                "材料列明第(1)至第(7)项及第(11)项，第(8)至第(10)项未显示，可能存在遗漏。",
+            ],
+        },
+        "review_notes": ["当前摘要中性概括为每一轮次投资人多数同意，未推定客户单独否决能力。"],
+        "missing_or_unclear": ["材料列明第(1)至第(7)项及第(11)项，第(8)至第(10)项未显示，可能存在遗漏。"],
+    }
+    candidates = [
+        {
+            "candidate_id": "sha.shareholder_reserved_matters-C01",
+            "text": (
+                "8.2 未经每一轮次投资人多数（三分之二或以上）事先书面同意，公司不得从事下列(1)项行为；"
+                "未经投资人多数（三分之二或以上）事先书面同意，公司不得从事下列(2)-(12)项行为。"
+                "(1) 修改投资人享有的股东权利、优先权或设置任何限制；"
+                "(2) 修改章程；(3) 增加注册资本；(4) 减少注册资本或回购注销；"
+                "(5) 解散清算；(6) 批准利润分配；(7) 合并分立重组或控制权变更；"
+                "(8) 批准上市方案；(9) 变更董事会构成；(10) 变更主营业务；"
+                "(11) 发行任何数字货币；(12) 其它共同认可的任何重大事项。"
+            ),
+        }
+    ]
+
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "sha.shareholder_reserved_matters"},
+        extraction,
+        candidates,
+    )
+
+    fields = {field["key"]: field for field in extraction["extracted_facts"]["field_values"]}
+    assert "第(2)-(12)项须投资人多数同意" in fields["majority_matters"]["value"]
+    assert "上市方案" in fields["majority_matters"]["value"]
+    assert "董事会构成调整" in fields["majority_matters"]["value"]
+    assert "主营业务重大变化" in fields["majority_matters"]["value"]
+    assert "三分之二或以上" in extraction["draft_content"]
+    assert "未完整显示" not in extraction["draft_content"]
+    assert "每轮投资人事项：包括" not in extraction["draft_content"]
+    assert "重大交易事项：" not in extraction["draft_content"]
+    assert extraction["review_notes"] == []
+    assert extraction["missing_or_unclear"] == []
+    assert extraction["extracted_facts"]["missing_or_unclear"] == []
+
+    item = {"taxonomy_id": "sha.shareholder_reserved_matters", **extraction}
+    apply_post_polish_quality_guards([item])
+    apply_post_polish_quality_guards([item])
+    assert item["draft_content"].count("每轮投资人事项：") == 1
+    assert item["draft_content"].count("多数投资人事项：") == 1
+    assert item["draft_content"].count("资本/清算事项：") == 1
+
+
 def test_shareholder_reserved_guard_removes_client_veto_practicality_blocker() -> None:
     item = {
         "taxonomy_id": "sha.shareholder_reserved_matters",
@@ -4066,6 +4146,7 @@ if __name__ == "__main__":
     test_representations_core_guard_deduplicates_existing_legality_lines()
     test_shareholder_reserved_guard_resolves_ap_required_matters()
     test_shareholder_reserved_guard_resolves_dual_majority_mechanism()
+    test_shareholder_reserved_guard_overrides_incomplete_found_dual_majority()
     test_shareholder_reserved_guard_removes_client_veto_practicality_blocker()
     test_liquidation_preference_guard_fills_events_and_new_project()
     test_liquidation_preference_guard_cleans_stale_lawyer_notes()

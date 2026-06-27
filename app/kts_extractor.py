@@ -3822,6 +3822,10 @@ def remove_stale_shareholder_reserved_notes(notes: Any) -> list[str]:
             any(term in note for term in ("全体投资人同意事项", "全体投资人", "1.1.7机制", "多数投资人同意事项", "每一轮次投资人", "第8.2条"))
             and any(marker in note for marker in ("确认", "未直接", "需要律师确认", "未被模型提取", "缺失", "截断", "复核"))
         )
+        and not (
+            any(term in note for term in ("每一轮次投资人多数", "第8.2条", "第(8)", "第（8）"))
+            and any(marker in note for marker in ("完整", "未显示", "遗漏", "核对", "未推定"))
+        )
         and not is_shareholder_reserved_client_veto_note(note)
         and not is_shareholder_reserved_placeholder_note(note)
     ]
@@ -3963,33 +3967,30 @@ def guard_shareholder_dual_majority_matters(
     if not isinstance(extracted_facts, dict):
         return
 
-    fixed = False
-    fixed = upsert_extracted_field(
+    set_extracted_field(
         extracted_facts,
         "approval_mechanism",
         "通过机制",
         "第8.2条采用双多数机制：第(1)项须每一轮次投资人多数同意；第(2)-(12)项须投资人多数同意。两类多数均指相关投资人合计持股三分之二或以上的一名或多名投资人。",
         candidate_ids_with_text_markers(candidates, ("8.2", "三分之二")),
         "系统根据第8.2条双多数机制补足。",
-    ) or fixed
-    fixed = upsert_extracted_field(
+    )
+    set_extracted_field(
         extracted_facts,
         "unanimous_matters",
         "特定/每轮投资人同意事项",
         "第(1)项须每一轮次投资人多数同意，内容为修改投资人享有的股东权利、优先权或设置限制，或使其他股东享有更优先/相同权利，或达成对投资人不利的约定。",
         candidate_ids_with_text_markers(candidates, ("下列(1)项", "股东权利")),
         "系统根据第8.2条第(1)项补足。",
-    ) or fixed
-    fixed = upsert_extracted_field(
+    )
+    set_extracted_field(
         extracted_facts,
         "majority_matters",
         "多数投资人同意事项",
         "第(2)-(12)项须投资人多数同意，覆盖章程修改、增减资/稀释性发行、减资回购注销、解散清算、分红及利润分配、合并分立重组/控制权变更/重大资产处置、上市方案、董事会构成调整、主营业务重大变化、发行数字资产及双方认可的其他重大事项。",
         candidate_ids_with_text_markers(candidates, ("下列(2)-(12)项", "发行任何数字货币")),
         "系统根据第8.2条第(2)-(12)项补足。",
-    ) or fixed
-    if not fixed:
-        return
+    )
 
     draft_content = str(extraction.get("draft_content") or "")
     draft_content = replace_or_insert_kts_line(
@@ -4011,8 +4012,22 @@ def guard_shareholder_dual_majority_matters(
             ("特别否决", "特定否决权"),
             2,
         )
-    draft_content = re.sub(r"【注[：:][^】]*(?:候选证据|本方能否|多数门槛|完整文本|缺失序号)[^】]*】", "", draft_content)
-    extraction["draft_content"] = "\n".join(line.rstrip() for line in draft_content.splitlines() if line.strip())
+    draft_content = re.sub(
+        r"【注[：:][^】]*(?:候选证据|本方能否|多数门槛|完整文本|缺失序号|未完整显示|第\(8\)|第（8）)[^】]*】",
+        "",
+        draft_content,
+    )
+    lines = []
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("每轮投资人事项：包括"):
+            continue
+        if stripped.startswith("重大交易事项："):
+            continue
+        lines.append(stripped)
+    extraction["draft_content"] = "\n".join(lines)
     extraction["review_notes"] = remove_stale_shareholder_reserved_notes(extraction.get("review_notes", []))
     clean_shareholder_reserved_client_veto_tone(extraction, candidates)
 
@@ -4181,9 +4196,28 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
 
     deduped: list[str] = []
     seen_labels: set[str] = set()
+    seen_lines: set[str] = set()
+    unique_generated_labels = {
+        "每轮投资人事项",
+        "多数投资人事项",
+        "多数门槛",
+        "投资人权利事项",
+        "重大保护事项",
+        "资本/清算事项",
+        "交易/治理事项",
+        "其他重大事项",
+        "特别否决事项",
+        "特别否决范围",
+        "特别否决权人",
+        "特别否决终止",
+    }
     for line in lines:
+        if line in seen_lines:
+            changed = True
+            continue
+        seen_lines.add(line)
         label = line.split("：", 1)[0] if "：" in line else ""
-        if label in {"投资人权利事项", "重大保护事项"}:
+        if label in unique_generated_labels:
             if label in seen_labels:
                 changed = True
                 continue
