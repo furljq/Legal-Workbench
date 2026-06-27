@@ -355,6 +355,28 @@ def test_dividend_guard_fills_special_approval_threshold() -> None:
     assert not extraction["review_notes"]
 
 
+def test_post_polish_compacts_dividend_approval_references() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.dividend",
+            "draft_content": "批准机制：公司原则上不得分红；批准分红或任何利润分配属于1.1.7项下事项，须经股东会批准并包括特定投资人同意。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.dividend",
+            "draft_content": "批准机制：公司税后利润在依法弥补亏损、提取公积金后，须按协议第8条批准方可分配；批准或修改利润分配方案、弥补亏损方案及宣布、支付股息红利列入批准事项。",
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["draft_content"] == "批准机制：公司原则上不得分红；任何利润分配须经股东会批准并取得特定投资人同意。"
+    assert items[1]["draft_content"] == "批准机制：利润分配、弥补亏损及股息红利宣布/支付均须按保护性事项机制批准。"
+    assert "1.1.7" not in items[0]["draft_content"]
+    assert "第8条" not in items[1]["draft_content"]
+
+
 def test_information_audit_guard_fills_inspection_right() -> None:
     extraction = {
         "status": "needs_review",
@@ -2990,6 +3012,7 @@ if __name__ == "__main__":
     test_representations_guard_fills_transition_covenant()
     test_redemption_price_formula_guard_fills_both_formulas()
     test_dividend_guard_fills_special_approval_threshold()
+    test_post_polish_compacts_dividend_approval_references()
     test_complete_soft_review_status_normalizes_to_drafted()
     test_complete_hard_review_status_stays_needs_review()
     test_drafted_hard_review_status_upgrades_to_needs_review()

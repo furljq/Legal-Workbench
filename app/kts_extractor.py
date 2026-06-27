@@ -6087,6 +6087,14 @@ def normalize_dividend_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith("批准机制：") and "1.1.7项下事项" in stripped:
+            lines.append("批准机制：公司原则上不得分红；任何利润分配须经股东会批准并取得特定投资人同意。")
+            changed = True
+            continue
+        if stripped.startswith("批准机制：") and "第8条" in stripped and "列入批准事项" in stripped:
+            lines.append("批准机制：利润分配、弥补亏损及股息红利宣布/支付均须按保护性事项机制批准。")
+            changed = True
+            continue
         if stripped.startswith("投资方优先：") and "；如因法律限制" in stripped:
             body = stripped.split("：", 1)[1]
             priority, fallback = body.split("；如因法律限制", 1)
