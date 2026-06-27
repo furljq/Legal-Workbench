@@ -5693,13 +5693,39 @@ def normalize_compliance_subpoints(item: dict[str, Any]) -> None:
         if stripped.startswith("廉洁合规：") and "，并须遵守" in stripped and len(stripped) > 90:
             body = stripped.split("：", 1)[1]
             prohibited, rules = body.split("，并须遵守", 1)
-            lines.append("禁止行为：" + prohibited.rstrip("。") + "。")
+            lines.append(compact_compliance_prohibition("廉洁承诺：" + prohibited.rstrip("。") + "。"))
             lines.append("合规要求：应遵守" + rules.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith(("禁止行为：", "廉洁承诺：")):
+            compacted = compact_compliance_prohibition(stripped)
+            lines.append(compacted)
+            changed = changed or compacted != stripped
+            continue
+        if stripped.startswith("利益安排：") and all(
+            marker in stripped for marker in ("不得存在", "代持", "利益输送", "资金往来")
+        ):
+            lines.append("利益安排：除投资合作及经同意合作外，不得存在代持、利益输送、资金往来等利益安排。")
+            changed = True
+            continue
+        if stripped.startswith("违约后果：") and (
+            "回购义务" in stripped or "10%" in stripped or "10％" in stripped
+        ):
+            lines.append("违约后果：违反廉洁条款时，投资方可终止合作、解除协议，并要求回购及由公司支付已付增资价款10%的违约金。")
             changed = True
             continue
         lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def compact_compliance_prohibition(line: str) -> str:
+    label, body = line.split("：", 1) if "：" in line else ("廉洁承诺", line)
+    if any(marker in body for marker in ("现金等价物", "礼品及其他利益", "提供或承诺提供")):
+        return "廉洁承诺：项目公司方不得向投资方相关人员提供或承诺提供现金、礼品或其他不当利益；合理小额公务招待及广告礼品除外。"
+    if any(marker in body for marker in ("腐败", "贿赂", "行贿", "商业贿赂")):
+        return "廉洁承诺：公司方及相关人员不得参与腐败、贿赂、行贿或商业贿赂，亦不得以财物或其他利益影响政府或商业决策。"
+    return ("廉洁承诺：" if label == "禁止行为" else label + "：") + body
 
 
 def normalize_liability_subpoints(item: dict[str, Any]) -> None:

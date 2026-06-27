@@ -2653,7 +2653,7 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
 
     assert "付款期限：" in items[0]["draft_content"]
     assert "交割日：" in items[0]["draft_content"]
-    assert "禁止行为：" in items[1]["draft_content"]
+    assert "廉洁承诺：" in items[1]["draft_content"]
     assert "合规要求：" in items[1]["draft_content"]
     assert "触发时间：" in items[2]["draft_content"]
     assert "触发交易：" in items[2]["draft_content"]
@@ -2673,6 +2673,30 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
     assert "[[公司或组织_AE]或组织_H]" in items[5]["draft_content"]
     assert "[[公司或组织_AE]或组织_C]" in items[5]["draft_content"]
     assert "[[公司或组织_AE]或组织_K]" in items[5]["draft_content"]
+
+
+def test_post_polish_compacts_compliance_kts_language() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.compliance",
+            "draft_content": (
+                "禁止行为：禁止项目公司方向[公司或组织_AJ]及其关联方、董事、高管、员工等相关人员直接或间接提供或承诺提供现金、现金等价物、礼品及其他利益；合法合理的小额公务招待及广告礼品除外。\n"
+                "利益安排：除投资合作及经事先书面同意的其他业务合作外，[公司或组织_AO]与[公司或组织_AJ]之间不得存在代持、利益输送、资金往来等利益安排。\n"
+                "违约后果：[公司或组织_AO]违反第6.1.5条的，[公司或组织_AJ]可终止投资合作关系、单方解除协议，并要求[公司或组织_AO]履行回购义务及由公司支付已付增资价款10%的违约金。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["draft_content"] == (
+        "廉洁承诺：项目公司方不得向投资方相关人员提供或承诺提供现金、礼品或其他不当利益；合理小额公务招待及广告礼品除外。\n"
+        "利益安排：除投资合作及经同意合作外，不得存在代持、利益输送、资金往来等利益安排。\n"
+        "违约后果：违反廉洁条款时，投资方可终止合作、解除协议，并要求回购及由公司支付已付增资价款10%的违约金。"
+    )
+    assert "现金等价物" not in items[0]["draft_content"]
+    assert "第6.1.5条" not in items[0]["draft_content"]
 
 
 def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
@@ -2888,6 +2912,7 @@ if __name__ == "__main__":
     test_post_polish_splits_long_confidentiality_and_information_lines()
     test_post_polish_splits_reserved_matters_and_mfn_lines()
     test_post_polish_splits_remaining_long_substantive_lines()
+    test_post_polish_compacts_compliance_kts_language()
     test_post_polish_normalizes_transaction_capital_and_signing_lines()
     test_post_polish_keeps_export_lines_readable_for_dense_kts_items()
     test_post_polish_splits_inline_notes_and_liquidation_special_arrangements()
