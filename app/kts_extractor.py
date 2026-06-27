@@ -4815,6 +4815,21 @@ def normalize_final_status(
     return "drafted"
 
 
+def demote_drafted_review_notes(item: dict[str, Any]) -> None:
+    if str(item.get("status") or "") != "drafted":
+        return
+    review_notes = normalize_string_list(item.get("review_notes"))
+    if not review_notes:
+        return
+    lawyer_notes = normalize_string_list(item.get("lawyer_notes"))
+    merged: list[str] = []
+    for note in [*lawyer_notes, *review_notes]:
+        if note and note not in merged:
+            merged.append(note)
+    item["lawyer_notes"] = merged
+    item["review_notes"] = []
+
+
 def residual_rights_fallback_content(item: dict[str, Any]) -> str:
     if str(item.get("taxonomy_id") or "") != "sha.other":
         return ""
@@ -5151,6 +5166,7 @@ def refresh_final_statuses(items: list[dict[str, Any]]) -> None:
             str(item.get("draft_content") or ""),
             normalize_string_list(item.get("review_notes")),
         )
+        demote_drafted_review_notes(item)
 
 
 def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:

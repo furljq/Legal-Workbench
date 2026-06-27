@@ -16,6 +16,7 @@ from kts_extractor import (  # noqa: E402
     ensure_required_draft_content,
     item_for_style_polish,
     normalize_final_status,
+    refresh_final_statuses,
     schema_coverage_review_notes,
     validate_polished_content,
 )
@@ -487,6 +488,42 @@ def test_not_configured_schema_does_not_force_needs_review() -> None:
     )
 
     assert status == "drafted"
+
+
+def test_refresh_final_statuses_demotes_soft_drafted_review_notes() -> None:
+    items = [
+        {
+            "status": "drafted",
+            "schema_coverage": {
+                "status": "complete",
+                "required_missing": 0,
+                "required_unclear": 0,
+            },
+            "draft_content": "信息权：按协议约定提供年度报告。",
+            "review_notes": ["建议律师确认是否需要补充月报。"],
+            "lawyer_notes": ["既有律师提示。"],
+        },
+        {
+            "status": "drafted",
+            "schema_coverage": {
+                "status": "complete",
+                "required_missing": 0,
+                "required_unclear": 0,
+            },
+            "draft_content": "清算权：按协议约定分配。",
+            "review_notes": ["需核对全文。"],
+            "lawyer_notes": [],
+        },
+    ]
+
+    refresh_final_statuses(items)
+
+    assert items[0]["status"] == "drafted"
+    assert items[0]["review_notes"] == []
+    assert items[0]["lawyer_notes"] == ["既有律师提示。", "建议律师确认是否需要补充月报。"]
+    assert items[1]["status"] == "needs_review"
+    assert items[1]["review_notes"] == ["需核对全文。"]
+    assert items[1]["lawyer_notes"] == []
 
 
 def test_residual_rights_fallback_prevents_empty_sha_other_content() -> None:
@@ -2137,6 +2174,7 @@ if __name__ == "__main__":
     test_complete_hard_review_status_stays_needs_review()
     test_drafted_hard_review_status_upgrades_to_needs_review()
     test_not_configured_schema_does_not_force_needs_review()
+    test_refresh_final_statuses_demotes_soft_drafted_review_notes()
     test_residual_rights_fallback_prevents_empty_sha_other_content()
     test_sha_other_absence_policy_counts_missing_rights_as_handled()
     test_docx_export_skips_empty_conditional_items_only()
