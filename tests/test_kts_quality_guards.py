@@ -530,6 +530,48 @@ def test_refresh_final_statuses_demotes_soft_drafted_review_notes() -> None:
     assert items[1]["missing_or_unclear"] == ["完整文本未见。"]
 
 
+def test_refresh_final_statuses_trims_drafted_lawyer_notes_by_priority() -> None:
+    items = [
+        {
+            "status": "drafted",
+            "schema_coverage": {
+                "status": "complete",
+                "required_missing": 0,
+                "required_unclear": 0,
+            },
+            "draft_content": "董事会：按协议约定设置。",
+            "review_notes": [],
+            "lawyer_notes": [
+                "仅作背景提示。",
+                "未见董事席位安排，建议确认是否补充。",
+                "该条为常规条款，提示客户知悉。",
+                "税务补偿执行机制需确认。",
+            ],
+        },
+        {
+            "status": "needs_review",
+            "schema_coverage": {
+                "status": "complete",
+                "required_missing": 0,
+                "required_unclear": 0,
+            },
+            "draft_content": "清算权：需核对完整条款。",
+            "review_notes": ["需核对全文。"],
+            "lawyer_notes": ["提示一。", "提示二。", "提示三。"],
+        },
+    ]
+
+    refresh_final_statuses(items)
+
+    assert items[0]["status"] == "drafted"
+    assert items[0]["lawyer_notes"] == [
+        "未见董事席位安排，建议确认是否补充。",
+        "税务补偿执行机制需确认。",
+    ]
+    assert items[1]["status"] == "needs_review"
+    assert items[1]["lawyer_notes"] == ["提示一。", "提示二。", "提示三。"]
+
+
 def test_residual_rights_fallback_prevents_empty_sha_other_content() -> None:
     items = [
         {
@@ -2301,6 +2343,7 @@ if __name__ == "__main__":
     test_drafted_hard_review_status_upgrades_to_needs_review()
     test_not_configured_schema_does_not_force_needs_review()
     test_refresh_final_statuses_demotes_soft_drafted_review_notes()
+    test_refresh_final_statuses_trims_drafted_lawyer_notes_by_priority()
     test_residual_rights_fallback_prevents_empty_sha_other_content()
     test_sha_other_absence_policy_counts_missing_rights_as_handled()
     test_docx_export_skips_empty_conditional_items_only()

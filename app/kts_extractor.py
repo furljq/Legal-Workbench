@@ -47,6 +47,7 @@ MAX_STYLE_POLISH_CHARS_PER_ITEM = 1800
 MAX_STYLE_POLISH_FIELD_VALUE_CHARS = 260
 MAX_STYLE_POLISH_REVIEW_NOTE_CHARS = 180
 STYLE_POLISH_TIMEOUT_SECONDS = 240
+MAX_DRAFTED_LAWYER_NOTES = 2
 TAXONOMY_PATH = CAPABILITIES_DIR / "spa_sha_kts" / "kts_taxonomy.json"
 CONTENT_SCHEMA_PATH = CAPABILITIES_DIR / "spa_sha_kts" / "kts_content_schema.json"
 ProgressCallback = Callable[[dict[str, Any]], None]
@@ -4944,6 +4945,40 @@ def clear_drafted_missing_or_unclear(item: dict[str, Any]) -> None:
         item["missing_or_unclear"] = []
 
 
+def lawyer_note_priority(note: str) -> int:
+    score = 0
+    if any(marker in note for marker in ("需确认", "需核对", "建议确认", "建议核对", "建议律师确认")):
+        score += 40
+    if any(marker in note for marker in ("客户", "商业", "关注", "可操作", "执行机制")):
+        score += 20
+    if any(marker in note for marker in ("责任主体", "责任上限", "违约金", "回购", "清算", "反稀释")):
+        score += 18
+    if any(marker in note for marker in ("董事", "领售", "税务", "监管", "知识产权", "业务许可", "里程碑")):
+        score += 14
+    if any(marker in note for marker in ("未见", "不明确", "未完整", "截断", "未展示", "未显示")):
+        score += 8
+    if any(marker in note for marker in ("提示客户知悉", "常规", "模板性")):
+        score -= 6
+    if len(note) > 150:
+        score -= 4
+    return score
+
+
+def trim_drafted_lawyer_notes(item: dict[str, Any]) -> None:
+    if str(item.get("status") or "") != "drafted":
+        return
+    notes = normalize_string_list(item.get("lawyer_notes"))
+    if len(notes) <= MAX_DRAFTED_LAWYER_NOTES:
+        item["lawyer_notes"] = notes
+        return
+    ranked = sorted(
+        enumerate(notes),
+        key=lambda indexed_note: (-lawyer_note_priority(indexed_note[1]), indexed_note[0]),
+    )
+    keep_indexes = {index for index, _note in ranked[:MAX_DRAFTED_LAWYER_NOTES]}
+    item["lawyer_notes"] = [note for index, note in enumerate(notes) if index in keep_indexes]
+
+
 def residual_rights_fallback_content(item: dict[str, Any]) -> str:
     if str(item.get("taxonomy_id") or "") != "sha.other":
         return ""
@@ -5359,6 +5394,7 @@ def refresh_final_statuses(items: list[dict[str, Any]]) -> None:
         )
         demote_drafted_review_notes(item)
         clear_drafted_missing_or_unclear(item)
+        trim_drafted_lawyer_notes(item)
 
 
 def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
