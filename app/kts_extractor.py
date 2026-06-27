@@ -2552,6 +2552,28 @@ def normalize_esop_milestone_subpoints(item: dict[str, Any]) -> None:
             lines.append(short_label + "增发额度：公司有权" + grant.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith(("审批要求：", "审批限制：")) and "，向创始人/特定主体发放" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            plan, grants = body.split("，向创始人/特定主体发放", 1)
+            lines.append("计划审批：" + plan.rstrip("。") + "需审批。")
+            lines.append("特殊授予审批：向创始人/特定主体发放" + grants.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("审批要求：") and "，并符合公司法及章程" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            approval, compliance = body.split("，并符合公司法及章程", 1)
+            compliance = compliance.lstrip("。；;，, ")
+            note = ""
+            note_match = re.search(r"(【[^】]+】)$", compliance)
+            if note_match:
+                note = note_match.group(1)
+                compliance = compliance[: note_match.start()].rstrip("。；;，, ")
+            lines.append("审批要求：" + approval.rstrip("。") + "。")
+            lines.append("合规要求：符合公司法及章程" + compliance.rstrip("。") + "。")
+            if note:
+                lines.append(note)
+            changed = True
+            continue
         lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
@@ -2600,6 +2622,13 @@ def normalize_spa_other_confidentiality_subpoints(item: dict[str, Any]) -> None:
         if label == "保密及披露" and len(parts) >= 2 and len(stripped) > 90:
             lines.append("保密范围：" + parts[0].rstrip("。") + "。")
             lines.append("允许披露：" + "；".join(parts[1:]).rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("适用法律/争议：") and "；争议发生后" in stripped:
+            body = stripped.split("：", 1)[1]
+            law, dispute = body.split("；争议发生后", 1)
+            lines.append("适用法律：" + law.rstrip("。") + "。")
+            lines.append("争议解决：争议发生后" + dispute.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -2761,6 +2790,35 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
             governance, finance = body.split("、超过门槛的", 1)
             lines.append("治理保护事项：" + governance.rstrip("。") + "。")
             lines.append("财务/资产事项：超过门槛的" + finance.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_transfer_restriction_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("受限主体及期间：") and "，任何" in stripped and "，未经同意不得" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            period, rest = body.split("，任何", 1)
+            subject, restriction = rest.split("，未经同意不得", 1)
+            lines.append("限制期间：" + period.rstrip("。") + "。")
+            lines.append("受限主体：任何" + subject.rstrip("。") + "。")
+            lines.append("限制事项：未经同意不得" + restriction.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("允许例外：") and "；婚姻关系变动或继承" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            permitted, succession = body.split("；婚姻关系变动或继承", 1)
+            lines.append("允许例外：" + permitted.rstrip("。") + "。")
+            lines.append("间接转让例外：婚姻关系变动或继承" + succession.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -3294,6 +3352,15 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
             before, after = body.split("、上市方案", 1)
             lines.append("重大交易事项：" + before.rstrip("。") + "，适用多数投资人同意机制。")
             lines.append("治理及股权事项：上市方案" + after.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("通过机制：") and "；1.1.7事项需" in stripped and "，1.1.8事项需" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            intro, rest = body.split("；1.1.7事项需", 1)
+            first, second = rest.split("，1.1.8事项需", 1)
+            lines.append("机制层级：" + intro.rstrip("。") + "。")
+            lines.append("1.1.7事项：" + first.rstrip("。") + "。")
+            lines.append("1.1.8事项：" + second.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("重大交易：") and has_protection_line:
@@ -4210,6 +4277,13 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
         elif line.startswith(("逾期及顺位：", "逾期与顺位：")):
             line = "逾期责任及顺位：" + line.split("：", 1)[1]
             changed = True
+        if line.startswith("逾期责任及顺位：") and "；" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            overdue, order = body.split("；", 1)
+            lines.append("逾期责任：" + overdue.rstrip("。") + "。")
+            lines.append("清偿顺位：" + order.rstrip("。") + "。")
+            changed = True
+            continue
         lines.append(line)
     lines, deduped = dedupe_redemption_trigger_lines(lines)
     changed = changed or deduped
@@ -4218,9 +4292,9 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
 
 
 FOUNDER_VESTING_LINE = (
-    "股权成熟：创始人/相关高管持有的受限股权分4年成熟；"
-    "特定人员分别自天使轮增资交割日或全职加入并签署劳动合同日起，每满1年成熟25%；"
-    "约定收购/兼并且收购方同意或完成IPO时，全部加速成熟。"
+    "股权成熟：创始人/相关高管持有的受限股权分4年成熟。\n"
+    "成熟比例：特定人员分别自天使轮增资交割日或全职加入并签署劳动合同日起，每满1年成熟25%。\n"
+    "加速成熟：约定收购/兼并且收购方同意或完成IPO时，全部加速成熟。"
 )
 FOUNDER_SERVICE_LINE = (
     "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前后均应投入实质性全部工作时间和精力。"
@@ -4230,7 +4304,7 @@ FOUNDER_EXTERNAL_ROLE_LINE = (
     "经投资人同意的研究机构任职除外，但不得实质影响其对公司职责和经营管理。"
 )
 FOUNDER_BREACH_LINE = (
-    "离职/过错后果：成熟期内主动离职、不续签或因过错被解职的，受限股权无论是否成熟均按约定无偿或以法定最低价格转让；"
+    "离职/过错后果：成熟期内主动离职、不续签或因过错被解职的，受限股权无论是否成熟均按约定无偿或以法定最低价格转让。\n"
     "其他离职的未成熟部分同样适用，已成熟部分保留但放弃投票权/董事提名等管理权。"
 )
 FOUNDER_NON_COMPETE_LINE = (
@@ -4405,6 +4479,30 @@ def normalize_founder_service_subpoints(draft_content: str) -> str:
     return "\n".join(normalized)
 
 
+def normalize_founder_obligation_subpoints(draft_content: str) -> str:
+    lines: list[str] = []
+    changed = False
+    for line in [line.strip() for line in draft_content.splitlines() if line.strip()]:
+        if line.startswith("股权成熟：") and "；" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            parts = [part.strip("。；; ") for part in re.split(r"[；;]", body) if part.strip("。；; ")]
+            if len(parts) >= 3:
+                lines.append("股权成熟：" + parts[0].rstrip("。") + "。")
+                lines.append("成熟比例：" + parts[1].rstrip("。") + "。")
+                lines.append("加速成熟：" + "；".join(parts[2:]).rstrip("。") + "。")
+                changed = True
+                continue
+        if line.startswith("离职/过错后果：") and "；其他离职" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            first, second = body.split("；其他离职", 1)
+            lines.append("离职/过错后果：" + first.rstrip("。") + "。")
+            lines.append("其他离职后果：其他离职" + second.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(line)
+    return "\n".join(lines) if changed else draft_content
+
+
 def refresh_founder_obligations_status(extraction: dict[str, Any]) -> None:
     notes = normalize_string_list(extraction.get("review_notes"))
     if not notes and str(extraction.get("status") or "") == "needs_review":
@@ -4433,8 +4531,10 @@ def founder_facts_support_compact_draft(item: dict[str, Any]) -> tuple[bool, boo
 
 
 def clean_founder_obligations_review_tone(item: dict[str, Any]) -> None:
-    draft_content = normalize_founder_service_subpoints(
-        clean_founder_obligations_draft_notes(str(item.get("draft_content") or ""))
+    draft_content = normalize_founder_obligation_subpoints(
+        normalize_founder_service_subpoints(
+            clean_founder_obligations_draft_notes(str(item.get("draft_content") or ""))
+        )
     )
     include_vesting, include_service, include_breach, include_non_compete = founder_facts_support_compact_draft(item)
     if include_service and include_non_compete and (
@@ -4475,6 +4575,15 @@ def normalize_mfn_special_rights_subpoints(item: dict[str, Any]) -> None:
             trigger = re.sub(r"，?可主张自动同等享有。?$", "", trigger).rstrip("。")
             lines.append("适用主体：" + prefix.rstrip("，,。 ") + "可主张最惠国待遇。")
             lines.append("触发情形：如发现" + trigger.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("例外范围：") and "，战略方和产业方" in stripped and "，以及后轮" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            seat, rest = body.split("，战略方和产业方", 1)
+            cooperation, later_round = rest.split("，以及后轮", 1)
+            lines.append("席位例外：" + seat.rstrip("。") + "。")
+            lines.append("业务合作例外：战略方和产业方" + cooperation.rstrip("。") + "。")
+            lines.append("后轮经济权益例外：后轮" + later_round.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -4826,7 +4935,7 @@ def demote_drafted_review_notes(item: dict[str, Any]) -> None:
     for note in [*lawyer_notes, *review_notes]:
         if note and note not in merged:
             merged.append(note)
-    item["lawyer_notes"] = merged
+    item["lawyer_notes"] = remove_nonblocking_workpaper_review_notes(merged)
     item["review_notes"] = []
 
 
@@ -4922,7 +5031,8 @@ def compact_transaction_investor_line(extracted_facts: dict[str, Any]) -> str:
     )
     return (
         f"投资方概览：共{len(rows)}名投资方，合计人民币{format_decimal_amount(total)}元。\n"
-        f"主要投资方：{top_text}；其余{len(rows) - len(top_rows)}名合计人民币{format_decimal_amount(rest_total)}元。"
+        f"主要投资方：{top_text}。\n"
+        f"其余投资方：其余{len(rows) - len(top_rows)}名合计人民币{format_decimal_amount(rest_total)}元。"
     )
 
 
@@ -5018,6 +5128,35 @@ def ensure_transaction_core_terms_after_polish(item: dict[str, Any]) -> None:
                 changed = True
                 break
 
+    lines = [line for line in draft_content.splitlines() if line.strip()]
+    split_lines: list[str] = []
+    split_changed = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("主要投资方："):
+            top = stripped.rstrip("。")
+            rest_line = ""
+            if "；其余" in top:
+                top, rest = top.split("；其余", 1)
+                rest_line = "其余投资方：其余" + rest.rstrip("。") + "。"
+            if len(top) > 90 and "、" in top:
+                investor_body = top.split("：", 1)[1]
+                for investor_index, investor in enumerate(
+                    [part.strip() for part in investor_body.split("、") if part.strip()],
+                    start=1,
+                ):
+                    split_lines.append(f"主要投资方{investor_index}：" + investor.rstrip("。") + "。")
+            else:
+                split_lines.append(top.rstrip("。") + "。")
+            if rest_line:
+                split_lines.append(rest_line)
+            split_changed = True
+            continue
+        split_lines.append(stripped)
+    if split_changed:
+        draft_content = "\n".join(split_lines)
+        changed = True
+
     if changed:
         item["draft_content"] = draft_content
 
@@ -5055,6 +5194,53 @@ def normalize_compliance_subpoints(item: dict[str, Any]) -> None:
             prohibited, rules = body.split("，并须遵守", 1)
             lines.append("禁止行为：" + prohibited.rstrip("。") + "。")
             lines.append("合规要求：应遵守" + rules.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_liability_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        label, body = stripped.split("：", 1) if "：" in stripped else ("", "")
+        if label == "一般赔偿" and "；书面豁免情形除外" in body:
+            indemnity, rest = body.split("；书面豁免情形除外", 1)
+            lines.append("违约赔偿：" + indemnity.rstrip("。") + "。")
+            lines.append("豁免例外：书面豁免情形除外。")
+            rest = rest.strip("。；; ")
+            if rest:
+                lines.append("继续履行：" + rest.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "连带责任" and "；" in body:
+            parts = [part.strip("。；; ") for part in re.split(r"[；;]", body) if part.strip("。；; ")]
+            if len(parts) >= 2:
+                lines.append("公司/创始人连带责任：" + parts[0].rstrip("。") + "。")
+                second = parts[1]
+                if "投资方付款义务分别且不连带" in second:
+                    second = second.split("投资方付款义务分别且不连带", 1)[0]
+                if second.strip("。 "):
+                    lines.append("陈述保证连带责任：" + second.strip("。 ") + "。")
+                lines.append("投资方付款责任：投资方付款义务分别且不连带。")
+                changed = True
+                continue
+        if label == "特殊赔偿" and "；架构调整导致" in body:
+            debt, tax = body.split("；架构调整导致", 1)
+            lines.append("未披露债务：" + debt.rstrip("。") + "。")
+            tax = "架构调整导致" + tax.strip()
+            if "，投资方未严格配合导致损失的除外" in tax:
+                tax = tax.split("，投资方未严格配合导致损失的除外", 1)[0]
+                lines.append("架构调整税负：" + tax.rstrip("。") + "。")
+                lines.append("税负补偿例外：投资方未严格配合导致损失的除外。")
+            else:
+                lines.append("架构调整税负：" + tax.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -5199,6 +5385,8 @@ def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
         if any(
             marker in note
             for marker in (
+                "已按规则",
+                "已分别判断",
                 "已作为缺失检查结论处理",
                 "已作为缺失检查项提示",
                 "absence_ok字段",
@@ -5228,6 +5416,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_closing_payment_subpoints(item)
         elif item_id == "spa.compliance":
             normalize_compliance_subpoints(item)
+        elif item_id == "spa.liability":
+            normalize_liability_subpoints(item)
         elif item_id == "spa.other":
             remove_spa_other_workpaper_tone(item)
             normalize_conventional_kts_labels(item)
@@ -5241,6 +5431,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         elif item_id == "sha.board_reserved_matters":
             remove_board_reserved_workpaper_tone(item)
             normalize_board_reserved_subpoints(item)
+        elif item_id == "sha.transfer_restriction":
+            normalize_transfer_restriction_subpoints(item)
         elif item_id == "sha.shareholder_reserved_matters":
             normalize_shareholder_reserved_subpoints(item)
         elif item_id == "sha.anti_dilution":
@@ -5264,6 +5456,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         elif item_id == "sha.dividend":
             normalize_dividend_subpoints(item)
         item["review_notes"] = remove_nonblocking_workpaper_review_notes(item.get("review_notes", []))
+        item["lawyer_notes"] = remove_nonblocking_workpaper_review_notes(item.get("lawyer_notes", []))
+        item["missing_or_unclear"] = remove_nonblocking_workpaper_review_notes(item.get("missing_or_unclear", []))
 
 
 def normalize_absence_checks(value: Any) -> list[dict[str, Any]]:

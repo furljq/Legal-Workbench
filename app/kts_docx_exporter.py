@@ -83,7 +83,7 @@ def split_readable_lines(value: object) -> list[str]:
         prepared = split_parenthetical_markers(prepared)
         prepared = re.sub(r"(其中[，,])\s*", r"\n\1", prepared)
         prepared = restore_bracketed_notes(prepared, bracketed_notes)
-        prepared = separate_note_lines(prepared)
+    prepared = separate_note_lines(prepared)
     return [line.strip() for line in prepared.split("\n") if line.strip()]
 
 

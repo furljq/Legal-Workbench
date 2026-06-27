@@ -501,7 +501,7 @@ def test_refresh_final_statuses_demotes_soft_drafted_review_notes() -> None:
             },
             "draft_content": "信息权：按协议约定提供年度报告。",
             "review_notes": ["建议律师确认是否需要补充月报。"],
-            "lawyer_notes": ["既有律师提示。"],
+            "lawyer_notes": ["既有律师提示。", "C06为其他事项，未纳入本事项摘要。"],
         },
         {
             "status": "drafted",
@@ -2162,6 +2162,86 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
     assert "法律限制补偿：" in items[5]["draft_content"]
 
 
+def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.transaction_arrangement",
+            "group": "SPA",
+            "label": "本次交易安排",
+            "draft_content": (
+                "主要投资方：[[公司或组织_AF]或组织_X]人民币30,870,000元、"
+                "[[公司或组织_AF]或组织_Y]人民币28,230,000元、[商标品牌_D]人民币23,000,000元；"
+                "其余7名合计人民币89,919,700元。"
+            ),
+            "extracted_facts": {},
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.liability",
+            "group": "SPA",
+            "label": "违约责任",
+            "draft_content": (
+                "一般赔偿：[公司或组织_AF]及[[公司或组织_AF]或组织_AB]就违反协议约定向投资方及其关联方等受偿方赔偿，使其免受损害；"
+                "书面豁免情形除外。任何一方违约时，其他方亦可要求实际且全面履行。\n"
+                "特殊赔偿：未如实反映的现实或潜在债务由[[公司或组织_AF]或组织_AB]承担偿还及赔偿；"
+                "架构调整导致投资方未来退出税基成本低于增资款的，[[公司或组织_AF]或组织_AA]连带补偿税赋成本增加，投资方未严格配合导致损失的除外。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.transfer_restriction",
+            "group": "SHA",
+            "label": "股权转让限制",
+            "draft_content": (
+                "受限主体及期间：自天使轮增资交割日至首次公开发行之日止，任何[[公司或组织_AE]或组织_C]，"
+                "包括[[公司或组织_AE]或组织_AL]作为持股平台合伙人，未经同意不得实施受限转让或处分。\n"
+                "允许例外：员工股权/期权激励计划、反稀释保护权、第9条回购权及经[[公司或组织_AE]或组织_K]事先书面同意的股权转让不受该限制；"
+                "婚姻关系变动或继承等导致的持股实体层面处置不视为间接转让。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.redemption",
+            "group": "SHA",
+            "label": "特殊回购权",
+            "draft_content": (
+                "逾期责任及顺位：逾期未足额支付的，未付金额按6%年单利计违约金且继续履行；"
+                "多名回购权人行权时，先[[公司或组织_AE]或组织_AA]、后[[公司或组织_AE]或组织_X]，同顺位资金不足按应付金额比例分配。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.mfn_special_rights",
+            "group": "SHA",
+            "label": "最惠国及特殊投资人权利",
+            "draft_content": (
+                "例外范围：最惠国待遇不适用于[[公司或组织_AE]或组织_G]及本轮领投方[商标品牌_G]基于投资比例享有的"
+                "[[公司或组织_AE]或组织_AM]席位及相应表决权，战略方和产业方优先业务合作权利，以及后轮更高估值投资人的经济型权益优先顺位。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.esop",
+            "group": "SHA",
+            "label": "ESOP特别约定",
+            "draft_content": "审批要求：员工股权激励计划、实质修订及上述定向增资需按协议由股东会或投资人批准，并符合公司法及章程。【注：两项10%额度是否累计适用、审批机构口径可结合协议定义确认。】",
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    rows = export_items({"items": items})
+    exported_lines = [line for row in rows for line in row["content_lines"]]
+
+    assert all(len(line) <= 95 for line in exported_lines)
+    assert "主要投资方1：" in items[0]["draft_content"]
+    assert "未披露债务：" in items[1]["draft_content"]
+    assert "限制期间：" in items[2]["draft_content"]
+    assert "清偿顺位：" in items[3]["draft_content"]
+    assert "后轮经济权益例外：" in items[4]["draft_content"]
+    assert any(line.startswith("【注：") for line in exported_lines)
+
+
 if __name__ == "__main__":
     test_anti_dilution_price_reset_guard()
     test_redemption_compliance_trigger_guard()
@@ -2207,4 +2287,5 @@ if __name__ == "__main__":
     test_post_polish_splits_long_confidentiality_and_information_lines()
     test_post_polish_splits_reserved_matters_and_mfn_lines()
     test_post_polish_splits_remaining_long_substantive_lines()
+    test_post_polish_keeps_export_lines_readable_for_dense_kts_items()
     print("ok")
