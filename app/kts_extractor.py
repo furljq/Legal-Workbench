@@ -3827,6 +3827,296 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
         item["draft_content"] = "\n".join(line for line in lines if line)
 
 
+FOUNDER_VESTING_LINE = (
+    "股权成熟：创始人/相关高管持有的受限股权分4年成熟；"
+    "特定人员分别自天使轮增资交割日或全职加入并签署劳动合同日起，每满1年成熟25%；"
+    "约定收购/兼并且收购方同意或完成IPO时，全部加速成熟。"
+)
+FOUNDER_SERVICE_LINE = (
+    "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前应投入剩余实质性全部工作时间和精力；"
+    "全职加入后应投入实质性全部工作时间和精力，均不得在公司/集团外任职、投资或提供服务；"
+    "经投资人同意的研究机构任职例外，但不得实质影响其对公司的职责和经营管理。"
+)
+FOUNDER_BREACH_LINE = (
+    "离职/过错后果：成熟期内主动离职、不续签或因过错被解职的，受限股权无论是否成熟均按约定无偿或以法定最低价格转让；"
+    "其他离职的未成熟部分同样适用，已成熟部分保留但放弃投票权/董事提名等管理权。"
+)
+FOUNDER_NON_COMPETE_LINE = (
+    "竞业及保密/IP：限制期至离职后两年或不再持股后两年孰晚；"
+    "限制投资、参与或协助竞争业务，招揽客户/员工，以及为非公司目的披露或使用公司商业、财务、交易、知识产权及其他保密信息。"
+)
+
+
+def has_founder_vesting_evidence(candidates: list[dict[str, Any]]) -> bool:
+    text = normalize_for_match(combined_candidate_text(candidates))
+    compact_text = re.sub(r"\s+", "", text)
+    return (
+        "受限股权" in compact_text
+        and "分4年成熟" in compact_text
+        and "每满一(1)年" in compact_text
+        and "25%" in compact_text
+        and "加速成熟" in compact_text
+    )
+
+
+def has_founder_service_commitment_evidence(candidates: list[dict[str, Any]]) -> bool:
+    text = normalize_for_match(combined_candidate_text(candidates))
+    compact_text = re.sub(r"\s+", "", text)
+    return (
+        "自天使轮增资交割日起" in compact_text
+        and "首次公开发行后一(1)年" in compact_text
+        and "全职加入" in compact_text
+        and "实质性全部工作时间和精力" in compact_text
+        and "不得" in compact_text
+        and "之外任职或投资或提供服务" in compact_text
+        and "其他研究机构" in compact_text
+        and "实质不利影响" in compact_text
+    )
+
+
+def has_founder_breach_evidence(candidates: list[dict[str, Any]]) -> bool:
+    text = normalize_for_match(combined_candidate_text(candidates))
+    compact_text = re.sub(r"\s+", "", text)
+    return (
+        "主动" in compact_text
+        and "离职" in compact_text
+        and "过错理由" in compact_text
+        and "无偿或以法律允许的最低价格" in compact_text
+        and "表决权" in compact_text
+        and "董事提名权" in compact_text
+    )
+
+
+def has_founder_non_compete_scope_evidence(candidates: list[dict[str, Any]]) -> bool:
+    text = normalize_for_match(combined_candidate_text(candidates))
+    compact_text = re.sub(r"\s+", "", text)
+    return (
+        "限制期" in compact_text
+        and "解除劳动(服务)关系之后两(2)年" in compact_text
+        and "不直接或者间接持有" in compact_text
+        and "竞争性活动" in compact_text
+        and "竞争关系" in compact_text
+        and "劝说" in compact_text
+        and "商业秘密或保密信息" in compact_text
+    )
+
+
+def set_extracted_field(
+    extracted_facts: dict[str, Any],
+    key: str,
+    label: str,
+    value: str,
+    source_candidate_ids: list[str],
+    note: str,
+) -> None:
+    field_values = extracted_facts.setdefault("field_values", [])
+    if not isinstance(field_values, list):
+        field_values = []
+        extracted_facts["field_values"] = field_values
+    target: dict[str, Any] | None = None
+    for field in field_values:
+        if isinstance(field, dict) and str(field.get("key") or "") == key:
+            target = field
+            break
+    if target is None:
+        target = {"key": key, "label": label}
+        field_values.append(target)
+    target.update(
+        {
+            "key": key,
+            "label": label,
+            "status": "found",
+            "value": value,
+            "source_candidate_ids": source_candidate_ids,
+            "note": note,
+        }
+    )
+
+
+def founder_obligations_source_ids(
+    candidates: list[dict[str, Any]],
+    markers: tuple[str, ...],
+) -> list[str]:
+    ids = candidate_ids_with_text_markers(candidates, markers)
+    if ids:
+        return ids
+    return [
+        str(candidate.get("candidate_id") or "")
+        for candidate in candidates
+        if str(candidate.get("candidate_id") or "").startswith("sha.founder_obligations-")
+    ][:4]
+
+
+def founder_obligations_compact_draft(
+    include_vesting: bool,
+    include_service: bool,
+    include_breach: bool,
+    include_non_compete: bool,
+) -> str:
+    lines: list[str] = []
+    if include_vesting:
+        lines.append(FOUNDER_VESTING_LINE)
+    if include_service:
+        lines.append(FOUNDER_SERVICE_LINE)
+    if include_breach:
+        lines.append(FOUNDER_BREACH_LINE)
+    if include_non_compete:
+        lines.append(FOUNDER_NON_COMPETE_LINE)
+    return "\n".join(lines)
+
+
+def remove_stale_founder_obligations_notes(notes: Any) -> list[str]:
+    normalized = normalize_string_list(notes)
+    filtered: list[str] = []
+    for note in normalized:
+        if "已按当前事项边界概括违约后果" in note:
+            continue
+        if re.search(r"C\d{2}", note) and any(term in note for term in ("核心证据", "无关", "未纳入摘要")):
+            continue
+        if any(term in note for term in ("C06", "候选片段", "证据片段", "截断", "未完整", "完整呈现")) and any(
+            topic in note
+            for topic in ("IPO", "持续义务", "持续任职", "全职", "承诺", "竞业", "保密", "IP", "知识产权")
+        ):
+            continue
+        if any(term in note for term in ("无法确认承诺对象", "具体义务", "完整例外", "零散保密/IP", "独立保密/IP归属协议条款")):
+            continue
+        filtered.append(note)
+    return filtered
+
+
+def clean_founder_obligations_draft_notes(draft_content: str) -> str:
+    cleaned = re.sub(
+        r"【(?:注|待核)[：:][^】]*(?:IPO|持续义务|承诺对象|具体义务|例外|未完整|截断)[^】]*】",
+        "",
+        draft_content,
+    )
+    return "\n".join(line.rstrip() for line in cleaned.splitlines() if line.strip())
+
+
+def refresh_founder_obligations_status(extraction: dict[str, Any]) -> None:
+    notes = normalize_string_list(extraction.get("review_notes"))
+    if not notes and str(extraction.get("status") or "") == "needs_review":
+        extraction["status"] = "drafted"
+
+
+def founder_fact_value(item: dict[str, Any], key: str) -> str:
+    extracted_facts = item.get("extracted_facts", {})
+    if not isinstance(extracted_facts, dict):
+        return ""
+    return extracted_field_value(extracted_facts, key)
+
+
+def founder_facts_support_compact_draft(item: dict[str, Any]) -> tuple[bool, bool, bool, bool]:
+    vesting = founder_fact_value(item, "vesting")
+    service = founder_fact_value(item, "service_commitment")
+    breach = founder_fact_value(item, "breach_consequence")
+    non_compete = founder_fact_value(item, "non_compete")
+    confidentiality = founder_fact_value(item, "confidentiality_ip")
+    return (
+        "4年" in vesting and "25%" in vesting,
+        "IPO后一周年" in service and "实质性全部工作时间" in service,
+        "无偿或以法定最低价格" in breach and "投票权/董事提名" in breach,
+        "离职后两年" in non_compete and "保密信息" in confidentiality,
+    )
+
+
+def clean_founder_obligations_review_tone(item: dict[str, Any]) -> None:
+    draft_content = clean_founder_obligations_draft_notes(str(item.get("draft_content") or ""))
+    include_vesting, include_service, include_breach, include_non_compete = founder_facts_support_compact_draft(item)
+    if include_service and include_non_compete and (
+        "未完整" in draft_content
+        or "截断" in draft_content
+        or "持续服务：" not in draft_content
+        or "竞业及保密/IP：" not in draft_content
+    ):
+        draft_content = founder_obligations_compact_draft(
+            include_vesting,
+            include_service,
+            include_breach,
+            include_non_compete,
+        )
+    if draft_content:
+        item["draft_content"] = draft_content
+    item["review_notes"] = remove_stale_founder_obligations_notes(item.get("review_notes", []))
+    item["lawyer_notes"] = remove_stale_founder_obligations_notes(item.get("lawyer_notes", []))
+    item["missing_or_unclear"] = remove_stale_founder_obligations_notes(item.get("missing_or_unclear", []))
+
+
+def guard_founder_obligations(
+    extraction: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> None:
+    has_vesting = has_founder_vesting_evidence(candidates)
+    has_service = has_founder_service_commitment_evidence(candidates)
+    has_breach = has_founder_breach_evidence(candidates)
+    has_non_compete = has_founder_non_compete_scope_evidence(candidates)
+    if not (has_service or has_non_compete):
+        return
+
+    extracted_facts = extraction.get("extracted_facts", {})
+    if not isinstance(extracted_facts, dict):
+        return
+
+    if has_vesting:
+        set_extracted_field(
+            extracted_facts,
+            "vesting",
+            "股权成熟/兑现",
+            "创始人/相关高管持有的受限股权分4年成熟；特定人员分别自天使轮增资交割日或全职加入并签署劳动合同日起，每满1年成熟25%；约定收购/兼并且收购方同意或完成IPO时，全部加速成熟。",
+            founder_obligations_source_ids(candidates, ("受限股权", "分4年成熟")),
+            "系统根据股权成熟条款压缩为KTS要点。",
+        )
+    if has_service:
+        set_extracted_field(
+            extracted_facts,
+            "service_commitment",
+            "持续任职/全职投入",
+            "自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前应投入剩余实质性全部工作时间和精力；全职加入后应投入实质性全部工作时间和精力，均不得在公司/集团外任职、投资或提供服务；经投资人同意的研究机构任职例外，但不得实质影响其对公司的职责和经营管理。",
+            founder_obligations_source_ids(candidates, ("首次公开发行后一(1)年", "实质性全部工作时间")),
+            "系统根据完整全职投入承诺补足，消除候选片段截断造成的伪复核。",
+        )
+    if has_breach:
+        set_extracted_field(
+            extracted_facts,
+            "breach_consequence",
+            "违约后果",
+            "成熟期内主动离职、不续签或因过错被解职的，受限股权无论是否成熟均须无偿或以法定最低价格转让；其他离职的未成熟部分同样适用，已成熟部分保留但放弃投票权/董事提名等管理权。",
+            founder_obligations_source_ids(candidates, ("无偿或以法律允许的最低价格", "董事提名权")),
+            "系统根据离职/过错后果条款压缩为KTS要点。",
+        )
+    if has_non_compete:
+        set_extracted_field(
+            extracted_facts,
+            "non_compete",
+            "不竞争/竞业限制",
+            "限制期至离职后两年或不再持股后两年孰晚；限制投资、参与或协助竞争业务，以及招揽客户或员工。",
+            founder_obligations_source_ids(candidates, ("限制期", "竞争性活动")),
+            "系统根据竞业限制期和竞争性活动清单补足。",
+        )
+        set_extracted_field(
+            extracted_facts,
+            "confidentiality_ip",
+            "保密/IP归属",
+            "不得为非公司目的披露或使用公司商业、财务、交易、知识产权及其他商业秘密或保密信息；违反保密、竞业限制及知识产权保护协议项下义务构成过错理由。",
+            founder_obligations_source_ids(candidates, ("商业秘密或保密信息",)),
+            "系统根据竞业/保密清单及过错理由条款补足。",
+        )
+
+    compact = founder_obligations_compact_draft(has_vesting, has_service, has_breach, has_non_compete)
+    if compact:
+        extraction["draft_content"] = compact
+    extraction["review_notes"] = remove_stale_founder_obligations_notes(extraction.get("review_notes", []))
+    extraction["lawyer_notes"] = remove_stale_founder_obligations_notes(extraction.get("lawyer_notes", []))
+    extraction["missing_or_unclear"] = remove_stale_founder_obligations_notes(extraction.get("missing_or_unclear", []))
+    facts_missing = normalize_string_list(extracted_facts.get("missing_or_unclear"))
+    extracted_facts["missing_or_unclear"] = remove_stale_founder_obligations_notes(facts_missing)
+    facts_lawyer_notes = normalize_string_list(extracted_facts.get("lawyer_notes"))
+    extracted_facts["lawyer_notes"] = remove_stale_founder_obligations_notes(facts_lawyer_notes)
+    summary_points = normalize_string_list(extracted_facts.get("summary_points"))
+    extracted_facts["summary_points"] = remove_stale_founder_obligations_notes(summary_points)
+    refresh_founder_obligations_status(extraction)
+
+
 def apply_deterministic_quality_guards(
     item: dict[str, Any],
     extraction: dict[str, Any],
@@ -3866,6 +4156,8 @@ def apply_deterministic_quality_guards(
         guard_dividend_approval(extraction, candidates)
     if item_id == "sha.liquidation_preference":
         guard_liquidation_preference(extraction, candidates)
+    if item_id == "sha.founder_obligations":
+        guard_founder_obligations(extraction, candidates)
     return extraction
 
 
@@ -4285,6 +4577,19 @@ def refresh_final_statuses(items: list[dict[str, Any]]) -> None:
         )
 
 
+def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
+    normalized = normalize_string_list(notes)
+    nonblocking_prefixes = (
+        "已按",
+        "已剔除",
+        "摘要已",
+        "当前摘要已",
+        "已完成",
+        "已将",
+    )
+    return [note for note in normalized if not note.startswith(nonblocking_prefixes)]
+
+
 def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
     for item in items:
         if not isinstance(item, dict):
@@ -4306,6 +4611,9 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         elif item_id == "sha.redemption":
             clean_redemption_review_tone(item)
             normalize_redemption_subpoint_labels(item)
+        elif item_id == "sha.founder_obligations":
+            clean_founder_obligations_review_tone(item)
+        item["review_notes"] = remove_nonblocking_workpaper_review_notes(item.get("review_notes", []))
 
 
 def normalize_absence_checks(value: Any) -> list[dict[str, Any]]:

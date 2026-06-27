@@ -1416,6 +1416,159 @@ def test_liquidation_preference_guard_fills_events_and_new_project() -> None:
     assert not extraction["review_notes"]
 
 
+def test_founder_obligations_guard_completes_service_and_non_compete_summary() -> None:
+    extraction = {
+        "status": "needs_review",
+        "draft_content": (
+            "股权成熟：创始人/相关高管直接或间接持有的受限股权适用4年成熟期。\n"
+            "持续服务及违约处理：成熟期内主动离职、不再续签劳动/服务协议或因过错被解职的，相关受限股权须转让。\n"
+            "【注：另有至IPO后一年的相关承诺片段，但承诺对象、具体义务及例外未完整体现。】"
+        ),
+        "extracted_facts": {
+            "field_values": [
+                {
+                    "key": "service_commitment",
+                    "label": "持续任职/全职投入",
+                    "status": "found",
+                    "value": "另有候选证据显示自天使轮交割日至IPO后一年的相关承诺，但具体义务内容未完整呈现。",
+                    "note": "C06片段不完整，无法进一步确认承诺对象及全职投入的完整表述。",
+                }
+            ],
+            "summary_points": ["证据显示存在自天使轮交割日至IPO后一年的相关承诺，但候选片段未完整呈现。"],
+            "lawyer_notes": ["C06显示存在相关承诺，但候选片段未完整呈现具体义务。"],
+            "missing_or_unclear": ["C06关于承诺期限和内容的原文截断，无法确认承诺对象、具体义务及完整例外。"],
+        },
+        "review_notes": ["C06证据片段不完整，关于IPO后一年的持续义务需律师结合完整条款确认。"],
+        "missing_or_unclear": ["C06关于承诺期限和内容的原文截断，无法确认承诺对象、具体义务及完整例外。"],
+    }
+    candidates = [
+        {
+            "candidate_id": "sha.founder_obligations-C01",
+            "text": (
+                "2.1 受限股权将分4年成熟；每满一(1)年，其所持受限股权总额中的25%予以成熟。"
+                "公司被收购或兼并且届时收购方同意，或公司完成首次公开发行，则全部受限股权应加速成熟。"
+                "2.2 在成熟期内，若任一创始人主动离职/不再续签劳动/服务协议或因过错理由被解职，"
+                "则其应将受限股权无偿或以法律允许的最低价格转让。"
+                "2.3 其他原因终止劳动关系的，未成熟股权适用前述安排，已成熟股权保留但放弃投票权及董事提名权。"
+            ),
+        },
+        {
+            "candidate_id": "sha.founder_obligations-C08",
+            "text": (
+                "0.1 创始人及核心人员承诺：自天使轮增资交割日起直至公司实现首次公开发行后一(1)年届满之日，"
+                "在全职加入公司之前，除在投资人事先同意的其他研究机构任职期间合理必要的工作外，"
+                "应为公司业务发展贡献剩余实质性全部工作时间和精力，不得在公司之外任职或投资或提供服务；"
+                "自其全职加入公司之日起，应贡献实质性全部工作时间和精力，不得在公司之外任职或投资或提供服务，"
+                "且研究机构任职不得造成实质不利影响。"
+                "自本协议签署之日起至以下两者时间发生较晚者期间（限制期）内："
+                "(A)解除劳动(服务)关系之后两(2)年届满之日；或(B)不直接或者间接持有公司任何股权之后两(2)年届满之日，"
+                "不得直接或间接进行以下竞争性活动：(a). 投资、参与、协助或从事与公司业务形成竞争关系的业务或实体；"
+                "(b). 劝说客户购买竞争服务；(c). 劝说或诱导员工离职；"
+                "(d). 为了与公司无关的目的披露或使用公司商业秘密或保密信息。"
+            ),
+        },
+    ]
+
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "sha.founder_obligations"},
+        extraction,
+        candidates,
+    )
+
+    fields = {field["key"]: field for field in extraction["extracted_facts"]["field_values"]}
+    assert extraction["status"] == "drafted"
+    assert "持续服务：" in extraction["draft_content"]
+    assert "竞业及保密/IP：" in extraction["draft_content"]
+    assert "IPO后一周年" in fields["service_commitment"]["value"]
+    assert "离职后两年" in fields["non_compete"]["value"]
+    assert "商业秘密或保密信息" in fields["confidentiality_ip"]["value"]
+    combined = extraction["draft_content"] + "\n" + "\n".join(extraction["review_notes"])
+    assert "未完整" not in combined
+    assert "截断" not in combined
+    assert not extraction["review_notes"]
+
+
+def test_post_polish_guard_rewrites_founder_stale_review_tone() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.founder_obligations",
+            "draft_content": (
+                "股权成熟：受限股权适用4年成熟期。\n"
+                "持续服务及违约处理：候选片段未完整显示IPO后一年的义务。\n"
+                "【注：另有至IPO后一年的相关承诺片段，但承诺对象、具体义务及例外未完整体现。】"
+            ),
+            "extracted_facts": {
+                "field_values": [
+                    {
+                        "key": "vesting",
+                        "label": "股权成熟/兑现",
+                        "status": "found",
+                        "value": "创始人/相关高管持有的受限股权分4年成熟，每满1年成熟25%。",
+                    },
+                    {
+                        "key": "service_commitment",
+                        "label": "持续任职/全职投入",
+                        "status": "found",
+                        "value": "自天使轮增资交割日至IPO后一周年，相关创始人/核心人员应投入实质性全部工作时间和精力。",
+                    },
+                    {
+                        "key": "breach_consequence",
+                        "label": "违约后果",
+                        "status": "found",
+                        "value": "受限股权须无偿或以法定最低价格转让，已成熟部分保留但放弃投票权/董事提名等管理权。",
+                    },
+                    {
+                        "key": "non_compete",
+                        "label": "不竞争/竞业限制",
+                        "status": "found",
+                        "value": "限制期至离职后两年或不再持股后两年孰晚。",
+                    },
+                    {
+                        "key": "confidentiality_ip",
+                        "label": "保密/IP归属",
+                        "status": "found",
+                        "value": "不得披露或使用商业秘密或保密信息。",
+                    },
+                ]
+            },
+            "review_notes": [
+                "C01为本事项核心证据；C02仅用于识别创始人/创始股东主体。",
+                "C06证据片段不完整，关于IPO后一年的持续义务需律师结合完整条款确认。",
+            ],
+            "lawyer_notes": ["候选片段未完整呈现具体义务。"],
+            "missing_or_unclear": ["C06原文截断，无法确认承诺对象。"],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    item = items[0]
+    assert "持续服务：" in item["draft_content"]
+    assert "竞业及保密/IP：" in item["draft_content"]
+    assert "未完整" not in item["draft_content"]
+    assert "截断" not in item["draft_content"]
+    assert not item["review_notes"]
+    assert not item["lawyer_notes"]
+    assert not item["missing_or_unclear"]
+
+
+def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.closing",
+            "draft_content": "交割安排：按协议约定完成。",
+            "review_notes": [
+                "已剔除解除、违约责任及费用类内容，仅保留交割及工商变更安排。",
+                "需律师重点复核工商变更登记作为付款先决条件的交易顺序。",
+            ],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["review_notes"] == ["需律师重点复核工商变更登记作为付款先决条件的交易顺序。"]
+
+
 if __name__ == "__main__":
     test_anti_dilution_price_reset_guard()
     test_redemption_compliance_trigger_guard()
@@ -1442,4 +1595,7 @@ if __name__ == "__main__":
     test_representations_core_guard_fills_authority_and_capital_legality()
     test_shareholder_reserved_guard_resolves_ap_required_matters()
     test_liquidation_preference_guard_fills_events_and_new_project()
+    test_founder_obligations_guard_completes_service_and_non_compete_summary()
+    test_post_polish_guard_rewrites_founder_stale_review_tone()
+    test_post_polish_removes_nonblocking_workpaper_review_notes()
     print("ok")
