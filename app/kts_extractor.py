@@ -5316,6 +5316,7 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
         return
     lines: list[str] = []
     changed = False
+    has_new_project_compensation = False
     for line in draft_content.splitlines():
         stripped = line.strip()
         if stripped.startswith("清算事件：") and "；视为清算事件包括" in stripped:
@@ -5337,6 +5338,24 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
             lines.append("优先清算额：优先清算额为" + amount.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("剩余及特殊安排：") and "；如清算所得" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            residual, compensation = body.split("；如清算所得", 1)
+            lines.append("剩余分配：" + residual.rstrip("。") + "。")
+            lines.append("新项目补偿：如清算所得" + compensation.rstrip("。") + "。")
+            has_new_project_compensation = True
+            changed = True
+            continue
+        if stripped.startswith("特殊安排：") and "法定分配偏离约定" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            if "；如清算所得" in body:
+                redistribution, compensation = body.split("；如清算所得", 1)
+                lines.append("法定分配偏离：" + redistribution.rstrip("。") + "。")
+                if not has_new_project_compensation:
+                    lines.append("新项目补偿：如清算所得" + compensation.rstrip("。") + "。")
+                    has_new_project_compensation = True
+                changed = True
+                continue
         lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
@@ -5380,6 +5399,37 @@ def normalize_dividend_subpoints(item: dict[str, Any]) -> None:
         lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+INLINE_REVIEW_NOTE_RE = re.compile(r"^(?P<body>.*?)(?P<note>【(?:注|待核)[：:][^】]+】)[。.]?$")
+
+
+def split_inline_review_notes(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for raw_line in draft_content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("【") and line.endswith(("】。", "】.")):
+            lines.append(line[:-1])
+            changed = True
+            continue
+        match = INLINE_REVIEW_NOTE_RE.match(line)
+        if match and match.group("body").strip():
+            body = match.group("body").strip().rstrip("。；; ")
+            note = match.group("note")
+            if body:
+                lines.append(body + "。")
+            lines.append(note)
+            changed = True
+            continue
+        lines.append(line)
+    if changed:
+        item["draft_content"] = "\n".join(lines)
 
 
 def refresh_final_statuses(items: list[dict[str, Any]]) -> None:
@@ -5546,6 +5596,7 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_mfn_special_rights_subpoints(item)
         elif item_id == "sha.dividend":
             normalize_dividend_subpoints(item)
+        split_inline_review_notes(item)
         item["review_notes"] = remove_nonblocking_workpaper_review_notes(item.get("review_notes", []))
         item["lawyer_notes"] = remove_nonblocking_workpaper_review_notes(item.get("lawyer_notes", []))
         item["missing_or_unclear"] = remove_nonblocking_workpaper_review_notes(item.get("missing_or_unclear", []))

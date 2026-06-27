@@ -2330,6 +2330,41 @@ def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:
     assert any(line.startswith("【注：") for line in exported_lines)
 
 
+def test_post_polish_splits_inline_notes_and_liquidation_special_arrangements() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.liquidation_preference",
+            "draft_content": (
+                "剩余及特殊安排：清算优先款付清后，剩余财产按全体股东出资比例分配；"
+                "如清算所得不超过清算优先款，清算事件起10年内特定新项目下差额可视为投资并取得等值权益。\n"
+                "特殊安排：法定分配偏离约定时由超额取得方再分配；"
+                "如清算所得不超过清算优先款，10年内特定新项目下差额可视为投资并取得等值权益。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.esop",
+            "draft_content": "合规要求：符合公司法及章程。【注：两项10%额度是否累计适用。】。",
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    liquidation = items[0]["draft_content"]
+    assert "剩余分配：" in liquidation
+    assert "法定分配偏离：" in liquidation
+    assert liquidation.count("新项目补偿：") == 1
+    assert "剩余及特殊安排：" not in liquidation
+    assert "特殊安排：" not in liquidation
+
+    esop = items[1]["draft_content"].splitlines()
+    assert esop == [
+        "合规要求：符合公司法及章程。",
+        "【注：两项10%额度是否累计适用。】",
+    ]
+
+
 if __name__ == "__main__":
     test_anti_dilution_price_reset_guard()
     test_redemption_compliance_trigger_guard()
@@ -2378,4 +2413,5 @@ if __name__ == "__main__":
     test_post_polish_splits_reserved_matters_and_mfn_lines()
     test_post_polish_splits_remaining_long_substantive_lines()
     test_post_polish_keeps_export_lines_readable_for_dense_kts_items()
+    test_post_polish_splits_inline_notes_and_liquidation_special_arrangements()
     print("ok")
