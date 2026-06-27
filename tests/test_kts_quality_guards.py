@@ -1296,6 +1296,96 @@ def test_transaction_arrangement_guard_fills_bracketed_investor_amounts() -> Non
     assert not extraction["review_notes"]
 
 
+def test_post_polish_backfills_transaction_esop_source_from_sha() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.transaction_arrangement",
+            "draft_content": "交易安排：公司投前估值为10亿元；本轮融资额为人民币170,000,000元。\n签署方：由本轮投资方、现有股东、公司及创始股东等共同签署。\n【注：未见ESOP来源安排。】",
+            "content_schema": {
+                "fields": [
+                    {"key": "esop_source", "label": "ESOP来源", "required": False},
+                ]
+            },
+            "extracted_facts": {
+                "summary_points": [
+                    "当前证据未见ESOP来源安排，如本轮存在员工激励预留或调整，需补充确认。",
+                    "公司本轮融资结构已整理。",
+                ],
+                "unclear_points": ["ESOP来源未见明确约定。"],
+                "field_values": [
+                    {
+                        "key": "esop_source",
+                        "label": "ESOP来源",
+                        "status": "not_found",
+                        "value": "未见ESOP或员工持股平台来源安排。",
+                    }
+                ],
+                "lawyer_notes": ["当前证据未见ESOP来源安排。"],
+                "missing_or_unclear": ["ESOP来源未见明确约定。"],
+            },
+            "schema_coverage": {
+                "status": "complete",
+                "required_total": 0,
+                "required_found": 0,
+                "required_handled": 0,
+                "fields": [
+                    {
+                        "key": "esop_source",
+                        "label": "ESOP来源",
+                        "required": False,
+                        "status": "not_found",
+                    }
+                ],
+            },
+            "review_notes": [],
+            "lawyer_notes": [
+                "需确认[公司或组织_AJ]与增资后新增股东[公司或组织_L]之间的对应关系。",
+                "ESOP来源未见明确约定。",
+            ],
+            "missing_or_unclear": ["ESOP来源未见明确约定。"],
+        },
+        {
+            "taxonomy_id": "sha.esop",
+            "draft_content": "首发试验星增发额度：公司有权向员工持股平台定向增资，使其新增持有公司10%股权。",
+            "source_evidence": [
+                {
+                    "candidate_id": "sha.esop-C02",
+                    "quote": "4.1 各方确认,[[公司或组织_AI]或组织_S]和[[公司或组织_AI]或组织_N]为[公司或组织_AI]的员工持股平台,拟用于向[公司或组织_AI]员工授予激励股权。",
+                    "context": "4.1 各方确认,[[公司或组织_AI]或组织_S]和[[公司或组织_AI]或组织_N]为[公司或组织_AI]的员工持股平台,拟用于向[公司或组织_AI]员工授予激励股权。",
+                }
+            ],
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    transaction = items[0]
+    draft = transaction["draft_content"]
+    assert "ESOP来源：[[公司或组织_AI]或组织_S]和[[公司或组织_AI]或组织_N]为员工持股平台，拟用于员工股权激励。" in draft
+    assert "未见ESOP来源安排" not in draft
+    fields = {
+        field["key"]: field
+        for field in transaction["extracted_facts"]["field_values"]
+        if isinstance(field, dict)
+    }
+    assert fields["esop_source"]["status"] == "found"
+    assert "员工持股平台" in fields["esop_source"]["value"]
+    assert transaction["lawyer_notes"] == ["需确认[公司或组织_AJ]与增资后新增股东[公司或组织_L]之间的对应关系。"]
+    assert transaction["missing_or_unclear"] == []
+    assert transaction["extracted_facts"]["summary_points"] == ["公司本轮融资结构已整理。"]
+    assert transaction["extracted_facts"]["unclear_points"] == []
+    assert transaction["extracted_facts"]["lawyer_notes"] == []
+    assert transaction["extracted_facts"]["missing_or_unclear"] == []
+    coverage_fields = {
+        field["key"]: field
+        for field in transaction["schema_coverage"]["fields"]
+        if isinstance(field, dict)
+    }
+    assert coverage_fields["esop_source"]["status"] == "found"
+
+
 def test_rofr_tag_adds_sha_definition_candidate() -> None:
     raw_blocks = [
         _source_block("D01-B0001", 1, "甲方、乙方一、乙方二、乙方三合称“AP”或“AK”。"),
@@ -3732,6 +3822,7 @@ if __name__ == "__main__":
     test_post_polish_splits_redemption_price_formula_lines()
     test_transaction_arrangement_adds_header_and_cap_table_candidates()
     test_transaction_arrangement_guard_fills_signing_parties_and_cap_table()
+    test_post_polish_backfills_transaction_esop_source_from_sha()
     test_rofr_tag_adds_sha_definition_candidate()
     test_board_composition_guard_removes_client_identity_blocker()
     test_post_polish_splits_board_composition_long_line()

@@ -6003,6 +6003,202 @@ def normalize_registration_rights_subpoints(item: dict[str, Any]) -> None:
         item["draft_content"] = "\n".join(line for line in lines if line)
 
 
+def source_evidence_text(item: dict[str, Any]) -> str:
+    values: list[str] = []
+    source_evidence = item.get("source_evidence", [])
+    if isinstance(source_evidence, list):
+        for evidence in source_evidence:
+            if not isinstance(evidence, dict):
+                continue
+            values.append(str(evidence.get("quote") or ""))
+            values.append(str(evidence.get("context") or ""))
+    return "\n".join(value for value in values if value)
+
+
+def source_evidence_candidate_ids(item: dict[str, Any], markers: tuple[str, ...]) -> list[str]:
+    ids: list[str] = []
+    source_evidence = item.get("source_evidence", [])
+    if not isinstance(source_evidence, list):
+        return ids
+    for evidence in source_evidence:
+        if not isinstance(evidence, dict):
+            continue
+        text = str(evidence.get("quote") or "") + "\n" + str(evidence.get("context") or "")
+        if not all(marker in text for marker in markers):
+            continue
+        candidate_id = str(evidence.get("candidate_id") or "")
+        if candidate_id and candidate_id not in ids:
+            ids.append(candidate_id)
+    return ids[:3]
+
+
+def esop_source_summary_from_sha_item(item: dict[str, Any]) -> tuple[str, list[str]]:
+    evidence_text = source_evidence_text(item)
+    compact = re.sub(r"\s+", "", evidence_text)
+    match = re.search(
+        r"各方确认[，,](?P<platforms>.+?)为\[公司或组织_[A-Z]+\]的员工持股平台[，,]拟用于向\[公司或组织_[A-Z]+\]员工授予激励股权",
+        compact,
+    )
+    if match:
+        platforms = match.group("platforms")
+        ids = source_evidence_candidate_ids(item, ("员工持股平台", "授予激励股权"))
+        return f"ESOP来源：{platforms}为员工持股平台，拟用于员工股权激励。", ids
+
+    draft_content = str(item.get("draft_content") or "")
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("ESOP预留："):
+            return stripped.rstrip("。") + "。", source_evidence_candidate_ids(item, ("ESOP",))
+    if "员工持股平台" in draft_content and "新增持有公司10%股权" in draft_content:
+        return "ESOP来源：后续达成约定融资估值/里程碑时，公司可向员工持股平台定向增资用于员工激励。", source_evidence_candidate_ids(item, ("员工持股平台",))
+    return "", []
+
+
+def remove_stale_transaction_esop_absence_note(draft_content: str) -> str:
+    cleaned = re.sub(r"【注[：:][^】]*未见ESOP来源安排[^】]*】", "", draft_content)
+    cleaned = re.sub(r"【注[：:][^】]*(?:ESOP|员工持股平台)[^】]*未见[^】]*】", "", cleaned)
+    return "\n".join(line.rstrip() for line in cleaned.splitlines() if line.strip())
+
+
+TRANSACTION_FACT_NOTE_TERMS: dict[str, tuple[str, ...]] = {
+    "valuation": ("投前/投后估值", "投前估值", "投后估值", "本次交易估值"),
+    "financing_amount": ("整体融资额", "融资额", "融资金额", "增资价款"),
+    "investors_and_amounts": ("投资方", "增资方", "投资金额", "认购金额"),
+    "capital_change": ("注册资本变化", "注册资本", "新增注册资本"),
+    "signing_parties": ("签署方", "交易文件"),
+    "cap_table": ("Cap Table", "现有股东结构", "股权结构"),
+    "esop_source": ("ESOP来源", "ESOP", "员工持股平台"),
+}
+
+
+TRANSACTION_ABSENCE_MARKERS = (
+    "未见",
+    "未被模型提取",
+    "缺失",
+    "不完整",
+    "待确认",
+    "需确认",
+    "需要律师确认",
+    "当前证据不足",
+    "证据不足",
+    "不明确",
+    "无法确认",
+)
+
+
+def transaction_found_fact_keys(item: dict[str, Any]) -> set[str]:
+    found: set[str] = set()
+    extracted_facts = item.get("extracted_facts", {})
+    if isinstance(extracted_facts, dict):
+        field_values = extracted_facts.get("field_values", [])
+        if isinstance(field_values, list):
+            for field in field_values:
+                if isinstance(field, dict) and str(field.get("status") or "") == "found":
+                    key = str(field.get("key") or "")
+                    if key:
+                        found.add(key)
+    coverage = item.get("schema_coverage", {})
+    if isinstance(coverage, dict):
+        fields = coverage.get("fields", [])
+        if isinstance(fields, list):
+            for field in fields:
+                if isinstance(field, dict) and str(field.get("status") or "") == "found":
+                    key = str(field.get("key") or "")
+                    if key:
+                        found.add(key)
+    return found
+
+
+def stale_transaction_fact_note(note: str, found_keys: set[str]) -> bool:
+    if not note or not any(marker in note for marker in TRANSACTION_ABSENCE_MARKERS):
+        return False
+    mentioned_keys = {
+        key
+        for key, terms in TRANSACTION_FACT_NOTE_TERMS.items()
+        if any(term in note for term in terms)
+    }
+    return bool(mentioned_keys) and mentioned_keys.issubset(found_keys)
+
+
+def remove_stale_transaction_fact_notes(notes: Any, found_keys: set[str]) -> list[str]:
+    return [
+        note
+        for note in normalize_string_list(notes)
+        if not stale_transaction_fact_note(note, found_keys)
+    ]
+
+
+def clean_stale_transaction_fact_notes(item: dict[str, Any]) -> None:
+    if str(item.get("taxonomy_id") or item.get("id") or "") != "spa.transaction_arrangement":
+        return
+    found_keys = transaction_found_fact_keys(item)
+    if not found_keys:
+        return
+    for key in ("review_notes", "lawyer_notes", "missing_or_unclear"):
+        item[key] = remove_stale_transaction_fact_notes(item.get(key, []), found_keys)
+    extracted_facts = item.get("extracted_facts", {})
+    if not isinstance(extracted_facts, dict):
+        return
+    for key in ("summary_points", "unclear_points", "lawyer_notes", "missing_or_unclear"):
+        extracted_facts[key] = remove_stale_transaction_fact_notes(extracted_facts.get(key, []), found_keys)
+
+
+def backfill_transaction_esop_source_from_sha(items: list[dict[str, Any]]) -> None:
+    transaction = next(
+        (
+            item
+            for item in items
+            if isinstance(item, dict) and str(item.get("taxonomy_id") or item.get("id") or "") == "spa.transaction_arrangement"
+        ),
+        None,
+    )
+    sha_esop = next(
+        (
+            item
+            for item in items
+            if isinstance(item, dict) and str(item.get("taxonomy_id") or item.get("id") or "") == "sha.esop"
+        ),
+        None,
+    )
+    if transaction is None or sha_esop is None:
+        return
+    draft_content = str(transaction.get("draft_content") or "")
+    if "ESOP来源：" in draft_content or "ESOP预留：" in draft_content:
+        return
+    line, source_ids = esop_source_summary_from_sha_item(sha_esop)
+    if not line:
+        return
+
+    draft_content = remove_stale_transaction_esop_absence_note(draft_content)
+    insert_index = len([existing for existing in draft_content.splitlines() if existing.strip()])
+    for index, existing in enumerate(draft_content.splitlines()):
+        if existing.strip().startswith("签署方："):
+            insert_index = index + 1
+            break
+    transaction["draft_content"] = replace_or_insert_kts_line(
+        draft_content,
+        line,
+        ("ESOP来源", "ESOP预留", "ESOP安排"),
+        insert_index,
+    )
+
+    extracted_facts = transaction.get("extracted_facts", {})
+    if isinstance(extracted_facts, dict):
+        upsert_extracted_field(
+            extracted_facts,
+            "esop_source",
+            "ESOP来源",
+            line.split("：", 1)[1].rstrip("。") + "。",
+            source_ids,
+            "系统根据SHA项下ESOP特别约定补足交易安排中的ESOP来源。",
+        )
+        transaction["schema_coverage"] = build_schema_coverage(transaction, extracted_facts)
+    transaction["review_notes"] = remove_stale_transaction_review_notes(transaction.get("review_notes", []))
+    transaction["lawyer_notes"] = remove_stale_transaction_review_notes(transaction.get("lawyer_notes", []))
+    clean_stale_transaction_fact_notes(transaction)
+    repair_bare_nested_org_placeholders(transaction)
+
+
 def residual_rights_fallback_content(item: dict[str, Any]) -> str:
     if str(item.get("taxonomy_id") or "") != "sha.other":
         return ""
@@ -7275,6 +7471,9 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         item["missing_or_unclear"] = remove_nonblocking_workpaper_review_notes(item.get("missing_or_unclear", []))
         remove_duplicate_missing_notes(item)
         repair_bare_nested_org_placeholders(item)
+    backfill_transaction_esop_source_from_sha(items)
+    for item in items:
+        clean_stale_transaction_fact_notes(item)
 
 
 def normalize_absence_checks(value: Any) -> list[dict[str, Any]]:
