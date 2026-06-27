@@ -2155,6 +2155,7 @@ def test_post_polish_guard_rewrites_founder_stale_review_tone() -> None:
     item = items[0]
     assert "持续服务：" in item["draft_content"]
     assert "外部任职限制：" in item["draft_content"]
+    assert "其他离职后果：" in item["draft_content"]
     assert "竞业及保密/IP：" in item["draft_content"]
     assert "未完整" not in item["draft_content"]
     assert "截断" not in item["draft_content"]
@@ -2172,6 +2173,7 @@ def test_post_polish_splits_founder_service_long_line() -> None:
                 "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前应投入剩余实质性全部工作时间和精力；"
                 "全职加入后应投入实质性全部工作时间和精力，均不得在公司/集团外任职、投资或提供服务；"
                 "经投资人同意的研究机构任职例外，但不得实质影响其对公司的职责和经营管理。\n"
+                "其他离职的未成熟部分同样适用，已成熟部分保留但放弃投票权/董事提名等管理权。\n"
                 "竞业及保密/IP：限制期至离职后两年或不再持股后两年孰晚。"
             ),
             "review_notes": [],
@@ -2184,6 +2186,7 @@ def test_post_polish_splits_founder_service_long_line() -> None:
     draft = items[0]["draft_content"]
     assert "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前后均应投入实质性全部工作时间和精力。" in draft
     assert "外部任职限制：全职加入前后均不得在公司/集团外任职、投资或提供服务" in draft
+    assert "其他离职后果：其他离职的未成熟部分同样适用" in draft
     assert "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前应投入" not in draft
     assert draft.count("外部任职限制：") == 1
 

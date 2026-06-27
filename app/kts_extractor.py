@@ -4584,7 +4584,7 @@ FOUNDER_EXTERNAL_ROLE_LINE = (
 )
 FOUNDER_BREACH_LINE = (
     "离职/过错后果：成熟期内主动离职、不续签或因过错被解职的，受限股权无论是否成熟均按约定无偿或以法定最低价格转让。\n"
-    "其他离职的未成熟部分同样适用，已成熟部分保留但放弃投票权/董事提名等管理权。"
+    "其他离职后果：其他离职的未成熟部分同样适用，已成熟部分保留但放弃投票权/董事提名等管理权。"
 )
 FOUNDER_NON_COMPETE_LINE = (
     "竞业及保密/IP：限制期至离职后两年或不再持股后两年孰晚；"
@@ -4776,6 +4776,10 @@ def normalize_founder_obligation_subpoints(draft_content: str) -> str:
             first, second = body.split("；其他离职", 1)
             lines.append("离职/过错后果：" + first.rstrip("。") + "。")
             lines.append("其他离职后果：其他离职" + second.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("其他离职的未成熟部分"):
+            lines.append("其他离职后果：" + line.rstrip("。") + "。")
             changed = True
             continue
         lines.append(line)
