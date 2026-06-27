@@ -2656,6 +2656,37 @@ def remove_board_client_identity_draft_note(draft_content: str) -> str:
     return "\n".join(line.rstrip() for line in cleaned.splitlines() if line.strip())
 
 
+def normalize_board_composition_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for raw_line in draft_content.splitlines():
+        line = raw_line.strip()
+        if (
+            line.startswith("董事会构成：")
+            and "董事会由" in line
+            and "组成；" in line
+            and "推选" in line
+        ):
+            body = line.split("：", 1)[1].strip().rstrip("。")
+            scale, allocation = body.split("；", 1)
+            scale = re.sub(r"董事会由(.+?)董事组成", r"董事会设\1董事", scale)
+            allocation = allocation.strip().rstrip("。")
+            election_suffix = ""
+            if "由股东会选举产生" in allocation:
+                allocation = allocation.replace("，由股东会选举产生", "").replace("；由股东会选举产生", "")
+                election_suffix = "，由股东会选举产生"
+            lines.append("董事会规模：" + scale.rstrip("。") + election_suffix + "。")
+            lines.append("席位分配：" + allocation.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(line)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def guard_board_composition(
     extraction: dict[str, Any],
     candidates: list[dict[str, Any]],
@@ -4855,6 +4886,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         elif item_id == "spa.other":
             remove_spa_other_workpaper_tone(item)
             normalize_conventional_kts_labels(item)
+        elif item_id == "sha.board_composition":
+            normalize_board_composition_subpoints(item)
         elif item_id == "sha.rofr_tag":
             clean_rofr_tag_workpaper_tone(item)
         elif item_id == "sha.board_reserved_matters":

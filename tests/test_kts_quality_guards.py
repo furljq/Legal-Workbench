@@ -1001,6 +1001,31 @@ def test_board_composition_guard_removes_client_identity_blocker() -> None:
     assert not extraction["review_notes"]
 
 
+def test_post_polish_splits_board_composition_long_line() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.board_composition",
+            "draft_content": (
+                "董事会构成：本次交易完成后，董事会由五名董事组成；组织_W、组织_Z、组织_N各推选一名董事，组织_F推选两名董事，由股东会选举产生。\n"
+                "董事长：由组织_F提名的董事担任。\n"
+                "【注：未见独立观察员委派权。】"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "董事会规模：本次交易完成后，董事会设五名董事，由股东会选举产生。" in draft
+    assert "席位分配：组织_W、组织_Z、组织_N各推选一名董事，组织_F推选两名董事。" in draft
+    assert "董事会构成：本次交易完成后" not in draft
+    assert draft.count("董事会规模：") == 1
+    assert "董事长：由组织_F提名的董事担任。" in draft
+    assert "未见独立观察员委派权" in draft
+
+
 def test_board_reserved_guard_removes_cross_item_seat_blocker() -> None:
     extraction = {
         "status": "needs_review",
@@ -1886,6 +1911,7 @@ if __name__ == "__main__":
     test_transaction_arrangement_guard_fills_signing_parties_and_cap_table()
     test_rofr_tag_adds_sha_definition_candidate()
     test_board_composition_guard_removes_client_identity_blocker()
+    test_post_polish_splits_board_composition_long_line()
     test_rofr_tag_guard_resolves_ap_ak_alias()
     test_rofr_tag_guard_fills_tag_along_terms()
     test_representations_core_guard_fills_authority_and_capital_legality()
