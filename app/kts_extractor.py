@@ -5370,7 +5370,41 @@ def residual_rights_fallback_content(item: dict[str, Any]) -> str:
         parts.append("未见" + "、".join(absent_labels) + "的明确约定")
     if not parts:
         return ""
-    return "；".join(parts) + "。"
+    return "缺失事项：" + "；".join(parts) + "。"
+
+
+SHA_OTHER_NOTE_RE = re.compile(r"^【注：(?P<body>.+)】$")
+
+
+def normalize_sha_other_absence_content(item: dict[str, Any]) -> None:
+    if str(item.get("taxonomy_id") or item.get("id") or "") != "sha.other":
+        return
+    draft_content = str(item.get("draft_content") or "").strip()
+    if not draft_content:
+        return
+    lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
+    if len(lines) != 1:
+        return
+    match = SHA_OTHER_NOTE_RE.match(lines[0])
+    if not match:
+        return
+    body = match.group("body").strip("。；; ")
+    if not body:
+        return
+
+    normalized_lines: list[str] = []
+    for part in re.split(r"[；;]", body):
+        text = part.strip("。；; ")
+        if not text:
+            continue
+        if "未见" in text:
+            normalized_lines.append(f"缺失事项：{text}。")
+        elif "已由" in text and "承接" in text:
+            normalized_lines.append(f"已承接事项：{text}。")
+        else:
+            normalized_lines.append(f"说明事项：{text}。")
+    if normalized_lines:
+        item["draft_content"] = "\n".join(normalized_lines)
 
 
 def ensure_required_draft_content(items: list[dict[str, Any]]) -> None:
@@ -6153,6 +6187,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_mfn_special_rights_subpoints(item)
         elif item_id == "sha.dividend":
             normalize_dividend_subpoints(item)
+        elif item_id == "sha.other":
+            normalize_sha_other_absence_content(item)
         split_inline_review_notes(item)
         item["review_notes"] = remove_nonblocking_workpaper_review_notes(item.get("review_notes", []))
         item["lawyer_notes"] = remove_nonblocking_workpaper_review_notes(item.get("lawyer_notes", []))

@@ -630,8 +630,26 @@ def test_residual_rights_fallback_prevents_empty_sha_other_content() -> None:
 
     ensure_required_draft_content(items)
 
-    assert items[0]["draft_content"] == "未见最惠国待遇的明确约定。"
+    assert items[0]["draft_content"] == "缺失事项：未见最惠国待遇的明确约定。"
     assert items[0]["style_polish"]["postprocess_fallback"] == "residual_rights_content"
+
+
+def test_post_polish_converts_sha_other_note_only_absence_to_kts_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.other",
+            "draft_content": "【注：股东协议未见常规回购权、领售权、最惠国待遇的明确约定；创始股东持续任职及不竞争义务已由“创始人及核心人员义务”事项承接。】",
+            "review_notes": [],
+            "lawyer_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["draft_content"] == (
+        "缺失事项：股东协议未见常规回购权、领售权、最惠国待遇的明确约定。\n"
+        "已承接事项：创始股东持续任职及不竞争义务已由“创始人及核心人员义务”事项承接。"
+    )
 
 
 def test_sha_other_absence_policy_counts_missing_rights_as_handled() -> None:
@@ -718,6 +736,27 @@ def test_docx_export_skips_empty_absence_check_items() -> None:
     rows = export_items(record)
 
     assert [row["label"] for row in rows] == ["特殊回购权"]
+
+
+def test_docx_export_keeps_absence_check_content() -> None:
+    record = {
+        "items": [
+            {
+                "taxonomy_id": "sha.other",
+                "group": "SHA",
+                "label": "其他",
+                "draft_content": "缺失事项：股东协议未见常规回购权、领售权、最惠国待遇的明确约定。",
+                "status": "drafted",
+                "output_policy": {"category": "mandatory_check_absence_output"},
+            }
+        ]
+    }
+
+    rows = export_items(record)
+
+    assert rows[0]["content_lines"] == [
+        "缺失事项：股东协议未见常规回购权、领售权、最惠国待遇的明确约定。"
+    ]
 
 
 def test_spa_other_workpaper_tone_is_cleaned() -> None:
@@ -2788,9 +2827,11 @@ if __name__ == "__main__":
     test_refresh_final_statuses_demotes_soft_drafted_review_notes()
     test_refresh_final_statuses_trims_drafted_lawyer_notes_by_priority()
     test_residual_rights_fallback_prevents_empty_sha_other_content()
+    test_post_polish_converts_sha_other_note_only_absence_to_kts_lines()
     test_sha_other_absence_policy_counts_missing_rights_as_handled()
     test_docx_export_skips_empty_conditional_items_only()
     test_docx_export_skips_empty_absence_check_items()
+    test_docx_export_keeps_absence_check_content()
     test_spa_other_workpaper_tone_is_cleaned()
     test_post_closing_covenants_guard_compacts_overlong_summary()
     test_style_polish_payload_includes_fields_and_review_context()

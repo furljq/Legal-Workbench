@@ -189,9 +189,10 @@ def _is_not_found_line(line: str) -> bool:
     return False
 
 
-def format_kts_content(value: object) -> list[str]:
+def format_kts_content(value: object, *, keep_not_found_lines: bool = False) -> list[str]:
     lines = split_readable_lines(value)
-    lines = [line for line in lines if not _is_not_found_line(line)]
+    if not keep_not_found_lines:
+        lines = [line for line in lines if not _is_not_found_line(line)]
     return number_readable_lines(lines)
 
 
@@ -212,7 +213,12 @@ def export_content_lines(item: dict[str, Any]) -> list[str]:
 
     draft_content = str(item.get("draft_content") or "").strip()
     if draft_content:
-        return format_kts_content(draft_content)
+        output_policy = item.get("output_policy", {})
+        category = str(output_policy.get("category") or "") if isinstance(output_policy, dict) else ""
+        return format_kts_content(
+            draft_content,
+            keep_not_found_lines=category == "mandatory_check_absence_output",
+        )
     if str(item.get("status") or "") == "unclear":
         return ["未见明确约定。"]
     return []
