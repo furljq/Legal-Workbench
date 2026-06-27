@@ -2250,6 +2250,37 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
     assert "法律限制补偿：" in items[5]["draft_content"]
 
 
+def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.transaction_arrangement",
+            "draft_content": (
+                "交易安排：公司投前估值为10亿元；本轮融资额为人民币170,000,000元。\n"
+                "注册资本及股权结构：签署日注册资本为7,950,852.25元；增资完成后合计9,302,497.12元，新增[公司或组织_L]持股2.56%、[公司或组织_V]持股0.85%。\n"
+                "签署方：协议由甲方、现有股东、创始股东及其他各方共同订立。"
+            ),
+            "extracted_facts": {
+                "field_values": [
+                    {
+                        "key": "capital_change",
+                        "label": "注册资本变化",
+                        "status": "found",
+                        "value": "截至签署日注册资本为人民币7,950,852.25元；本次增资完成后认缴出资合计为人民币9,302,497.12元，新增人民币1,351,644.87元。",
+                    }
+                ]
+            },
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "注册资本变化：签署日注册资本为人民币7,950,852.25元；本次增资新增注册资本人民币1,351,644.87元；增资完成后注册资本为人民币9,302,497.12元。" in draft
+    assert "新增[公司或组织_L]持股" not in draft
+    assert "签署方：由本轮投资方（甲方）、现有股东、公司及创始股东等共同签署。" in draft
+
+
 def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:
     items = [
         {
@@ -2412,6 +2443,7 @@ if __name__ == "__main__":
     test_post_polish_splits_long_confidentiality_and_information_lines()
     test_post_polish_splits_reserved_matters_and_mfn_lines()
     test_post_polish_splits_remaining_long_substantive_lines()
+    test_post_polish_normalizes_transaction_capital_and_signing_lines()
     test_post_polish_keeps_export_lines_readable_for_dense_kts_items()
     test_post_polish_splits_inline_notes_and_liquidation_special_arrangements()
     print("ok")

@@ -5100,6 +5100,49 @@ def concise_transaction_money(value: str) -> str:
     return text
 
 
+def concise_transaction_capital_change(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    pre_match = re.search(r"签署日注册资本为人民币?([0-9][0-9,]*(?:\.\d+)?)元", text)
+    added_match = re.search(r"新增人民币?([0-9][0-9,]*(?:\.\d+)?)元", text)
+    post_match = re.search(r"增资完成后(?:认缴出资合计|注册资本)?为人民币?([0-9][0-9,]*(?:\.\d+)?)元", text)
+    if pre_match and added_match and post_match:
+        return (
+            f"注册资本变化：签署日注册资本为人民币{pre_match.group(1)}元；"
+            f"本次增资新增注册资本人民币{added_match.group(1)}元；"
+            f"增资完成后注册资本为人民币{post_match.group(1)}元。"
+        )
+    return text.rstrip("。") + "。"
+
+
+def normalize_transaction_capital_change_line(draft_content: str, extracted_facts: dict[str, Any]) -> tuple[str, bool]:
+    capital_change = concise_transaction_capital_change(extracted_field_value(extracted_facts, "capital_change"))
+    if not capital_change:
+        return draft_content, False
+    lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
+    changed = False
+    for index, line in enumerate(lines):
+        if line.startswith(("注册资本及股权结构：", "股权结构：", "注册资本变化：")) and "新增" in line and "持股" in line:
+            lines[index] = capital_change
+            changed = True
+    if not changed:
+        return draft_content, False
+    return "\n".join(lines), True
+
+
+def normalize_transaction_signing_parties_line(draft_content: str) -> tuple[str, bool]:
+    lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
+    changed = False
+    for index, line in enumerate(lines):
+        if line.startswith("签署方：") and "甲方、现有股东、创始股东及其他各方" in line:
+            lines[index] = "签署方：由本轮投资方（甲方）、现有股东、公司及创始股东等共同签署。"
+            changed = True
+    if not changed:
+        return draft_content, False
+    return "\n".join(lines), True
+
+
 def ensure_transaction_core_terms_after_polish(item: dict[str, Any]) -> None:
     if str(item.get("taxonomy_id") or "") != "spa.transaction_arrangement":
         return
@@ -5196,6 +5239,11 @@ def ensure_transaction_core_terms_after_polish(item: dict[str, Any]) -> None:
     if split_changed:
         draft_content = "\n".join(split_lines)
         changed = True
+
+    draft_content, capital_changed = normalize_transaction_capital_change_line(draft_content, extracted_facts)
+    changed = changed or capital_changed
+    draft_content, signing_changed = normalize_transaction_signing_parties_line(draft_content)
+    changed = changed or signing_changed
 
     if changed:
         item["draft_content"] = draft_content
