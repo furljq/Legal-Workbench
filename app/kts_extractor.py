@@ -3524,6 +3524,11 @@ def guard_redemption_obligor(
         extraction["review_notes"] = remove_stale_redemption_obligor_notes(extraction.get("review_notes", []))
 
 
+REDEMPTION_COMPLIANCE_TRIGGER_BODY = (
+    "违反廉洁/反腐败/业务行为道德合规及利益安排承诺（包括不当利益、代持、利益输送、资金往来等）时，投资方可要求回购。"
+)
+
+
 def guard_redemption_trigger(
     extraction: dict[str, Any],
     candidates: list[dict[str, Any]],
@@ -3531,9 +3536,7 @@ def guard_redemption_trigger(
     if not has_redemption_compliance_trigger(candidates):
         return
 
-    trigger_text = (
-        "违反业务行为道德合规/廉洁条款，包括提供或接受不当利益，或除投资合作及经同意合作外存在代持、利益输送、资金往来等利益安排，并触发第2.3条回购义务。"
-    )
+    trigger_text = REDEMPTION_COMPLIANCE_TRIGGER_BODY
     extracted_facts = extraction.get("extracted_facts", {})
     if not isinstance(extracted_facts, dict):
         return
@@ -3553,7 +3556,7 @@ def guard_redemption_trigger(
     trigger_line = f"触发事项：{trigger_text}"
     lines = [line for line in draft_content.splitlines() if line.strip()]
     replaced = False
-    trigger_prefixes = ("触发事项：", "触发及义务人：", "触发及义务：", "触发：")
+    trigger_prefixes = ("触发事项：", "回购触发事项：", "触发及义务人：", "触发及义务：", "触发：")
     for index, line in enumerate(lines):
         stripped = line.strip()
         if not stripped.startswith(trigger_prefixes):
@@ -3753,12 +3756,67 @@ def clean_redemption_review_tone(extraction: dict[str, Any]) -> None:
         extraction["draft_content"] = "\n".join(line.rstrip() for line in cleaned.splitlines() if line.strip())
 
     notes = normalize_string_list(extraction.get("review_notes"))
-    filtered = [
-        note
-        for note in notes
-        if not any(marker in note for marker in ("候选证据", "建议律师复核", "需律师复核", "仍需律师核对", "系统校验"))
-    ]
+    filtered = []
+    for note in notes:
+        if any(marker in note for marker in ("候选证据", "建议律师复核", "需律师复核", "仍需律师核对", "系统校验")):
+            continue
+        if any(marker in note for marker in ("仅基于", "低度相关", "未纳入摘要", "不作为本事项摘要", "未作为核心摘要", "避免正文过载")):
+            continue
+        if note.startswith(("已仅", "未将")):
+            continue
+        filtered.append(note)
     extraction["review_notes"] = filtered
+
+
+def canonical_redemption_trigger_line(trigger_lines: list[str]) -> str:
+    combined = "\n".join(trigger_lines)
+    if any(
+        marker in combined
+        for marker in ("廉洁", "道德合规", "反腐败", "不当利益", "代持", "利益输送", "资金往来")
+    ):
+        return "回购触发事项：" + REDEMPTION_COMPLIANCE_TRIGGER_BODY
+    return trigger_lines[0]
+
+
+def normalize_single_redemption_trigger_line(line: str) -> tuple[str, bool]:
+    if not line.startswith("回购触发事项："):
+        return line, False
+    if not any(marker in line for marker in ("廉洁", "道德合规", "反腐败", "不当利益", "代持", "利益输送", "资金往来")):
+        return line, False
+    if len(line) <= 80 and "第" not in line:
+        return line, False
+    return "回购触发事项：" + REDEMPTION_COMPLIANCE_TRIGGER_BODY, True
+
+
+def dedupe_redemption_trigger_lines(lines: list[str]) -> tuple[list[str], bool]:
+    trigger_indices = [
+        index
+        for index, line in enumerate(lines)
+        if line.strip().startswith("回购触发事项：")
+    ]
+    if len(trigger_indices) == 1:
+        index = trigger_indices[0]
+        normalized, changed = normalize_single_redemption_trigger_line(lines[index])
+        if not changed:
+            return lines, False
+        updated = list(lines)
+        updated[index] = normalized
+        return updated, True
+    if not trigger_indices:
+        return lines, False
+    trigger_lines = [lines[index] for index in trigger_indices]
+    canonical = canonical_redemption_trigger_line(trigger_lines)
+    trigger_index_set = set(trigger_indices)
+    deduped: list[str] = []
+    inserted = False
+    for index, line in enumerate(lines):
+        if index not in trigger_index_set:
+            deduped.append(line)
+            continue
+        if not inserted:
+            deduped.append(canonical)
+            inserted = True
+    return deduped, True
 
 
 def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
@@ -3823,6 +3881,8 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
             line = "逾期责任及顺位：" + line.split("：", 1)[1]
             changed = True
         lines.append(line)
+    lines, deduped = dedupe_redemption_trigger_lines(lines)
+    changed = changed or deduped
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
 

@@ -88,7 +88,7 @@ def test_redemption_compliance_trigger_guard() -> None:
         candidates,
     )
 
-    assert extraction["draft_content"].splitlines()[0].startswith("触发事项：违反业务行为道德合规/廉洁条款")
+    assert extraction["draft_content"].splitlines()[0].startswith("触发事项：违反廉洁/反腐败/业务行为道德合规")
     trigger = extraction["extracted_facts"]["field_values"][0]
     assert trigger["status"] == "found"
     assert "代持、利益输送、资金往来" in trigger["value"]
@@ -1124,6 +1124,41 @@ def test_post_polish_guards_remove_soft_hard_markers() -> None:
     assert "【注：未见控制权变更全额共售安排。】" in combined
 
 
+def test_post_polish_deduplicates_redemption_trigger_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.redemption",
+            "draft_content": (
+                "回购触发事项：违反业务行为道德合规/廉洁条款，包括提供或接受不当利益，或存在代持、利益输送、资金往来等利益安排。\n"
+                "回购触发事项：违反廉洁、反腐败及利益安排相关承诺时，投资方可要求其回购。\n"
+                "回购价格：按投资成本加收益与公允价值孰高确定。"
+            ),
+            "review_notes": [
+                "已仅基于high和medium证据起草。",
+                "C07为股东名册信息，与特殊回购权无直接关联，未纳入摘要。",
+            ],
+        },
+        {
+            "taxonomy_id": "sha.redemption",
+            "draft_content": (
+                "回购触发事项：违反业务行为道德合规/廉洁条款，包括提供或接受不当利益，或除投资合作及经同意合作外存在代持、利益输送、资金往来等利益安排，并触发第2.3条回购义务。\n"
+                "回购价格：按约定公式计算。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    lines = items[0]["draft_content"].splitlines()
+    trigger_lines = [line for line in lines if line.startswith("回购触发事项：")]
+    assert trigger_lines == [
+        "回购触发事项：违反廉洁/反腐败/业务行为道德合规及利益安排承诺（包括不当利益、代持、利益输送、资金往来等）时，投资方可要求回购。"
+    ]
+    assert not items[0]["review_notes"]
+    assert items[1]["draft_content"].splitlines()[0] == trigger_lines[0]
+
+
 def test_rofr_tag_guard_resolves_ap_ak_alias() -> None:
     extraction = {
         "status": "needs_review",
@@ -1586,6 +1621,7 @@ if __name__ == "__main__":
     test_style_polish_payload_includes_fields_and_review_context()
     test_style_polish_validation_allows_removing_workpaper_note()
     test_candidate_context_centers_on_source_quote()
+    test_post_polish_deduplicates_redemption_trigger_lines()
     test_transaction_arrangement_adds_header_and_cap_table_candidates()
     test_transaction_arrangement_guard_fills_signing_parties_and_cap_table()
     test_rofr_tag_adds_sha_definition_candidate()
