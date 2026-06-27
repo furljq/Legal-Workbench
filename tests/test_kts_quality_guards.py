@@ -2041,6 +2041,79 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
     assert "后。" not in items[3]["draft_content"]
 
 
+def test_post_polish_splits_remaining_long_substantive_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.closing",
+            "draft_content": (
+                "付款及交割：第四条先决条件满足或被投资方书面豁免后10个工作日内，或另行书面约定时间，"
+                "各投资方分别向公司指定专用账户足额付款；足额支付即构成交割，付款完成日为交割日，各投资方付款义务及交割相互独立。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.compliance",
+            "draft_content": (
+                "廉洁合规：公司、相关主体及其董事、管理人员、雇员在代表公司行事过程中不得参与腐败、贿赂、行贿，"
+                "包括商业贿赂及向政府部门或官员提供财物或其他利益以影响决策，并须遵守适用反腐败、反贿赂及反洗钱规则。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.drag_along",
+            "draft_content": (
+                "领售触发：天使轮增资交割日起满3年后，如第三方收购公司全部或实质上全部业务/资产，"
+                "或发生并购、重组等导致实际控制权变更交易，且公司整体估值不低于人民币2,488,078,800元，可触发领售安排。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.liquidation_preference",
+            "draft_content": (
+                "清算事件：公司解散、清算、破产及视为清算事件触发优先清算；视为清算事件包括控制权变更、50%以上表决权转移、"
+                "全部或实质全部资产或业务处置，以及全部或实质全部知识产权排他许可或出售，参与该事件的优先清算权人一致同意可豁免。\n"
+                "清算顺位及金额：依法清偿法定优先款项及债务后，剩余财产先向本轮优先清算权人支付本轮优先清算额，"
+                "再向天使轮优先清算权人支付天使轮优先清算额；优先清算额为增资款加已宣布未付股息，不足时同顺位按应得金额比例分配。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.anti_dilution",
+            "draft_content": (
+                "触发及方式：交割日后公司发生新融资，且新增股东取得新增注册资本的新认购价格低于反稀释权人原始认购价格的，"
+                "反稀释权人可要求按广义加权平均方式调整原始认购价格，公式为P2=P1*(A+B)/(A+C)。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.dividend",
+            "draft_content": (
+                "投资方优先：公司批准分配利润时，组织_H和组织_C应采取必要行动，确保组织_K优先于其他股东取得按两种方式计算金额中较高者确定的优先分红额；"
+                "如因法律限制不能实现，获益股东应向受损组织_K让与相应比例金额。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert "付款期限：" in items[0]["draft_content"]
+    assert "交割日：" in items[0]["draft_content"]
+    assert "禁止行为：" in items[1]["draft_content"]
+    assert "合规要求：" in items[1]["draft_content"]
+    assert "触发时间：" in items[2]["draft_content"]
+    assert "触发交易：" in items[2]["draft_content"]
+    assert "估值门槛：" in items[2]["draft_content"]
+    assert "法定清算事件：" in items[3]["draft_content"]
+    assert "视同清算事件：" in items[3]["draft_content"]
+    assert "清算顺位：" in items[3]["draft_content"]
+    assert "优先清算额：" in items[3]["draft_content"]
+    assert "触发情形：" in items[4]["draft_content"]
+    assert "调整方式：" in items[4]["draft_content"]
+    assert "优先分红：" in items[5]["draft_content"]
+    assert "法律限制补偿：" in items[5]["draft_content"]
+
+
 if __name__ == "__main__":
     test_anti_dilution_price_reset_guard()
     test_redemption_compliance_trigger_guard()
@@ -2084,4 +2157,5 @@ if __name__ == "__main__":
     test_post_polish_normalizes_esop_milestone_labels()
     test_post_polish_splits_long_confidentiality_and_information_lines()
     test_post_polish_splits_reserved_matters_and_mfn_lines()
+    test_post_polish_splits_remaining_long_substantive_lines()
     print("ok")

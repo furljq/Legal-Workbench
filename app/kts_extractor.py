@@ -5007,6 +5007,140 @@ def ensure_transaction_core_terms_after_polish(item: dict[str, Any]) -> None:
         item["draft_content"] = draft_content
 
 
+def normalize_closing_payment_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("付款及交割：") and "；足额支付即构成交割" in stripped:
+            body = stripped.split("：", 1)[1]
+            payment, closing = body.split("；", 1)
+            lines.append("付款期限：" + payment.rstrip("。") + "。")
+            lines.append("交割日：" + closing.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_compliance_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("廉洁合规：") and "，并须遵守" in stripped and len(stripped) > 90:
+            body = stripped.split("：", 1)[1]
+            prohibited, rules = body.split("，并须遵守", 1)
+            lines.append("禁止行为：" + prohibited.rstrip("。") + "。")
+            lines.append("合规要求：应遵守" + rules.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_drag_along_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("领售触发：") and "后，如" in stripped and "，且公司整体估值" in stripped:
+            body = stripped.split("：", 1)[1]
+            timing, rest = body.split("后，如", 1)
+            trigger, valuation = rest.split("，且公司整体估值", 1)
+            lines.append("触发时间：" + timing.rstrip("。") + "后。")
+            lines.append("触发交易：如" + trigger.rstrip("。") + "。")
+            lines.append("估值门槛：公司整体估值" + valuation.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("清算事件：") and "；视为清算事件包括" in stripped:
+            body = stripped.split("：", 1)[1]
+            statutory, deemed = body.split("；视为清算事件包括", 1)
+            waiver = ""
+            if "，参与该事件的优先清算权人一致同意可豁免" in deemed:
+                deemed, waiver = deemed.split("，参与该事件的优先清算权人一致同意可豁免", 1)
+            lines.append("法定清算事件：" + statutory.rstrip("。") + "。")
+            lines.append("视同清算事件：" + deemed.rstrip("。") + "。")
+            if waiver or "参与该事件" in stripped:
+                lines.append("豁免机制：参与该事件的优先清算权人一致同意可豁免。")
+            changed = True
+            continue
+        if stripped.startswith("清算顺位及金额：") and "；优先清算额为" in stripped:
+            body = stripped.split("：", 1)[1]
+            order, amount = body.split("；优先清算额为", 1)
+            lines.append("清算顺位：" + order.rstrip("。") + "。")
+            lines.append("优先清算额：优先清算额为" + amount.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_anti_dilution_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("触发及方式：") and "，反稀释权人可要求" in stripped:
+            body = stripped.split("：", 1)[1]
+            trigger, method = body.split("，反稀释权人可要求", 1)
+            lines.append("触发情形：" + trigger.rstrip("。") + "。")
+            lines.append("调整方式：反稀释权人可要求" + method.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_dividend_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("投资方优先：") and "；如因法律限制" in stripped:
+            body = stripped.split("：", 1)[1]
+            priority, fallback = body.split("；如因法律限制", 1)
+            lines.append("优先分红：" + priority.rstrip("。") + "。")
+            lines.append("法律限制补偿：如因法律限制" + fallback.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def refresh_final_statuses(items: list[dict[str, Any]]) -> None:
     for item in items:
         if not isinstance(item, dict):
@@ -5048,6 +5182,10 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         item_id = str(item.get("taxonomy_id") or item.get("id") or "")
         if item_id == "spa.transaction_arrangement":
             ensure_transaction_core_terms_after_polish(item)
+        elif item_id == "spa.closing":
+            normalize_closing_payment_subpoints(item)
+        elif item_id == "spa.compliance":
+            normalize_compliance_subpoints(item)
         elif item_id == "spa.other":
             remove_spa_other_workpaper_tone(item)
             normalize_conventional_kts_labels(item)
@@ -5056,6 +5194,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_board_composition_subpoints(item)
         elif item_id == "sha.rofr_tag":
             clean_rofr_tag_workpaper_tone(item)
+        elif item_id == "sha.drag_along":
+            normalize_drag_along_subpoints(item)
         elif item_id == "sha.board_reserved_matters":
             remove_board_reserved_workpaper_tone(item)
             normalize_board_reserved_subpoints(item)
@@ -5063,6 +5203,7 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_shareholder_reserved_subpoints(item)
         elif item_id == "sha.anti_dilution":
             clean_anti_dilution_review_tone(item)
+            normalize_anti_dilution_subpoints(item)
         elif item_id == "sha.esop":
             clean_esop_review_tone(item)
             normalize_esop_milestone_subpoints(item)
@@ -5071,12 +5212,15 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_redemption_subpoint_labels(item)
         elif item_id == "sha.liquidation_preference":
             clean_liquidation_review_tone(item)
+            normalize_liquidation_preference_subpoints(item)
         elif item_id == "sha.founder_obligations":
             clean_founder_obligations_review_tone(item)
         elif item_id == "sha.information_audit":
             normalize_information_audit_subpoints(item)
         elif item_id == "sha.mfn_special_rights":
             normalize_mfn_special_rights_subpoints(item)
+        elif item_id == "sha.dividend":
+            normalize_dividend_subpoints(item)
         item["review_notes"] = remove_nonblocking_workpaper_review_notes(item.get("review_notes", []))
 
 
