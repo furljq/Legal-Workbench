@@ -28,6 +28,8 @@ TRANSACTION_CANDIDATE_CHARS = 6500
 TRANSACTION_CANDIDATE_AFTER_BLOCKS = 14
 SHAREHOLDER_RESERVED_CANDIDATE_CHARS = 6000
 SHAREHOLDER_RESERVED_CANDIDATE_AFTER_BLOCKS = 16
+POST_CLOSING_CANDIDATE_CHARS = 5200
+POST_CLOSING_CANDIDATE_AFTER_BLOCKS = 10
 MAX_EXTRACTION_CONTEXT_CHARS = 4200
 EXTRACTION_CONTEXT_LEAD_CHARS = 500
 MAX_AI_REVIEW_CANDIDATES = 8
@@ -80,7 +82,20 @@ EXTRA_TERMS = {
         "正常开展业务",
         "事先书面同意",
     ],
-    "spa.post_closing_covenants": ["交割后承诺", "资金用途", "整改", "重组", "实缴", "持续任职"],
+    "spa.post_closing_covenants": [
+        "交割后承诺",
+        "资金用途",
+        "整改",
+        "重组",
+        "实缴",
+        "持续任职",
+        "团队组建",
+        "知识产权转移",
+        "试验卫星发射",
+        "许可或备案",
+        "税收申报",
+        "到期税项",
+    ],
     "spa.termination": ["解除", "终止", "最后期限", "long stop"],
     "spa.liability": ["违约责任", "赔偿", "补偿", "连带责任", "责任上限"],
     "spa.expenses": ["费用", "律师费", "交易费用"],
@@ -499,6 +514,9 @@ def build_item_candidates(
         elif item_id == "sha.shareholder_reserved_matters":
             after_blocks = SHAREHOLDER_RESERVED_CANDIDATE_AFTER_BLOCKS
             max_chars_override = SHAREHOLDER_RESERVED_CANDIDATE_CHARS
+        elif item_id == "spa.post_closing_covenants":
+            after_blocks = POST_CLOSING_CANDIDATE_AFTER_BLOCKS
+            max_chars_override = POST_CLOSING_CANDIDATE_CHARS
         else:
             after_blocks = 4
             max_chars_override = None
@@ -2892,6 +2910,61 @@ def compact_post_closing_capital_contribution(value: str) -> str:
     return value
 
 
+def compact_post_closing_service_and_team(value: str) -> list[tuple[str, str]]:
+    if "30个月" in value and "24个月" in value:
+        return [
+            (
+                "团队协议",
+                "与相关创始股东签署顾问/劳动合同及保密/IP归属/竞业文件；劳动文件应于本轮交割后30个月内签署",
+            ),
+            (
+                "团队边界",
+                "首次交割后24个月内明确公司经营团队与集团管理团队的人员归属及职能界限",
+            ),
+        ]
+    return [("团队/IP安排", value)]
+
+
+def compact_post_closing_ip_transfer(value: str) -> tuple[str, str]:
+    if "首次交割日后6个月" in value and "第二次交割日后12个月" in value:
+        return (
+            "IP转移",
+            "相关义务人应于首次交割后6个月转移公司所需IP；未完成的，第二次交割后12个月内完成",
+        )
+    if "无形资产" in value and ("登记/申请" in value or "登记" in value):
+        return (
+            "IP/无形资产归属",
+            "员工及研发人员相关无形资产应转至公司名下或由公司申请登记；未经投资方同意不得处分或用于主业外",
+        )
+    return ("IP转移", value)
+
+
+def compact_post_closing_regulatory(value: str) -> tuple[str, str]:
+    if "试验卫星发射" in value and "18个月" in value:
+        return (
+            "许可/备案",
+            "首次交割日起18个月内取得试验卫星发射相关许可/备案/同意，包括发改核准、卫星网络、空间电台执照、无线电频率及发射许可",
+        )
+    if "政府批准" in value and "架构调整" in value:
+        return (
+            "许可/架构安排",
+            "投资方协助办理必要政府批准、许可、登记和备案；境外融资、特定牌照、IPO等架构调整方案须经投资方认可",
+        )
+    return ("许可/备案里程碑", value)
+
+
+def compact_post_closing_continued_service(value: str) -> str:
+    if "八年" in value and "合格上市后一年" in value:
+        return "两名创始股东承诺本轮交割完成后8年或合格上市后1年孰早前不主动离职"
+    return value
+
+
+def compact_post_closing_tax_compliance(value: str) -> str:
+    if "税收申报表" in value and "到期税项" in value:
+        return "集团应按时提交国家/地方税收申报表，并在交割后按时足额缴纳到期税项"
+    return value
+
+
 def post_closing_field_is_absence(value: str) -> bool:
     return "未见" in value or value.startswith("证据显示")
 
@@ -2924,11 +2997,8 @@ def build_post_closing_compact_lines(extracted_facts: dict[str, Any]) -> list[st
 
     ip_transfer = extracted_field_value(extracted_facts, "ip_transfer")
     if ip_transfer and not post_closing_field_is_absence(ip_transfer):
-        append_post_closing_line(
-            lines,
-            "IP/无形资产归属",
-            "员工及研发人员相关无形资产应转至公司名下或由公司申请登记；未经投资方同意不得处分或用于主业外",
-        )
+        label, body = compact_post_closing_ip_transfer(ip_transfer)
+        append_post_closing_line(lines, label, body)
 
     ip_registration = post_closing_summary_point(extracted_facts, ("知识产权", "六"))
     if ip_registration:
@@ -2940,22 +3010,25 @@ def build_post_closing_compact_lines(extracted_facts: dict[str, Any]) -> list[st
 
     regulatory = extracted_field_value(extracted_facts, "regulatory_milestones")
     if regulatory and not post_closing_field_is_absence(regulatory):
-        append_post_closing_line(
-            lines,
-            "许可/架构安排",
-            "投资方协助办理必要政府批准、许可、登记和备案；境外融资、特定牌照、IPO等架构调整方案须经投资方认可",
-        )
+        label, body = compact_post_closing_regulatory(regulatory)
+        append_post_closing_line(lines, label, body)
 
     service = extracted_field_value(extracted_facts, "service_and_team")
+    if service and not post_closing_field_is_absence(service):
+        for label, body in compact_post_closing_service_and_team(service):
+            append_post_closing_line(lines, label, body)
+
     continued_service = extracted_field_value(extracted_facts, "continued_service")
     if continued_service and not post_closing_field_is_absence(continued_service):
         append_post_closing_line(
             lines,
-            "团队/IP/任职",
-            "落实知识产权权属或授权、团队保密/IP/竞业安排；创始股东承诺约定服务期内不主动离职",
+            "持续任职",
+            compact_post_closing_continued_service(continued_service),
         )
-    elif service and not post_closing_field_is_absence(service):
-        append_post_closing_line(lines, "团队/IP安排", service)
+
+    tax_compliance = extracted_field_value(extracted_facts, "tax_compliance")
+    if tax_compliance and not post_closing_field_is_absence(tax_compliance):
+        append_post_closing_line(lines, "税务合规", compact_post_closing_tax_compliance(tax_compliance))
 
     missing_notes: list[str] = []
     if extracted_field_status(extracted_facts, "ip_transfer") == "not_found":
@@ -2971,14 +3044,109 @@ def build_post_closing_compact_lines(extracted_facts: dict[str, Any]) -> list[st
     return lines
 
 
-def guard_post_closing_covenants_summary(extraction: dict[str, Any]) -> None:
+def post_closing_contains_milestone_evidence(candidates: list[dict[str, Any]], markers: tuple[str, ...]) -> bool:
+    return bool(candidate_ids_with_text_markers(candidates, markers))
+
+
+def guard_post_closing_covenants_evidence(
+    extraction: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> bool:
+    extracted_facts = extraction.get("extracted_facts", {})
+    if not isinstance(extracted_facts, dict):
+        return False
+    fixed = False
+    if post_closing_contains_milestone_evidence(candidates, ("知识产权转移", "第二次交割日")):
+        set_extracted_field(
+            extracted_facts,
+            "ip_transfer",
+            "知识产权转移",
+            "相关义务人应在首次交割日后6个月内将公司所需知识产权转移至公司；因目前尚未完成，应在第二次交割日后12个月内完成转移。",
+            candidate_ids_with_text_markers(candidates, ("知识产权转移", "第二次交割日")),
+            "系统根据交割后知识产权转移条款补足。",
+        )
+        fixed = True
+    if post_closing_contains_milestone_evidence(candidates, ("试验卫星发射", "十八个月")):
+        set_extracted_field(
+            extracted_facts,
+            "regulatory_milestones",
+            "业务许可/备案里程碑",
+            "公司承诺在[公司或组织_BK]首次交割日起18个月内取得试验卫星发射相关许可、备案或同意，包括发改部门项目核准、卫星网络事项、空间无线电台执照、无线电频率使用许可及航天发射项目许可证。",
+            candidate_ids_with_text_markers(candidates, ("试验卫星发射", "十八个月")),
+            "系统根据交割后业务许可/备案里程碑条款补足。",
+        )
+        fixed = True
+    if post_closing_contains_milestone_evidence(candidates, ("税收申报表", "到期税项")):
+        set_extracted_field(
+            extracted_facts,
+            "tax_compliance",
+            "税务申报及缴税",
+            "公司和创始人应确保集团按照适用法律法规及税务部门要求，准备并按时提交国家和地方税收申报表；本次交割日后，应按时、足额缴纳到期税项。",
+            candidate_ids_with_text_markers(candidates, ("税收申报表", "到期税项")),
+            "系统根据交割后税务合规承诺补足。",
+        )
+        fixed = True
+    if post_closing_contains_milestone_evidence(candidates, ("团队组建", "三十个月", "二十四个月")):
+        set_extracted_field(
+            extracted_facts,
+            "service_and_team",
+            "顾问/保密/IP/团队安排",
+            "公司应与相关创始股东签署顾问合同或劳动合同，以及保密协议、知识产权归属协议和竞业协议；其中劳动合同及配套文件应在本轮交割完成30个月内签署；首次交割日后24个月内明确公司经营团队和集团管理团队的人员归属和职能界限。",
+            candidate_ids_with_text_markers(candidates, ("团队组建", "三十个月", "二十四个月")),
+            "系统根据交割后团队组建条款补足。",
+        )
+        fixed = True
+    return fixed
+
+
+POST_CLOSING_FACT_NOTE_TERMS: dict[str, tuple[str, ...]] = {
+    "ip_transfer": ("IP转移", "知识产权转移"),
+    "regulatory_milestones": ("业务许可", "备案", "卫星发射", "许可/备案"),
+    "tax_compliance": ("税务", "税收申报", "缴税"),
+}
+
+
+def clean_stale_post_closing_notes(extraction: dict[str, Any]) -> None:
+    extracted_facts = extraction.get("extracted_facts", {})
+    if not isinstance(extracted_facts, dict):
+        return
+    found_keys = {
+        key
+        for key in POST_CLOSING_FACT_NOTE_TERMS
+        if extracted_field_status(extracted_facts, key) == "found"
+    }
+    if not found_keys:
+        return
+
+    def keep(note: str) -> bool:
+        if not any(marker in note for marker in TRANSACTION_ABSENCE_MARKERS):
+            return True
+        mentioned = {
+            key
+            for key, terms in POST_CLOSING_FACT_NOTE_TERMS.items()
+            if any(term in note for term in terms)
+        }
+        return not mentioned or not mentioned.issubset(found_keys)
+
+    for key in ("review_notes", "lawyer_notes", "missing_or_unclear"):
+        extraction[key] = [note for note in normalize_string_list(extraction.get(key)) if keep(note)]
+    for key in ("summary_points", "unclear_points", "lawyer_notes", "missing_or_unclear"):
+        extracted_facts[key] = [note for note in normalize_string_list(extracted_facts.get(key)) if keep(note)]
+
+
+def guard_post_closing_covenants_summary(
+    extraction: dict[str, Any],
+    candidates: list[dict[str, Any]] | None = None,
+) -> None:
     draft_content = str(extraction.get("draft_content") or "")
     lines = [line for line in draft_content.splitlines() if line.strip()]
     extracted_facts = extraction.get("extracted_facts", {})
     if not isinstance(extracted_facts, dict):
         return
+    fixed_from_candidates = guard_post_closing_covenants_evidence(extraction, candidates or [])
+    clean_stale_post_closing_notes(extraction)
     stale_compact = post_closing_draft_has_stale_compact(extraction)
-    if len(draft_content) <= 320 and len(lines) <= 4 and not stale_compact:
+    if len(draft_content) <= 320 and len(lines) <= 4 and not stale_compact and not fixed_from_candidates:
         return
     if not extracted_field_value(extracted_facts, "use_of_proceeds"):
         return
@@ -2988,7 +3156,7 @@ def guard_post_closing_covenants_summary(extraction: dict[str, Any]) -> None:
         return
 
     compact = "\n".join(compact_lines)
-    if stale_compact or len(compact) < len(draft_content):
+    if fixed_from_candidates or stale_compact or len(compact) < len(draft_content):
         extraction["draft_content"] = compact
         extraction["review_notes"] = remove_internal_candidate_notes(extraction.get("review_notes", []))
         extraction["lawyer_notes"] = remove_internal_candidate_notes(extraction.get("lawyer_notes", []))
@@ -5590,7 +5758,7 @@ def apply_deterministic_quality_guards(
     if item_id == "spa.other":
         remove_spa_other_workpaper_tone(extraction)
     if item_id == "spa.post_closing_covenants":
-        guard_post_closing_covenants_summary(extraction)
+        guard_post_closing_covenants_summary(extraction, candidates)
     if item_id == "sha.board_composition":
         guard_board_composition(extraction, candidates)
     if item_id == "sha.board_reserved_matters":

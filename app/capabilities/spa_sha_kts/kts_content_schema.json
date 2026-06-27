@@ -57,7 +57,8 @@
         {"key": "service_and_team", "label": "顾问/保密/IP/团队安排", "required": false, "aliases": ["顾问合同", "保密协议", "知识产权归属", "团队"]},
         {"key": "ip_transfer", "label": "知识产权转移", "required": false, "aliases": ["知识产权转移", "IP"]},
         {"key": "regulatory_milestones", "label": "业务许可/备案里程碑", "required": false, "aliases": ["许可", "备案", "卫星", "发射"]},
-        {"key": "continued_service", "label": "创始团队持续任职", "required": false, "aliases": ["持续任职", "合格上市"]}
+        {"key": "continued_service", "label": "创始团队持续任职", "required": false, "aliases": ["持续任职", "合格上市"]},
+        {"key": "tax_compliance", "label": "税务申报及缴税", "required": false, "aliases": ["税收申报", "税务", "缴纳税项"]}
       ],
       "lawyer_note_prompts": ["如核心人员名单、第一轮交割日或LDD补充事项不明确，应提示待确认。"]
     },

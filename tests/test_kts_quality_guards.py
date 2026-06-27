@@ -953,6 +953,115 @@ def test_post_closing_covenants_guard_replaces_stale_case_compact() -> None:
     assert "创始团队持续任职期限" in extraction["draft_content"]
 
 
+def test_post_closing_covenants_guard_backfills_specific_commitments_from_candidates() -> None:
+    extraction = {
+        "status": "drafted",
+        "draft_content": (
+            "资金用途：限业务拓展、研发、生产、资本支出及主营业务；偿债需股东会全票同意，对外投资/委托贷款/证券期货需投资方同意。\n"
+            "实缴承诺：相关现有股东应在第一次交割日后三年内完成认缴出资实缴；另有股东应于2029年12月31日前完成实缴。\n"
+            "竞业/业务唯一性：核心人员受竞业限制；公司应作为相关主体主营或相似业务的唯一实体及最高优先级项目。\n"
+            "团队/IP/任职：落实知识产权权属或授权、团队保密/IP/竞业安排；创始股东承诺约定服务期内不主动离职。\n"
+            "【注：未见IP转移、业务许可/备案里程碑。】"
+        ),
+        "extracted_facts": {
+            "summary_points": ["当前证据未见业务许可/备案里程碑。"],
+            "field_values": [
+                {
+                    "key": "use_of_proceeds",
+                    "label": "增资款用途限制",
+                    "status": "found",
+                    "value": "增资价款应用于业务拓展、研发、生产、资本性支出及拟从事主营业务；不得用于偿还公司或股东债务等其他用途；未经投资方同意，不得用于对外投资、委托贷款和证券期货交易。",
+                },
+                {
+                    "key": "capital_contribution",
+                    "label": "历史/现有股东实缴承诺",
+                    "status": "found",
+                    "value": "[公司或组织_AI]、[公司或组织_AW]、[公司或组织_AL]应在第一次交割日后三年内完成其认缴出资额的全部实缴；[公司或组织_BF]应于2029年12月31日前完成其认缴出资额的全部实缴。",
+                },
+                {
+                    "key": "non_compete_and_priority",
+                    "label": "竞业限制/业务唯一性",
+                    "status": "found",
+                    "value": "核心人员受竞业限制，公司应作为相关主体主营或相似业务的唯一实体及最高优先级项目。",
+                },
+                {
+                    "key": "service_and_team",
+                    "label": "顾问/保密/IP/团队安排",
+                    "status": "found",
+                    "value": "知识产权权属、保密/IP/竞业安排。",
+                },
+                {
+                    "key": "ip_transfer",
+                    "label": "知识产权转移",
+                    "status": "not_found",
+                    "value": "未见明确的知识产权转移安排。",
+                },
+                {
+                    "key": "regulatory_milestones",
+                    "label": "业务许可/备案里程碑",
+                    "status": "not_found",
+                    "value": "未见业务许可、备案、卫星发射或其他监管里程碑承诺。",
+                },
+                {
+                    "key": "continued_service",
+                    "label": "创始团队持续任职",
+                    "status": "found",
+                    "value": "创始股东承诺，在本轮投资交割完成后八年内，或公司完成合格上市后一年内（以两者孰早为准），不主动提出离职。",
+                },
+            ],
+            "lawyer_notes": ["未见业务许可/备案里程碑。"],
+            "missing_or_unclear": ["IP转移未见明确约定。"],
+        },
+        "review_notes": ["未见业务许可、备案、卫星或发射相关交割后里程碑承诺。"],
+        "lawyer_notes": ["未见IP转移安排。"],
+    }
+    candidates = [
+        {
+            "candidate_id": "spa.post_closing_covenants-C02",
+            "text": (
+                "4.9 团队组建。公司应与创始股东之[公司或组织_AZ]([人名_H])签署顾问合同、保密协议、知识产权归属协议和竞业协议；"
+                "公司应与创始股东之[公司或组织_AN]([人名_B])在本轮交割完成三十个月内签署劳动合同、保密协议、知识产权归属协议和竞业协议；"
+                "且应在[公司或组织_BK]首次交割日后二十四个月内明确公司经营团队和[公司或组织_BD]管理团队的人员归属和职能界限。\n"
+                "4.11 知识产权转移。根据原《增资协议》约定，[公司或组织_AO]应促使[公司或组织_BD]在[公司或组织_BK]首次交割日后六个月内将公司所需知识产权转移至公司。"
+                "基于目前相关转移尚未达成，[公司或组织_AO]应促成[公司或组织_BD]在[公司或组织_BK]第二次交割日后【拾贰】个月内将公司所需知识产权转移至公司。\n"
+                "4.12 公司承诺在[公司或组织_BK]首次交割日起十八个月内获得试验卫星发射的相关国家部门的许可或备案或同意，包括主管发改部门项目核准、卫星网络事项、空间无线电台执照及无线电频率使用许可、航天发射项目许可证。\n"
+                "4.14 公司和创始人应确保所有集团公司按照适用法律法规及税务部门的要求，准备并按时提交国家和地方的税收申报表；本次交割日后按时、足额缴纳到期税项。"
+            ),
+        }
+    ]
+
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "spa.post_closing_covenants"},
+        extraction,
+        candidates,
+    )
+
+    draft = extraction["draft_content"]
+    assert "IP转移：" in draft
+    assert "第二次交割后12个月内完成" in draft
+    assert "许可/备案：" in draft
+    assert "首次交割日起18个月" in draft
+    assert "团队协议：" in draft
+    assert "交割后30个月" in draft
+    assert "团队边界：" in draft
+    assert "税务合规：" in draft
+    assert "未见IP转移" not in draft
+    assert "未见业务许可" not in draft
+    fields = {
+        field["key"]: field
+        for field in extraction["extracted_facts"]["field_values"]
+        if isinstance(field, dict)
+    }
+    assert fields["ip_transfer"]["status"] == "found"
+    assert fields["regulatory_milestones"]["status"] == "found"
+    assert fields["tax_compliance"]["status"] == "found"
+    assert extraction["review_notes"] == []
+    assert extraction["lawyer_notes"] == []
+    assert extraction["extracted_facts"]["summary_points"] == []
+    assert extraction["extracted_facts"]["lawyer_notes"] == []
+    assert extraction["extracted_facts"]["missing_or_unclear"] == []
+
+
 def test_style_polish_payload_includes_fields_and_review_context() -> None:
     item = {
         "taxonomy_id": "spa.representations_warranties",
@@ -3814,6 +3923,8 @@ if __name__ == "__main__":
     test_docx_export_keeps_pending_check_marker_unnumbered()
     test_spa_other_workpaper_tone_is_cleaned()
     test_post_closing_covenants_guard_compacts_overlong_summary()
+    test_post_closing_covenants_guard_replaces_stale_case_compact()
+    test_post_closing_covenants_guard_backfills_specific_commitments_from_candidates()
     test_style_polish_payload_includes_fields_and_review_context()
     test_style_polish_validation_allows_removing_workpaper_note()
     test_candidate_context_centers_on_source_quote()
