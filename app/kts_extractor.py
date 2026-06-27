@@ -4949,6 +4949,38 @@ def normalize_mfn_special_rights_subpoints(item: dict[str, Any]) -> None:
     for line in draft_content.splitlines():
         stripped = line.strip()
         if (
+            stripped.startswith("新项目投资安排：")
+            and "清算事件" in stripped
+            and "10年" in stripped
+            and "差额" in stripped
+        ):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            lines.append("触发条件：清算事件发生且投资人所得不超过清算优先款。")
+            lines.append("投资期限：清算事件发生日起10年内。")
+            if "义务人" in body and "新项目" in body and "投资人拟投资" in body:
+                lines.append("新项目条件：义务人直接或间接从事新项目且投资人拟投资。")
+            lines.append("投资金额：清算优先款与已得款项差额视为投资人对新项目的投资。")
+            changed = True
+            continue
+        if (
+            stripped.startswith("取得权益方式：")
+            and "零对价" in stripped
+            and "增发股权" in stripped
+            and "等值" in stripped
+        ):
+            lines.append("取得权益：按投资人认可的新项目估值，通过零对价转让或增发股权取得等值权益。")
+            changed = True
+            continue
+        if (
+            stripped.startswith("适用范围：新项目包括")
+            and "关联方" in stripped
+            and "主要管理者" in stripped
+            and "独立于公司" in stripped
+        ):
+            lines.append("新项目范围：义务人以自身或关联方名义，单独或联合他方作为主要管理者参与创设、并购的独立项目。")
+            changed = True
+            continue
+        if (
             stripped.startswith("最惠国待遇：")
             and "如发现" in stripped
             and "可主张自动同等享有" in stripped
@@ -4959,6 +4991,25 @@ def normalize_mfn_special_rights_subpoints(item: dict[str, Any]) -> None:
             trigger = re.sub(r"，?可主张自动同等享有。?$", "", trigger).rstrip("。")
             lines.append("适用主体：" + prefix.rstrip("，,。 ") + "可主张最惠国待遇。")
             lines.append("触发情形：如发现" + trigger.rstrip("。") + "。")
+            changed = True
+            continue
+        if (
+            stripped.startswith("触发情形：如发现现有股东")
+            and "不高于" in stripped
+            and "更优权利" in stripped
+        ):
+            lines.append("触发情形：现有股东或低价新股东取得更优权利/待遇时触发。")
+            changed = True
+            continue
+        if (
+            stripped.startswith("席位例外：最惠国待遇不适用于")
+            and "基于投资比例享有的" in stripped
+            and "席位" in stripped
+        ):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            subject, seat = body.split("基于投资比例享有的", 1)
+            subject = subject.removeprefix("最惠国待遇不适用于").rstrip("，, ")
+            lines.append("席位例外：" + subject + "按投资比例享有的" + seat.rstrip("。") + "不适用最惠国。")
             changed = True
             continue
         if stripped.startswith("例外范围：") and "，战略方和产业方" in stripped and "，以及后轮" in stripped:

@@ -2659,6 +2659,54 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
     assert "后。" not in items[3]["draft_content"]
 
 
+def test_post_polish_compacts_mfn_and_new_project_special_rights() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.mfn_special_rights",
+            "draft_content": (
+                "新项目投资安排：清算事件发生且投资人所得不超过清算优先款的，自清算事件发生日起10年内，"
+                "如义务人直接或间接从事新项目且投资人拟投资，清算优先款与已得款项差额视为投资人对新项目的投资。\n"
+                "取得权益方式：义务人应按投资人认可的新项目届时估值，通过零对价转让或增发股权，使投资人取得等值股权或其他权益。\n"
+                "适用范围：新项目包括义务人通过自身或关联方名义，单独或联合其他主体作为主要管理者之一，"
+                "创办新企业、实体或并购存续企业等，且须独立于公司。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.mfn_special_rights",
+            "draft_content": (
+                "触发情形：如发现现有股东，或以不高于其适用原始认购价格认缴新增注册资本的未来股东，"
+                "享有优于或超出其在协议项下权利、权益或待遇的更优权利。\n"
+                "席位例外：最惠国待遇不适用于[[公司或组织_AE]或组织_G]及本轮领投方[商标品牌_G]基于投资比例享有的"
+                "[[公司或组织_AE]或组织_AM]席位及相应表决权。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    new_project = items[0]["draft_content"]
+    assert "触发条件：清算事件发生且投资人所得不超过清算优先款。" in new_project
+    assert "投资期限：清算事件发生日起10年内。" in new_project
+    assert "新项目条件：义务人直接或间接从事新项目且投资人拟投资。" in new_project
+    assert "投资金额：清算优先款与已得款项差额视为投资人对新项目的投资。" in new_project
+    assert "取得权益：按投资人认可的新项目估值，通过零对价转让或增发股权取得等值权益。" in new_project
+    assert "新项目范围：义务人以自身或关联方名义，单独或联合他方作为主要管理者参与创设、并购的独立项目。" in new_project
+    assert "新项目投资安排：" not in new_project
+    assert "取得权益方式：" not in new_project
+
+    mfn = items[1]["draft_content"]
+    assert "触发情形：现有股东或低价新股东取得更优权利/待遇时触发。" in mfn
+    assert (
+        "席位例外：[[公司或组织_AE]或组织_G]及本轮领投方[商标品牌_G]按投资比例享有的"
+        "[[公司或组织_AE]或组织_AM]席位及相应表决权不适用最惠国。"
+    ) in mfn
+    assert "以不高于其适用原始认购价格认缴新增注册资本" not in mfn
+    assert "最惠国待遇不适用于" not in mfn
+
+
 def test_post_polish_splits_remaining_long_substantive_lines() -> None:
     items = [
         {
@@ -3105,6 +3153,7 @@ if __name__ == "__main__":
     test_post_polish_splits_long_confidentiality_and_information_lines()
     test_post_polish_compacts_spa_other_dispute_and_notice_language()
     test_post_polish_splits_reserved_matters_and_mfn_lines()
+    test_post_polish_compacts_mfn_and_new_project_special_rights()
     test_post_polish_splits_remaining_long_substantive_lines()
     test_post_polish_compacts_compliance_kts_language()
     test_post_polish_compacts_termination_kts_language()
