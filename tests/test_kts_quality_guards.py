@@ -2623,7 +2623,8 @@ def test_post_polish_splits_esop_condition_and_usage_lines() -> None:
             "draft_content": (
                 "首发试验星条件：发射成功、在轨运行卫星总算力达到25POPS（FP4精度下），且以不低于投前人民币30亿元估值完成新一轮融资。\n"
                 "两星及算力条件：两颗卫星发射成功并在轨稳定工作、在轨运行卫星总算力达到100POPS以上（FP4精度下），且以不低于投前人民币60亿元估值完成新一轮融资。\n"
-                "用途限制：激励股权用于非员工激励、转让、处分或设置权利负担，须经[[公司或组织_AE]或组织_K]多数且包括[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。"
+                "用途限制：激励股权用于非员工激励、转让、处分或设置权利负担，须经[[公司或组织_AE]或组织_K]多数且包括[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。\n"
+                "特殊授予审批：向创始人/特定主体发放，向任一员工单次或累计发放超过公司届时总注册资本0.5%，或通过高管持股平台向任何人员发放股权或权益，均需审批。"
             ),
             "review_notes": [],
         }
@@ -2639,8 +2640,11 @@ def test_post_polish_splits_esop_condition_and_usage_lines() -> None:
     assert "非激励用途：激励股权用于非员工激励须经审批。" in draft
     assert "转让/负担限制：激励股权转让、处分或设置权利负担须经审批。" in draft
     assert "审批门槛：须经[[公司或组织_AE]或组织_K]多数且包括[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。" in draft
+    assert "特殊授予对象：向创始人/特定主体发放，或通过高管持股平台向任何人员发放股权/权益，均需审批。" in draft
+    assert "特殊授予门槛：向任一员工单次或累计发放超过公司届时总注册资本0.5%时，需审批。" in draft
     assert "且以不低于投前人民币" not in draft
     assert "用途限制：" not in draft
+    assert "特殊授予审批：" not in draft
 
 
 def test_post_polish_splits_long_confidentiality_and_information_lines() -> None:
@@ -2749,6 +2753,76 @@ def test_post_polish_summarizes_closing_conditions_mac_line() -> None:
     assert "不存在任何限制、禁止或致使" not in draft
 
 
+def test_post_polish_splits_closing_conditions_dense_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.closing_conditions",
+            "draft_content": (
+                "内部审批：[公司或组织_AM]须完成本次增资内部审批并出具董事会、股东会决议；未参与本轮增资的现有股东应放弃优先认缴权。\n"
+                "授权及合规：[公司或组织_AO]须取得签署及履行交易文件所需全部授权和批准，且签署、履行不违反适用法律、第三方协议、文件或承诺。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.closing_conditions",
+            "draft_content": (
+                "内部批准：公司股东会及董事需一致批准本次增资、交易文件、新章程、现有股东放弃优先认购权及交割后董事会组成；投资方投资委员会或其他决策机构亦需批准交易。\n"
+                "登记及合规：公司需完成必要工商变更登记、外商投资信息报告及外汇登记；陈述保证及承诺需持续真实、履行，且不存在限制或影响本次增资的法律、裁判、禁令或争议。\n"
+                "无重大不利及尽调：公司需在CP满足通知中声明签署日至交割日无重大不利影响；投资方法律、财务、业务尽调满意为CP。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    current = items[0]["draft_content"]
+    assert "内部审批：[公司或组织_AM]须完成本次增资内部审批并出具董事会、股东会决议。" in current
+    assert "优先认缴弃权：未参与本轮增资的现有股东应放弃优先认缴权。" in current
+    assert "签约授权：[公司或组织_AO]须取得签署及履行交易文件所需全部授权和批准。" in current
+    assert "合规要求：签署、履行不违反适用法律、第三方协议、文件或承诺。" in current
+    assert "授权及合规：" not in current
+
+    a_current = items[1]["draft_content"]
+    assert "公司批准：公司股东会及董事需一致批准本次增资、交易文件、新章程、现有股东弃权及交割后董事会组成。" in a_current
+    assert "投资方批准：投资方投委会或其他决策机构亦需批准交易。" in a_current
+    assert "外部登记：公司需完成必要工商变更登记、外商投资信息报告及外汇登记。" in a_current
+    assert "陈述/承诺：陈述保证及承诺需持续真实、履行。" in a_current
+    assert "法律障碍：不得存在限制或影响本次增资的法律、裁判、禁令或争议。" in a_current
+    assert "重大不利：签署日至交割日无重大不利影响。" in a_current
+    assert "尽调满意：投资方法律、财务、业务尽调满意为CP。" in a_current
+    assert "登记及合规：" not in a_current
+
+
+def test_post_polish_splits_registration_rights_kts_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.registration_rights",
+            "draft_content": (
+                "登记权人：[[公司或组织_AE]或组织_K]享有注册权安排。\n"
+                "触发及安排：公司在美国或其他国家/地区IPO时，权利人可要求公司及全体其他股东与其签署注册权协议，授予境外私募优先股投资者惯常注册权或类似权利。\n"
+                "上市后配合：如权利人出售股票需监管或交易所批准、备案等手续，公司应按其要求尽快办理；公司及[[公司或组织_AE]或组织_C]应依法尽量缩短限售期。\n"
+                "限制：缩短限售期义务不适用于主管机构审核要求及权利人自行签署的限售承诺。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "触发场景：公司在美国或其他国家/地区IPO。" in draft
+    assert "签约义务：权利人可要求公司及全体其他股东签署注册权协议。" in draft
+    assert "注册权内容：授予境外私募优先股投资者惯常注册权或类似权利。" in draft
+    assert "出售配合：权利人上市后出售股票需监管/交易所手续时，公司应按要求尽快办理。" in draft
+    assert "限售协助：公司及[[公司或组织_AE]或组织_C]应依法尽量缩短权利人限售期。" in draft
+    assert "限售例外：主管机构审核要求及权利人自行签署的限售承诺除外。" in draft
+    assert "触发及安排：" not in draft
+    assert "上市后配合：" not in draft
+
+
 def test_post_polish_normalizes_already_split_inspection_procedure() -> None:
     items = [
         {
@@ -2853,15 +2927,20 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
     assert "借款/投资门槛：" in items[0]["draft_content"]
     assert "资产处置门槛：" in items[0]["draft_content"]
     assert "预算外费用门槛：" in items[0]["draft_content"]
-    assert "贷款/财务支持：" in items[0]["draft_content"]
+    assert "财务支持事项：" in items[0]["draft_content"]
+    assert "财务支持门槛：" in items[0]["draft_content"]
     assert "担保事项：" in items[0]["draft_content"]
     assert "业务预付款例外：" in items[0]["draft_content"]
-    assert "治理保护事项：" in items[0]["draft_content"]
-    assert "财务/资产事项：" in items[0]["draft_content"]
+    assert "人事/审计事项：" in items[0]["draft_content"]
+    assert "经营/激励事项：" in items[0]["draft_content"]
+    assert "借款/投资事项：" in items[0]["draft_content"]
+    assert "重大资产处置：" in items[0]["draft_content"]
     assert "资产处置范围：" in items[0]["draft_content"]
     assert "审批要求：" in items[0]["draft_content"]
     assert "12个月内累计" not in items[0]["draft_content"]
     assert "达上述门槛" not in items[0]["draft_content"]
+    assert "治理保护事项：" not in items[0]["draft_content"]
+    assert "财务/资产事项：" not in items[0]["draft_content"]
     assert "投资人权利事项：" in items[1]["draft_content"]
     assert "重大保护事项：" in items[1]["draft_content"]
     assert "资本/清算事项：" in items[1]["draft_content"]
@@ -2968,8 +3047,10 @@ def test_post_polish_compacts_mfn_and_new_project_special_rights() -> None:
     mfn = items[1]["draft_content"]
     assert "触发情形：现有股东或低价新股东取得更优权利/待遇时触发。" in mfn
     assert (
-        "席位例外：[[公司或组织_AE]或组织_G]及本轮领投方[商标品牌_G]按投资比例享有的"
-        "[[公司或组织_AE]或组织_AM]席位及相应表决权不适用最惠国。"
+        "席位例外主体：[[公司或组织_AE]或组织_G]及本轮领投方[商标品牌_G]。"
+    ) in mfn
+    assert (
+        "席位例外范围：按投资比例享有的[[公司或组织_AE]或组织_AM]席位及相应表决权不适用最惠国。"
     ) in mfn
     assert "以不高于其适用原始认购价格认缴新增注册资本" not in mfn
     assert "最惠国待遇不适用于" not in mfn
@@ -3594,6 +3675,11 @@ if __name__ == "__main__":
     test_post_polish_splits_esop_condition_and_usage_lines()
     test_post_polish_splits_long_confidentiality_and_information_lines()
     test_post_polish_compacts_spa_other_dispute_and_notice_language()
+    test_post_polish_summarizes_closing_conditions_mac_line()
+    test_post_polish_splits_closing_conditions_dense_lines()
+    test_post_polish_splits_registration_rights_kts_lines()
+    test_post_polish_normalizes_already_split_inspection_procedure()
+    test_post_polish_splits_information_audit_two_part_reports()
     test_post_polish_splits_reserved_matters_and_mfn_lines()
     test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto()
     test_post_polish_compacts_mfn_and_new_project_special_rights()

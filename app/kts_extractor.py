@@ -2657,7 +2657,15 @@ def normalize_esop_milestone_subpoints(item: dict[str, Any]) -> None:
             body = stripped.split("：", 1)[1].rstrip("。")
             plan, grants = body.split("，向创始人/特定主体发放", 1)
             lines.append("计划审批：" + plan.rstrip("。") + "需审批。")
-            lines.append("特殊授予审批：向创始人/特定主体发放" + grants.rstrip("。") + "。")
+            special_grant = "向创始人/特定主体发放" + grants.rstrip("。")
+            if not append_esop_special_grant_lines(lines, special_grant):
+                lines.append("特殊授予审批：" + special_grant + "。")
+            changed = True
+            continue
+        if stripped.startswith("特殊授予审批：") and append_esop_special_grant_lines(
+            lines,
+            stripped.split("：", 1)[1],
+        ):
             changed = True
             continue
         if stripped.startswith("用途限制：") and "，须经" in stripped:
@@ -2689,6 +2697,25 @@ def normalize_esop_milestone_subpoints(item: dict[str, Any]) -> None:
         lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def append_esop_special_grant_lines(lines: list[str], body: str) -> bool:
+    text = body.strip().rstrip("。")
+    if not (
+        "向任一员工单次或累计发放超过" in text
+        and "高管持股平台" in text
+        and "均需审批" in text
+    ):
+        return False
+    text = text.replace("股权或权益", "股权/权益")
+    text = re.sub(r"，?均需审批$", "", text)
+    if "，向任一员工" not in text or "，或通过" not in text:
+        return False
+    subject, rest = text.split("，向任一员工", 1)
+    threshold, platform = rest.split("，或通过", 1)
+    lines.append("特殊授予对象：" + subject.rstrip("，,。") + "，或通过" + platform.rstrip("，,。") + "，均需审批。")
+    lines.append("特殊授予门槛：向任一员工" + threshold.rstrip("，,。") + "时，需审批。")
+    return True
 
 
 def normalize_conventional_kts_labels(item: dict[str, Any]) -> None:
@@ -3082,6 +3109,42 @@ def normalize_board_composition_subpoints(item: dict[str, Any]) -> None:
         item["draft_content"] = "\n".join(line for line in lines if line)
 
 
+def append_board_governance_protection_lines(lines: list[str], body: str) -> bool:
+    text = body.strip().rstrip("。")
+    if not (
+        "高管任免" in text
+        and "审计机构" in text
+        and "员工股权/期权计划" in text
+        and "年度预算" in text
+    ):
+        return False
+    lines.append("人事/审计事项：高管任免及薪酬、审计机构聘解及会计政策变更、关联交易。")
+    lines.append("经营/激励事项：员工股权/期权计划及年度发放比例、年度预算/决算、业务计划。")
+    return True
+
+
+def append_board_finance_asset_lines(lines: list[str], body: str) -> bool:
+    text = body.strip().rstrip("。")
+    if not ("借款/投资" in text and "重大资产处置" in text and "投资人董事同意" in text):
+        return False
+    lines.append("借款/投资事项：超过门槛的借款/投资、集团外第三方贷款及担保需投资人董事同意。")
+    lines.append("重大资产处置：重大资产处置需投资人董事同意。")
+    return True
+
+
+def append_board_financial_support_lines(lines: list[str], body: str) -> bool:
+    text = body.strip().rstrip("。")
+    if not ("提供贷款、垫付或财务支持" in text and "单笔超过" in text and "需投资人董事同意" in text):
+        return False
+    if "，单笔超过" not in text:
+        return False
+    support, threshold = text.split("，单笔超过", 1)
+    threshold = "单笔超过" + threshold
+    lines.append("财务支持事项：" + support.rstrip("。") + "。")
+    lines.append("财务支持门槛：" + threshold.rstrip("。") + "。")
+    return True
+
+
 def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -3112,17 +3175,38 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
         if label == "贷款/担保" and len(parts) >= 1 and "或提供债务担保" in parts[0]:
             loan, _guarantee = parts[0].split("，或提供债务担保", 1)
             loan = loan.replace("12个月内累计", "12个月累计")
-            lines.append("贷款/财务支持：" + loan.rstrip("。") + "时，需投资人董事同意。")
+            if not append_board_financial_support_lines(lines, loan.rstrip("。") + "时，需投资人董事同意"):
+                lines.append("贷款/财务支持：" + loan.rstrip("。") + "时，需投资人董事同意。")
             lines.append("担保事项：提供债务担保需投资人董事同意。")
             if len(parts) >= 2:
                 lines.append("业务预付款例外：" + "；".join(parts[1:]).rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("贷款/财务支持：") and append_board_financial_support_lines(
+            lines,
+            stripped.split("：", 1)[1],
+        ):
+            changed = True
+            continue
         if stripped.startswith("保护事项：") and "、超过门槛的" in stripped and len(stripped) > 95:
             body = stripped.split("：", 1)[1].rstrip("。")
             governance, finance = body.split("、超过门槛的", 1)
-            lines.append("治理保护事项：" + governance.rstrip("。") + "。")
-            lines.append("财务/资产事项：超过门槛的" + finance.rstrip("。") + "。")
+            if not append_board_governance_protection_lines(lines, governance):
+                lines.append("治理保护事项：" + governance.rstrip("。") + "。")
+            if not append_board_finance_asset_lines(lines, "超过门槛的" + finance):
+                lines.append("财务/资产事项：超过门槛的" + finance.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("治理保护事项：") and append_board_governance_protection_lines(
+            lines,
+            stripped.split("：", 1)[1],
+        ):
+            changed = True
+            continue
+        if stripped.startswith("财务/资产事项：") and append_board_finance_asset_lines(
+            lines,
+            stripped.split("：", 1)[1],
+        ):
             changed = True
             continue
         if (
@@ -5300,16 +5384,24 @@ def normalize_mfn_special_rights_subpoints(item: dict[str, Any]) -> None:
             and "席位" in stripped
         ):
             body = stripped.split("：", 1)[1].rstrip("。")
-            subject, seat = body.split("基于投资比例享有的", 1)
-            subject = subject.removeprefix("最惠国待遇不适用于").rstrip("，, ")
-            lines.append("席位例外：" + subject + "按投资比例享有的" + seat.rstrip("。") + "不适用最惠国。")
+            if not append_mfn_seat_exception_lines(lines, body):
+                subject, seat = body.split("基于投资比例享有的", 1)
+                subject = subject.removeprefix("最惠国待遇不适用于").rstrip("，, ")
+                lines.append("席位例外：" + subject + "按投资比例享有的" + seat.rstrip("。") + "不适用最惠国。")
+            changed = True
+            continue
+        if stripped.startswith("席位例外：") and append_mfn_seat_exception_lines(
+            lines,
+            stripped.split("：", 1)[1],
+        ):
             changed = True
             continue
         if stripped.startswith("例外范围：") and "，战略方和产业方" in stripped and "，以及后轮" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             seat, rest = body.split("，战略方和产业方", 1)
             cooperation, later_round = rest.split("，以及后轮", 1)
-            lines.append("席位例外：" + seat.rstrip("。") + "。")
+            if not append_mfn_seat_exception_lines(lines, seat):
+                lines.append("席位例外：" + seat.rstrip("。") + "。")
             lines.append("业务合作例外：战略方和产业方" + cooperation.rstrip("。") + "。")
             lines.append("后轮经济权益例外：后轮" + later_round.rstrip("。") + "。")
             changed = True
@@ -5317,6 +5409,24 @@ def normalize_mfn_special_rights_subpoints(item: dict[str, Any]) -> None:
         lines.append(stripped)
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def append_mfn_seat_exception_lines(lines: list[str], body: str) -> bool:
+    text = body.strip().rstrip("。")
+    text = text.removeprefix("最惠国待遇不适用于").strip()
+    split_marker = ""
+    if "按投资比例享有的" in text:
+        split_marker = "按投资比例享有的"
+    elif "基于投资比例享有的" in text:
+        split_marker = "基于投资比例享有的"
+    if not split_marker or "席位" not in text:
+        return False
+    subject, seat = text.split(split_marker, 1)
+    subject = subject.rstrip("，,。 ")
+    seat = seat.replace("不适用最惠国", "").rstrip("。")
+    lines.append("席位例外主体：" + subject + "。")
+    lines.append("席位例外范围：按投资比例享有的" + seat + "不适用最惠国。")
+    return True
 
 
 def guard_founder_obligations(
@@ -5715,12 +5825,102 @@ def normalize_closing_conditions_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith("内部审批：") and "；未参与本轮增资的现有股东应放弃优先认缴权" in stripped:
+            approval, waiver = stripped.split("；", 1)
+            lines.append(approval.rstrip("。") + "。")
+            lines.append("优先认缴弃权：" + waiver.rstrip("。") + "。")
+            changed = True
+            continue
+        if (
+            stripped.startswith("内部批准：")
+            and "公司股东会及董事需一致批准" in stripped
+            and "；投资方投资委员会" in stripped
+        ):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            company, investor = body.split("；投资方", 1)
+            company = company.replace("现有股东放弃优先认购权", "现有股东弃权")
+            investor = "投资方" + investor.replace("投资委员会", "投委会")
+            lines.append("公司批准：" + company.rstrip("。") + "。")
+            lines.append("投资方批准：" + investor.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("授权及合规：") and "，且签署、履行不违反" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            authorization, compliance = body.split("，且", 1)
+            lines.append("签约授权：" + authorization.rstrip("。") + "。")
+            lines.append("合规要求：" + compliance.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("登记及合规：") and "；陈述保证及承诺" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            registration, compliance = body.split("；", 1)
+            lines.append("外部登记：" + registration.rstrip("。") + "。")
+            if "，且不存在" in compliance:
+                reps, legal_obstacle = compliance.split("，且不存在", 1)
+                lines.append("陈述/承诺：" + reps.rstrip("。") + "。")
+                lines.append("法律障碍：不得存在" + legal_obstacle.rstrip("。") + "。")
+            else:
+                lines.append("合规要求：" + compliance.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("无重大不利及尽调：") and "；投资方" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            no_mae, diligence = body.split("；", 1)
+            no_mae = no_mae.replace("公司需在CP满足通知中声明", "")
+            lines.append("重大不利：" + no_mae.rstrip("。") + "。")
+            lines.append("尽调满意：" + diligence.rstrip("。") + "。")
+            changed = True
+            continue
         if (
             stripped.startswith("重大不利事件：")
             and "不存在任何限制、禁止或致使" in stripped
             and "无法实施的重大不利事件" in stripped
         ):
             lines.append("重大不利：不得存在限制、禁止或实质阻碍本次增资实施的事件。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_registration_rights_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if (
+            stripped.startswith("触发及安排：")
+            and "IPO时" in stripped
+            and "签署注册权协议" in stripped
+            and "，授予" in stripped
+        ):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            trigger, rest = body.split("时，", 1)
+            signing, rights = rest.split("，授予", 1)
+            signing = signing.replace("与其签署", "签署")
+            lines.append("触发场景：" + trigger.rstrip("。") + "。")
+            lines.append("签约义务：" + signing.rstrip("。") + "。")
+            lines.append("注册权内容：授予" + rights.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("上市后配合：") and "；公司及" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            sale, lockup = body.split("；", 1)
+            if "出售股票" in sale and "公司应" in sale:
+                lines.append("出售配合：权利人上市后出售股票需监管/交易所手续时，公司应按要求尽快办理。")
+            else:
+                lines.append("上市后配合：" + sale.rstrip("。") + "。")
+            lockup = lockup.replace("依法尽量缩短限售期", "依法尽量缩短权利人限售期")
+            lines.append("限售协助：" + lockup.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("限制：缩短限售期义务不适用于"):
+            exception = stripped.split("不适用于", 1)[1].rstrip("。")
+            lines.append("限售例外：" + exception + "除外。")
             changed = True
             continue
         lines.append(stripped)
@@ -6947,6 +7147,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_rofr_tag_subpoints(item)
         elif item_id == "sha.drag_along":
             normalize_drag_along_subpoints(item)
+        elif item_id == "sha.registration_rights":
+            normalize_registration_rights_subpoints(item)
         elif item_id == "sha.board_reserved_matters":
             remove_board_reserved_workpaper_tone(item)
             normalize_board_reserved_subpoints(item)
