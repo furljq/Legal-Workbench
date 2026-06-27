@@ -3340,6 +3340,36 @@ def normalize_board_composition_subpoints(item: dict[str, Any]) -> None:
             lines.append("观察员替代：" + observer.rstrip("。") + "。")
             changed = True
             continue
+        if (
+            line.startswith("席位维持及观察员：")
+            and "持股低于5%" in line
+            and "持股不低于2%" in line
+            and "其他投资人中持股最高前两名" in line
+        ):
+            body = line.split("：", 1)[1].rstrip("。")
+            first_part, observer_part = body, ""
+            if "。其他投资人中" in body:
+                first_part, observer_part = body.split("。其他投资人中", 1)
+                observer_part = "其他投资人中" + observer_part
+            if "；持股不低于2%时" in first_part:
+                board_threshold, observer_threshold = first_part.split("；", 1)
+                lines.append("董事席位门槛：" + board_threshold.rstrip("。") + "。")
+                lines.append("观察员门槛：" + observer_threshold.rstrip("。") + "。")
+            else:
+                lines.append("董事席位/观察员：" + first_part.rstrip("。") + "。")
+            observer_match = re.match(r"(?P<rule>.+?)（交割后为(?P<post>[^）]+)）(?P<tail>.+)", observer_part)
+            if observer_match:
+                lines.append(
+                    "其他观察员："
+                    + observer_match.group("rule").rstrip("，,。")
+                    + observer_match.group("tail").rstrip("。")
+                    + "。"
+                )
+                lines.append("交割后观察员：" + observer_match.group("post").rstrip("。") + "。")
+            elif observer_part:
+                lines.append("其他观察员：" + observer_part.rstrip("。") + "。")
+            changed = True
+            continue
         if line.startswith("观察员：除已获董事席位投资人外") and "交割后为" in line:
             body = line.split("：", 1)[1].rstrip("。")
             observer_rule, post_closing = body.split("，交割后为", 1)
@@ -4091,10 +4121,24 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
         line.strip().startswith("保护事项：") and "重组/控制权变更" in line
         for line in draft_content.splitlines()
     )
+    has_threshold_definition = any(
+        line.strip().startswith(("门槛定义：", "多数门槛：", "优先股口径："))
+        for line in draft_content.splitlines()
+    )
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
         if not stripped:
+            continue
+        if stripped.startswith("通过机制：保护性事项分两类；") and "股东会有效召开" in stripped:
+            lines.append("事项分层：保护性事项分为特定主体同意事项和多数优先股股东事项。")
+            lines.append("特定主体机制：部分事项需包括特定主体同意。")
+            lines.append("多数事项机制：重大事项需三分之二或以上表决权且包括多数优先股股东同意。")
+            lines.append("召开门槛：股东会有效召开须不低于二分之一表决权股东出席，并包括多数优先股股东。")
+            changed = True
+            continue
+        if stripped.startswith("投资人门槛：股东会保护性事项分为两套机制") and has_threshold_definition:
+            changed = True
             continue
         if stripped.startswith("保护事项：第(1)项覆盖") and "；第(2)-(12)项覆盖" in stripped:
             first, second = stripped.split("；第(2)-(12)项覆盖", 1)
@@ -4206,6 +4250,10 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
         "资本/清算事项",
         "交易/治理事项",
         "其他重大事项",
+        "事项分层",
+        "特定主体机制",
+        "多数事项机制",
+        "召开门槛",
         "特别否决事项",
         "特别否决范围",
         "特别否决权人",
@@ -6219,6 +6267,24 @@ def normalize_closing_conditions_subpoints(item: dict[str, Any]) -> None:
             lines.append("投资方批准：" + investor.rstrip("。") + "。")
             changed = True
             continue
+        if (
+            stripped.startswith("审批及登记：")
+            and "；投资方" in stripped
+            and "公司还需完成" in stripped
+        ):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            approval_body, registration = body, ""
+            if "。公司还需" in body:
+                approval_body, registration = body.split("。公司还需", 1)
+                registration = "公司还需" + registration
+            company, investor = approval_body.split("；投资方", 1)
+            company = company.replace("现有股东放弃优先认购权", "现有股东弃权")
+            lines.append("公司批准：" + company.rstrip("。") + "。")
+            lines.append("投资方批准：投资方" + investor.rstrip("。") + "。")
+            if registration:
+                lines.append("外部登记：" + registration.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("授权及合规：") and "，且签署、履行不违反" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             authorization, compliance = body.split("，且", 1)
@@ -6282,6 +6348,21 @@ def normalize_registration_rights_subpoints(item: dict[str, Any]) -> None:
             lines.append("注册权内容：授予" + rights.rstrip("。") + "。")
             changed = True
             continue
+        if (
+            stripped.startswith("权利及触发：")
+            and "IPO" in stripped
+            and "签署注册权协议" in stripped
+            and "，取得" in stripped
+        ):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            trigger, rest = body.split("，", 1)
+            trigger = trigger.removeprefix("如")
+            signing, rights = rest.split("，取得", 1)
+            lines.append("触发场景：" + trigger.rstrip("。") + "。")
+            lines.append("签约义务：" + signing.rstrip("。") + "。")
+            lines.append("注册权内容：取得" + rights.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("上市后配合：") and "；公司及" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             sale, lockup = body.split("；", 1)
@@ -6291,6 +6372,21 @@ def normalize_registration_rights_subpoints(item: dict[str, Any]) -> None:
                 lines.append("上市后配合：" + sale.rstrip("。") + "。")
             lockup = lockup.replace("依法尽量缩短限售期", "依法尽量缩短权利人限售期")
             lines.append("限售协助：" + lockup.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("公司配合：") and "IPO后" in stripped and "；公司及" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            sale, lockup = body.split("；", 1)
+            if "出售股票" in sale and "公司应" in sale:
+                lines.append("出售配合：IPO后权利人出售股票需监管/交易所手续时，公司应按要求尽快办理。")
+            else:
+                lines.append("出售配合：" + sale.rstrip("。") + "。")
+            if "，并尽最大努力" in lockup:
+                lockup, support = lockup.split("，并尽最大努力", 1)
+                lines.append("限售协助：" + lockup.rstrip("。") + "。")
+                lines.append("出售便利：相关方应尽最大努力" + support.rstrip("。") + "。")
+            else:
+                lines.append("限售协助：" + lockup.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("限制：缩短限售期义务不适用于"):

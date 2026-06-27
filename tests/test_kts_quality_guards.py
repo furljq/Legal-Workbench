@@ -1650,6 +1650,14 @@ def test_post_polish_splits_board_composition_long_line() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.board_composition",
+            "draft_content": (
+                "席位维持及观察员：[商标品牌_A]、[商标品牌_F]或[商标品牌_G]持股低于5%时失去董事委派权；"
+                "持股不低于2%时可委派1名观察员。其他投资人中持股最高前两名（交割后为[商标品牌_D]、[商标品牌_C]）各有1名观察员。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -1673,6 +1681,13 @@ def test_post_polish_splits_board_composition_long_line() -> None:
     assert "观察员名额：除已获董事席位投资人外，其他投资人中持股最高前两名可各委派1名观察员。" in draft
     assert "交割后观察员：[商标品牌_D]和[商标品牌_C]。" in draft
     assert "集团公司董事：[商标品牌_A]、[商标品牌_F]、[商标品牌_G]可分别要求向其他集团公司董事会委派1名董事。" in draft
+
+    draft = items[2]["draft_content"]
+    assert "董事席位门槛：[商标品牌_A]、[商标品牌_F]或[商标品牌_G]持股低于5%时失去董事委派权。" in draft
+    assert "观察员门槛：持股不低于2%时可委派1名观察员。" in draft
+    assert "其他观察员：其他投资人中持股最高前两名各有1名观察员。" in draft
+    assert "交割后观察员：[商标品牌_D]、[商标品牌_C]。" in draft
+    assert "席位维持及观察员：" not in draft
     assert "席位调整：" not in draft
     assert "子公司/集团公司：" not in draft
 
@@ -3160,6 +3175,14 @@ def test_post_polish_splits_closing_conditions_dense_lines() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.closing_conditions",
+            "draft_content": (
+                "审批及登记：公司股东会及董事一致批准交易、现有股东放弃优先认购权、签署文件、通过新章程及交割后董事会组成；"
+                "投资方投委会或其他决策机构批准交易。公司还需完成工商变更、外商投资信息报告及外汇登记。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3182,6 +3205,12 @@ def test_post_polish_splits_closing_conditions_dense_lines() -> None:
     assert "尽调满意：投资方法律、财务、业务尽调满意为CP。" in a_current
     assert "登记及合规：" not in a_current
 
+    a_current_export = items[2]["draft_content"]
+    assert "公司批准：公司股东会及董事一致批准交易、现有股东弃权、签署文件、通过新章程及交割后董事会组成。" in a_current_export
+    assert "投资方批准：投资方投委会或其他决策机构批准交易。" in a_current_export
+    assert "外部登记：公司还需完成工商变更、外商投资信息报告及外汇登记。" in a_current_export
+    assert "审批及登记：" not in a_current_export
+
 
 def test_post_polish_splits_registration_rights_kts_lines() -> None:
     items = [
@@ -3194,7 +3223,16 @@ def test_post_polish_splits_registration_rights_kts_lines() -> None:
                 "限制：缩短限售期义务不适用于主管机构审核要求及权利人自行签署的限售承诺。"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "sha.registration_rights",
+            "draft_content": (
+                "权利及触发：如公司在美国或其他国家/地区IPO，[[公司或组织_AE]或组织_K]可要求公司及其他股东签署注册权协议，取得境外私募优先股投资惯常注册权或类似权利。\n"
+                "公司配合：IPO后，如权利人出售股票需监管或交易所批准、同意、备案等手续，公司应按要求尽快办理；"
+                "公司及[[公司或组织_AE]或组织_C]应依法尽量缩短限售期，并尽最大努力满足便利出售股权的相关制度要求。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3209,6 +3247,16 @@ def test_post_polish_splits_registration_rights_kts_lines() -> None:
     assert "限售例外：主管机构审核要求及权利人自行签署的限售承诺除外。" in draft
     assert "触发及安排：" not in draft
     assert "上市后配合：" not in draft
+
+    draft = items[1]["draft_content"]
+    assert "触发场景：公司在美国或其他国家/地区IPO。" in draft
+    assert "签约义务：[[公司或组织_AE]或组织_K]可要求公司及其他股东签署注册权协议。" in draft
+    assert "注册权内容：取得境外私募优先股投资惯常注册权或类似权利。" in draft
+    assert "出售配合：IPO后权利人出售股票需监管/交易所手续时，公司应按要求尽快办理。" in draft
+    assert "限售协助：公司及[[公司或组织_AE]或组织_C]应依法尽量缩短限售期。" in draft
+    assert "出售便利：相关方应尽最大努力满足便利出售股权的相关制度要求。" in draft
+    assert "权利及触发：" not in draft
+    assert "公司配合：" not in draft
 
 
 def test_post_polish_normalizes_already_split_inspection_procedure() -> None:
@@ -3367,6 +3415,16 @@ def test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto()
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.shareholder_reserved_matters",
+            "draft_content": (
+                "通过机制：保护性事项分两类；部分事项需包括特定主体同意，另一类重大事项需三分之二或以上表决权且包括多数优先股股东同意。"
+                "股东会有效召开还要求不低于二分之一表决权股东出席且包括多数优先股股东出席。\n"
+                "门槛定义：多数优先股股东为持有超过三分之二优先股的股东；优先股指特定投资人持有的公司股权。\n"
+                "投资人门槛：股东会保护性事项分为两套机制：部分事项需包括特定主体同意；另一类重大事项需三分之二以上表决权且包括多数优先股股东同意。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3393,6 +3451,15 @@ def test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto()
     assert "特别否决终止：后续融资新增投资人董事后该单独否决权终止。" in a_style
     assert "通过机制：" not in a_style
     assert "特别否决：" not in a_style
+
+    b_style = items[2]["draft_content"]
+    assert "事项分层：保护性事项分为特定主体同意事项和多数优先股股东事项。" in b_style
+    assert "特定主体机制：部分事项需包括特定主体同意。" in b_style
+    assert "多数事项机制：重大事项需三分之二或以上表决权且包括多数优先股股东同意。" in b_style
+    assert "召开门槛：股东会有效召开须不低于二分之一表决权股东出席，并包括多数优先股股东。" in b_style
+    assert "门槛定义：多数优先股股东为持有超过三分之二优先股的股东；优先股指特定投资人持有的公司股权。" in b_style
+    assert "通过机制：" not in b_style
+    assert "投资人门槛：" not in b_style
 
 
 def test_post_polish_compacts_mfn_and_new_project_special_rights() -> None:
