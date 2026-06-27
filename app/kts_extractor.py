@@ -4834,8 +4834,10 @@ FOUNDER_BREACH_LINE = (
     "其他离职后果：其他离职的未成熟部分同样适用，已成熟部分保留但放弃投票权/董事提名等管理权。"
 )
 FOUNDER_NON_COMPETE_LINE = (
-    "竞业及保密/IP：限制期至离职后两年或不再持股后两年孰晚；"
-    "限制投资、参与或协助竞争业务，招揽客户/员工，以及为非公司目的披露或使用公司商业、财务、交易、知识产权及其他保密信息。"
+    "竞业期限：限制期至离职后两年或不再持股后两年孰晚。\n"
+    "竞业限制：不得投资、参与或协助竞争业务。\n"
+    "不招揽：不得招揽客户/员工。\n"
+    "保密/IP：不得为非公司目的披露或使用公司商业、财务、交易、知识产权及其他保密信息。"
 )
 
 
@@ -5027,6 +5029,46 @@ def normalize_founder_obligation_subpoints(draft_content: str) -> str:
             continue
         if line.startswith("其他离职的未成熟部分"):
             lines.append("其他离职后果：" + line.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("竞业及保密/IP："):
+            body = line.split("：", 1)[1].rstrip("。")
+            if "；" in body:
+                period, obligations = body.split("；", 1)
+                lines.append("竞业期限：" + period.rstrip("。") + "。")
+                if "以及为非公司目的" in obligations:
+                    conduct, confidentiality = obligations.split("以及为非公司目的", 1)
+                    conduct = conduct.strip("，,。 ")
+                    if "，招揽" in conduct:
+                        competition, solicitation = conduct.split("，招揽", 1)
+                        competition = competition.replace("限制", "不得", 1)
+                        lines.append("竞业限制：" + competition.rstrip("。") + "。")
+                        lines.append("不招揽：不得招揽" + solicitation.rstrip("。") + "。")
+                    else:
+                        lines.append("竞业限制：" + conduct.replace("限制", "不得", 1).rstrip("。") + "。")
+                    lines.append("保密/IP：不得为非公司目的" + confidentiality.rstrip("。") + "。")
+                else:
+                    lines.append("竞业限制：" + obligations.replace("限制", "不得", 1).rstrip("。") + "。")
+            else:
+                lines.append("竞业期限：" + body.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("竞业限制：") and "，不得" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            period, conduct = body.split("，不得", 1)
+            lines.append("竞业期限：" + period.rstrip("。") + "。")
+            lines.append("竞业限制：不得" + conduct.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("限制范围：") and "，亦不得招揽" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            conduct, solicitation = body.split("，亦不得招揽", 1)
+            parts = [part.strip("。") for part in conduct.split("，") if part.strip("。")]
+            if parts:
+                lines.append("竞争实体限制：" + parts[0].rstrip("。") + "。")
+            if len(parts) >= 2:
+                lines.append("竞争业务限制：" + parts[1].rstrip("。") + "。")
+            lines.append("不招揽：不得招揽" + solicitation.rstrip("。") + "。")
             changed = True
             continue
         lines.append(line)

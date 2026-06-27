@@ -2254,7 +2254,9 @@ def test_founder_obligations_guard_completes_service_and_non_compete_summary() -
     fields = {field["key"]: field for field in extraction["extracted_facts"]["field_values"]}
     assert extraction["status"] == "drafted"
     assert "持续服务：" in extraction["draft_content"]
-    assert "竞业及保密/IP：" in extraction["draft_content"]
+    assert "竞业期限：" in extraction["draft_content"]
+    assert "竞业限制：" in extraction["draft_content"]
+    assert "保密/IP：" in extraction["draft_content"]
     assert "IPO后一周年" in fields["service_commitment"]["value"]
     assert "离职后两年" in fields["non_compete"]["value"]
     assert "商业秘密或保密信息" in fields["confidentiality_ip"]["value"]
@@ -2322,7 +2324,8 @@ def test_post_polish_guard_rewrites_founder_stale_review_tone() -> None:
     assert "持续服务：" in item["draft_content"]
     assert "外部任职限制：" in item["draft_content"]
     assert "其他离职后果：" in item["draft_content"]
-    assert "竞业及保密/IP：" in item["draft_content"]
+    assert "竞业期限：" in item["draft_content"]
+    assert "保密/IP：" in item["draft_content"]
     assert "未完整" not in item["draft_content"]
     assert "截断" not in item["draft_content"]
     assert not item["review_notes"]
@@ -2340,7 +2343,10 @@ def test_post_polish_splits_founder_service_long_line() -> None:
                 "全职加入后应投入实质性全部工作时间和精力，均不得在公司/集团外任职、投资或提供服务；"
                 "经投资人同意的研究机构任职例外，但不得实质影响其对公司的职责和经营管理。\n"
                 "其他离职的未成熟部分同样适用，已成熟部分保留但放弃投票权/董事提名等管理权。\n"
-                "竞业及保密/IP：限制期至离职后两年或不再持股后两年孰晚。"
+                "竞业及保密/IP：限制期至离职后两年或不再持股后两年孰晚。\n"
+                "竞业限制：创始股东及核心人员在任职期间及离职后24个月内，或至不再持有公司及/或其关联主体权益后24个月内（以较晚者为准），"
+                "不得直接或间接参与、支持、投资或开展竞争业务。\n"
+                "限制范围：创始股东及核心人员不得在竞争实体任职或提供支持，不得投资、设立或合作开展竞争业务，亦不得招揽公司员工、顾问或客户转向竞争性实体。"
             ),
             "review_notes": [],
         }
@@ -2353,7 +2359,14 @@ def test_post_polish_splits_founder_service_long_line() -> None:
     assert "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前后均应投入实质性全部工作时间和精力。" in draft
     assert "外部任职限制：全职加入前后均不得在公司/集团外任职、投资或提供服务" in draft
     assert "其他离职后果：其他离职的未成熟部分同样适用" in draft
+    assert "竞业期限：限制期至离职后两年或不再持股后两年孰晚。" in draft
+    assert "竞业期限：创始股东及核心人员在任职期间及离职后24个月内，或至不再持有公司及/或其关联主体权益后24个月内（以较晚者为准）。" in draft
+    assert "竞业限制：不得直接或间接参与、支持、投资或开展竞争业务。" in draft
+    assert "竞争实体限制：创始股东及核心人员不得在竞争实体任职或提供支持。" in draft
+    assert "竞争业务限制：不得投资、设立或合作开展竞争业务。" in draft
+    assert "不招揽：不得招揽公司员工、顾问或客户转向竞争性实体。" in draft
     assert "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前应投入" not in draft
+    assert "限制范围：" not in draft
     assert draft.count("外部任职限制：") == 1
 
 
