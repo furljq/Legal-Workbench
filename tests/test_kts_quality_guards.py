@@ -1809,6 +1809,35 @@ def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
     assert items[0]["review_notes"] == ["需律师重点复核工商变更登记作为付款先决条件的交易顺序。"]
 
 
+def test_post_polish_normalizes_esop_milestone_labels() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.esop",
+            "draft_content": (
+                "里程碑及额度：(1) 首发试验星发射成功、在轨运行卫星总算力达到25POPS，完成新一轮融资后可新增10%股权。\n"
+                "里程碑及额度：(2) 两颗卫星发射成功并在轨稳定工作、在轨运行卫星总算力达到100POPS以上，完成新一轮融资后可新增10%股权。\n"
+                "审批要求：相关定向增资需履行审批。【待核：两项10%额度是否累计适用、审批机构占位符需确认。】"
+            ),
+            "review_notes": [
+                "已逐项覆盖候选证据显示的两个编号里程碑。",
+                "两项10%额度可能导致较高稀释，且累计关系未明，建议律师关注。",
+                "未将费用、违约责任或其他非ESOP特别约定事项写入摘要。",
+            ],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "首发试验星里程碑：" in draft
+    assert "首发试验星里程碑：首发试验星" not in draft
+    assert "两星及算力里程碑：" in draft
+    assert "里程碑及额度：(1)" not in draft
+    assert "协议定义" in draft
+    assert items[0]["review_notes"] == ["两项10%额度可能导致较高稀释，且累计关系未明，建议律师关注。"]
+
+
 if __name__ == "__main__":
     test_anti_dilution_price_reset_guard()
     test_redemption_compliance_trigger_guard()
@@ -1843,4 +1872,5 @@ if __name__ == "__main__":
     test_founder_obligations_guard_completes_service_and_non_compete_summary()
     test_post_polish_guard_rewrites_founder_stale_review_tone()
     test_post_polish_removes_nonblocking_workpaper_review_notes()
+    test_post_polish_normalizes_esop_milestone_labels()
     print("ok")

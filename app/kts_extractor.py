@@ -2503,7 +2503,25 @@ def clean_esop_review_tone(extraction: dict[str, Any]) -> None:
             draft_content,
         )
         cleaned = cleaned.replace("占位符所指主体", "协议定义所指主体")
-        extraction["draft_content"] = "\n".join(line.rstrip() for line in cleaned.splitlines() if line.strip())
+        lines: list[str] = []
+        for line in cleaned.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("里程碑及额度："):
+                body = stripped.split("：", 1)[1].strip()
+                body = re.sub(r"^\([一二12]\)\s*", "", body)
+                if "首发试验星" in body or "25POPS" in body:
+                    body = re.sub(r"^首发试验星", "", body).lstrip("：:，,、 ")
+                    stripped = "首发试验星里程碑：" + body
+                elif "两颗卫星" in body or "100POPS" in body:
+                    stripped = "两星及算力里程碑：" + body
+            elif stripped.startswith("首发试验星里程碑："):
+                body = stripped.split("：", 1)[1].strip()
+                body = re.sub(r"^首发试验星", "", body).lstrip("：:，,、 ")
+                stripped = "首发试验星里程碑：" + body
+            lines.append(stripped)
+        extraction["draft_content"] = "\n".join(lines)
 
     notes = normalize_string_list(extraction.get("review_notes"))
     extraction["review_notes"] = [
@@ -4792,6 +4810,8 @@ def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
         "已完成",
         "已将",
         "已仅",
+        "已逐",
+        "未将",
     )
     return [
         note
