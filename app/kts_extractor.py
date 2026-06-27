@@ -3788,10 +3788,36 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
             line = "回购义务人及行权：" + line.split("：", 1)[1]
             changed = True
         elif line.startswith("价格与付款："):
-            line = "回购价格及付款期限：" + line.split("：", 1)[1]
+            body = line.split("：", 1)[1]
+            split_match = re.search(r"；\s*(?P<deadline>(?:义务人|回购义务人).+)", body)
+            if split_match:
+                price = body[: split_match.start()].strip().rstrip("。")
+                price = re.sub(r"^回购价格为", "", price).strip()
+                lines.append("回购价格：" + price + "。")
+                lines.append("回购期限：" + split_match.group("deadline").rstrip("。") + "。")
+                changed = True
+                continue
+            line = "回购价格及付款期限：" + body
             changed = True
         elif line.startswith("行使及付款："):
-            line = "行使期限及付款：" + line.split("：", 1)[1]
+            line = "回购期限：" + line.split("：", 1)[1]
+            changed = True
+        elif line.startswith("行使期限及付款："):
+            line = "回购期限：" + line.split("：", 1)[1]
+            changed = True
+        elif line.startswith("回购价格及付款期限："):
+            body = line.split("：", 1)[1]
+            split_match = re.search(r"；\s*(?P<deadline>(?:义务人|回购义务人).+)", body)
+            if split_match:
+                price = body[: split_match.start()].strip().rstrip("。")
+                price = re.sub(r"^回购价格为", "", price).strip()
+                lines.append("回购价格：" + price + "。")
+                lines.append("回购期限：" + split_match.group("deadline").rstrip("。") + "。")
+                changed = True
+                continue
+            changed = True
+        elif line.startswith("回购价格：回购价格为"):
+            line = "回购价格：" + line.split("：", 1)[1].removeprefix("回购价格为")
             changed = True
         elif line.startswith(("逾期及顺位：", "逾期与顺位：")):
             line = "逾期责任及顺位：" + line.split("：", 1)[1]
