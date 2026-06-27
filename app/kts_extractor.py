@@ -3063,10 +3063,31 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
     for line in draft_content.splitlines():
         stripped = line.strip()
         label, parts = split_semicolon_body(stripped)
+        if label == "通过机制" and len(parts) >= 2:
+            general = parts[0].replace("一般经", "经")
+            lines.append("一般通过：" + general.rstrip("。") + "。")
+            protection = "；".join(parts[1:]).rstrip("。")
+            protection = protection.replace("另须经过", "须经")
+            lines.append("保护事项通过：" + protection + "。")
+            changed = True
+            continue
+        if stripped.startswith("一般通过：") and "一般经" in stripped:
+            lines.append(stripped.replace("一般经", "经"))
+            changed = True
+            continue
         if label == "金额门槛" and len(parts) >= 3:
             lines.append("借款/投资门槛：" + parts[0].rstrip("。") + "。")
             lines.append("资产处置门槛：" + parts[1].rstrip("。") + "。")
             lines.append("预算外费用门槛：" + "；".join(parts[2:]).rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "贷款/担保" and len(parts) >= 1 and "或提供债务担保" in parts[0]:
+            loan, _guarantee = parts[0].split("，或提供债务担保", 1)
+            loan = loan.replace("12个月内累计", "12个月累计")
+            lines.append("贷款/财务支持：" + loan.rstrip("。") + "时，需投资人董事同意。")
+            lines.append("担保事项：提供债务担保需投资人董事同意。")
+            if len(parts) >= 2:
+                lines.append("业务预付款例外：" + "；".join(parts[1:]).rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("保护事项：") and "、超过门槛的" in stripped and len(stripped) > 95:
@@ -3076,11 +3097,20 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
             lines.append("财务/资产事项：超过门槛的" + finance.rstrip("。") + "。")
             changed = True
             continue
-        if stripped.startswith("资产处置：") and "达上述门槛" in stripped:
-            lines.append(
-                "资产处置：除需股东会批准的交易外，资产、业务、股份或权益处置及设置权利负担"
-                "达到单笔人民币50万元或12个月累计人民币100万元门槛，或超出已批预算和经营计划的，需投资人董事同意。"
-            )
+        if (
+            stripped.startswith("资产处置：")
+            and "资产、业务、股份或权益处置及设置权利负担" in stripped
+            and "需投资人董事同意" in stripped
+            and ("达上述门槛" in stripped or "达到单笔" in stripped)
+        ):
+            if "达到" in stripped and "门槛" in stripped:
+                threshold = stripped.split("达到", 1)[1].split("门槛", 1)[0].rstrip("，, ")
+                threshold_line = threshold + "，或超出已批预算和经营计划"
+            else:
+                threshold_line = "达到上述金额门槛，或超出已批预算和经营计划"
+            lines.append("资产处置范围：除需股东会批准的交易外，资产、业务、股份或权益处置及设置权利负担。")
+            lines.append("资产处置门槛：" + threshold_line.rstrip("。") + "。")
+            lines.append("审批要求：达到上述门槛时需投资人董事同意。")
             changed = True
             continue
         lines.append(stripped)

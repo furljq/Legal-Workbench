@@ -2625,11 +2625,15 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
         {
             "taxonomy_id": "sha.board_reserved_matters",
             "draft_content": (
+                "通过机制：董事会职权范围内议案一般经二分之一以上董事通过；特定董事会保护性事项需经任一名投资人董事同意方可通过。\n"
                 "金额门槛：借款、对外投资单笔超过人民币100万元或任一财务年度累计超过人民币500万元；"
                 "资产处置或设负担单笔超过人民币200万元或年度累计超过人民币500万元；"
                 "预算外费用单笔超过已批准年度预算总额5%或年度累计超过10%。\n"
+                "贷款/担保：向任何实体或个人提供贷款、垫付或财务支持，单笔超过人民币50万元或12个月内累计超过人民币100万元，"
+                "或提供债务担保，需投资人董事同意；正常业务经营预付款除外。\n"
                 "保护事项：高管任免及薪酬、审计机构聘解及会计政策变更、关联交易、员工股权/期权计划及年度发放比例、年度预算/决算、业务计划、超过门槛的借款/投资、集团外第三方贷款、担保及重大资产处置均需投资人董事同意。\n"
-                "资产处置：除需股东会批准的交易外，资产、业务、股份或权益处置及设置权利负担达上述门槛，或超出已批预算和经营计划的，需投资人董事同意。"
+                "资产处置：除需股东会批准的交易外，资产、业务、股份或权益处置及设置权利负担达上述门槛，或超出已批预算和经营计划的，需投资人董事同意。\n"
+                "一般通过：董事会职权范围内议案一般经二分之一以上董事通过。"
             ),
             "review_notes": [],
         },
@@ -2665,12 +2669,20 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
 
     apply_post_polish_quality_guards(items)
 
+    assert "一般通过：" in items[0]["draft_content"]
+    assert "议案一般经" not in items[0]["draft_content"]
+    assert "保护事项通过：" in items[0]["draft_content"]
     assert "借款/投资门槛：" in items[0]["draft_content"]
     assert "资产处置门槛：" in items[0]["draft_content"]
     assert "预算外费用门槛：" in items[0]["draft_content"]
+    assert "贷款/财务支持：" in items[0]["draft_content"]
+    assert "担保事项：" in items[0]["draft_content"]
+    assert "业务预付款例外：" in items[0]["draft_content"]
     assert "治理保护事项：" in items[0]["draft_content"]
     assert "财务/资产事项：" in items[0]["draft_content"]
-    assert "达到单笔人民币50万元或12个月累计人民币100万元门槛" in items[0]["draft_content"]
+    assert "资产处置范围：" in items[0]["draft_content"]
+    assert "审批要求：" in items[0]["draft_content"]
+    assert "12个月内累计" not in items[0]["draft_content"]
     assert "达上述门槛" not in items[0]["draft_content"]
     assert "投资人权利事项：" in items[1]["draft_content"]
     assert "重大保护事项：" in items[1]["draft_content"]
