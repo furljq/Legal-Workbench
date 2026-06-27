@@ -3761,6 +3761,46 @@ def clean_redemption_review_tone(extraction: dict[str, Any]) -> None:
     extraction["review_notes"] = filtered
 
 
+def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for raw_line in draft_content.splitlines():
+        line = raw_line.strip()
+        if line.startswith("触发事项："):
+            line = "回购触发事项：" + line.split("：", 1)[1]
+            changed = True
+        elif line.startswith("义务人及价格："):
+            body = line.split("：", 1)[1]
+            split_match = re.search(r"；\s*价格(?P<price>按.+)", body)
+            if split_match:
+                obligor = body[: split_match.start()].strip().rstrip("。")
+                obligor = re.sub(r"^回购义务人为", "", obligor).strip()
+                lines.append("回购义务人：" + obligor.rstrip("。") + "。")
+                lines.append("回购价格：" + split_match.group("price").rstrip("。") + "。")
+                changed = True
+                continue
+            line = "回购义务人及价格：" + body
+            changed = True
+        elif line.startswith("义务人与行权："):
+            line = "回购义务人及行权：" + line.split("：", 1)[1]
+            changed = True
+        elif line.startswith("价格与付款："):
+            line = "回购价格及付款期限：" + line.split("：", 1)[1]
+            changed = True
+        elif line.startswith("行使及付款："):
+            line = "行使期限及付款：" + line.split("：", 1)[1]
+            changed = True
+        elif line.startswith(("逾期及顺位：", "逾期与顺位：")):
+            line = "逾期责任及顺位：" + line.split("：", 1)[1]
+            changed = True
+        lines.append(line)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def apply_deterministic_quality_guards(
     item: dict[str, Any],
     extraction: dict[str, Any],
@@ -4239,6 +4279,7 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             clean_esop_review_tone(item)
         elif item_id == "sha.redemption":
             clean_redemption_review_tone(item)
+            normalize_redemption_subpoint_labels(item)
 
 
 def normalize_absence_checks(value: Any) -> list[dict[str, Any]]:

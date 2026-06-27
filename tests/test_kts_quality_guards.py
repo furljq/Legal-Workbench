@@ -1076,7 +1076,12 @@ def test_post_polish_guards_remove_soft_hard_markers() -> None:
         },
         {
             "taxonomy_id": "sha.redemption",
-            "draft_content": "逾期及顺位：逾期按每日万分之三支付违约金。【待核：第4.0.7条10%违约金与逾期违约金关系。】",
+            "draft_content": (
+                "触发事项：违反廉洁条款时可要求回购。\n"
+                "义务人及价格：回购义务人为公司及/或创始人；价格按投资成本加收益与公允价值孰高确定。\n"
+                "行使及付款：回购通知后60日内付款。\n"
+                "逾期及顺位：逾期按每日万分之三支付违约金。【待核：第4.0.7条10%违约金与逾期违约金关系。】"
+            ),
             "review_notes": ["需律师复核第4.0.7条10%违约金是否应作为并行救济强调。"],
         },
         {
@@ -1107,6 +1112,11 @@ def test_post_polish_guards_remove_soft_hard_markers() -> None:
     assert "排他安排：" not in combined
     assert "【注：两项10%额度是否累计适用、审批机构口径可结合协议定义确认。】" in combined
     assert "【注：第4.0.7条10%违约金可能与逾期违约金并行适用。】" in combined
+    assert "回购触发事项：违反廉洁条款时可要求回购。" in combined
+    assert "回购义务人：公司及/或创始人。" in combined
+    assert "回购价格：按投资成本加收益与公允价值孰高确定。" in combined
+    assert "行使期限及付款：回购通知后60日内付款。" in combined
+    assert "逾期责任及顺位：逾期按每日万分之三支付违约金。" in combined
     assert "【注：未见控制权变更全额共售安排。】" in combined
 
 
