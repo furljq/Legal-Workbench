@@ -377,6 +377,29 @@ def test_post_polish_compacts_dividend_approval_references() -> None:
     assert "第8条" not in items[1]["draft_content"]
 
 
+def test_post_polish_splits_dividend_priority_and_esop_allocation() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.dividend",
+            "draft_content": (
+                "投资方优先取得：在[[公司或组织_AI]或组织_AK]全额取得其按实缴出资比例应得利润分配前，其他股东不得以现金、财产、公司股权或其他形式取得分红。\n"
+                "分配比例：未全部既得的预留激励股权/期权对应利润由全体股东按届时股权比例分享，并按已既得期权加已发放激励股权累计计算持股比例。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "优先分红：[[公司或组织_AI]或组织_AK]应先全额取得其按实缴出资比例应得利润分配。" in draft
+    assert "分红限制：在上述金额全额取得前，其他股东不得以现金、财产、公司股权或其他形式取得分红。" in draft
+    assert "激励股分配：未全部既得的预留激励股权/期权对应利润由全体股东按届时股权比例分享。" in draft
+    assert "持股计算口径：按已既得期权加已发放激励股权累计计算持股比例。" in draft
+    assert "投资方优先取得：" not in draft
+
+
 def test_information_audit_guard_fills_inspection_right() -> None:
     extraction = {
         "status": "needs_review",
@@ -3111,15 +3134,54 @@ def test_post_polish_compacts_rofr_tag_formula_language() -> None:
     apply_post_polish_quality_guards(items)
 
     assert items[0]["draft_content"] == (
-        "共同出售权：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知，"
-        "并按转股方及实际共售方持股口径计算的约定比例共同出售。"
+        "共售通知：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知。\n"
+        "共售比例：按转股方及实际共售方持股口径计算的约定比例共同出售。"
     )
     assert items[1]["draft_content"] == (
-        "共售比例及控制权变更：一般共售按卖方及拟共售权人持股比例计算；"
-        "如出售导致控制权变更，共售权人可出售其全部股权。"
+        "共售比例：一般共售按卖方及拟共售权人持股比例计算。\n"
+        "控制权变更共售：如出售导致控制权变更，共售权人可出售其全部股权。"
     )
     assert "拟售股权数×" not in items[0]["draft_content"]
     assert "一般共售数量按" not in items[1]["draft_content"]
+
+
+def test_post_polish_splits_rofr_purchase_and_secondary_rights() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.rofr_tag",
+            "draft_content": (
+                "优先购买权：合格上市前，定义为甲方及乙方一至三的投资人（AP/AK）可在同等条件下优先购买拟售股权；购买回复期为收到转让通知后10个工作日。\n"
+                "共同出售权：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知，并按转股方及实际共售方持股口径计算的约定比例共同出售。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.rofr_tag",
+            "draft_content": (
+                "优先购买权：[[公司或组织_AE]或组织_K]及/或其关联方（但不得属于附件I所列主体）可在收到出售通知后30日内，按同等价格和条件优先购买拟出售股权。\n"
+                "二次购买权：第一次购买期限届满后，拟出售股权未被全部购买的，已完全行权者可在收到剩余股权通知后10日内继续购买，并可递补至售罄或无人继续行权。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    current = items[0]["draft_content"]
+    assert "适用期间：合格上市前。" in current
+    assert "优先购买权：定义为甲方及乙方一至三的投资人（AP/AK）可在同等条件下优先购买拟售股权。" in current
+    assert "回复期限：收到转让通知后10个工作日。" in current
+    assert "共售通知：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知。" in current
+    assert "共售比例：按转股方及实际共售方持股口径计算的约定比例共同出售。" in current
+
+    a_current = items[1]["draft_content"]
+    assert "优先购买权人：[[公司或组织_AE]或组织_K]及/或其关联方（但不得属于附件I所列主体）。" in a_current
+    assert "行权期限：收到出售通知后30日内。" in a_current
+    assert "购买条件：按同等价格和条件优先购买拟出售股权。" in a_current
+    assert "二次购买触发：第一次购买期限届满后，拟出售股权未被全部购买的。" in a_current
+    assert "二次购买期限：已完全行权者可在收到剩余股权通知后10日内继续购买。" in a_current
+    assert "递补机制：可递补至售罄或无人继续行权。" in a_current
 
 
 def test_post_polish_compacts_transfer_restriction_internal_references() -> None:
@@ -3182,6 +3244,75 @@ def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
     assert "注册资本变化：" not in draft
     assert "新增[公司或组织_L]持股" not in draft
     assert "签署方：由本轮投资方（甲方）、现有股东、公司及创始股东等共同签署。" in draft
+
+
+def test_post_polish_splits_liability_subjects_events_and_exceptions() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.liability",
+            "draft_content": (
+                "违约赔偿：违约方应赔偿其违反协议或其他交易文件给守约方造成的损失及费用开支；守约方解除协议不免除违约方的违约及赔偿责任。\n"
+                "违约赔偿：[公司或组织_AF]及[[公司或组织_AF]或组织_AB]就违反协议约定向投资方及其关联方等受偿方赔偿，使其免受损害。\n"
+                "特殊赔偿：[公司或组织_AO]及[公司或组织_BF]就重大不实或不完整陈述保证、严重违反义务或承诺导致[公司或组织_AJ]损失的，承担赔偿并使其不受损害。\n"
+                "责任上限：[[公司或组织_AF]或组织_AB]责任总额以其届时直接或间接持有股权处置所得价值为限；恶意、欺诈或故意重大违约不受限。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "解除不免责：守约方解除协议不免除违约方的违约及赔偿责任。" in draft
+    assert "违约赔偿：[公司或组织_AF]及[[公司或组织_AF]或组织_AB]违反协议约定时，应赔偿投资方及其关联方等受偿方。" in draft
+    assert "特殊赔偿主体：[公司或组织_AO]及[公司或组织_BF]。" in draft
+    assert "特殊赔偿事项：重大不实或不完整陈述保证、严重违反义务或承诺。" in draft
+    assert "赔偿后果：导致[公司或组织_AJ]损失的，承担赔偿并使其不受损害。" in draft
+    assert "上限例外：恶意、欺诈或故意重大违约不受限。" in draft
+    assert "特殊赔偿：[公司或组织_AO]" not in draft
+    assert "责任上限：" in draft
+
+
+def test_post_polish_splits_representations_subpoints() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.representations_warranties",
+            "draft_content": (
+                "签约及出资合法性：各方具备签署、履行交易文件的法律能力及授权；投资方增资款足额且来源合法，相关主体不存在代持、委托持股或禁止持股。\n"
+                "过渡期限制：过渡期内公司应按过往惯例正常经营；未经投资方事先书面同意，不得修改章程、增减注册资本、控制权变更、合并、分立、重组、清算、解散、终止等。\n"
+                "重大事项通知：交割前，公司和创始人应就陈述保证严重失实、不完整、不准确、实质违约事件及重大不利影响或重要进展及时书面通知投资方。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.representations_warranties",
+            "draft_content": (
+                "陈述保证主体：公司及现有相关方就附件I事项向投资方共同连带作出陈述保证；投资方分别且不连带作出主体资格、授权及资金来源等陈述。\n"
+                "资金及持股：投资方确认增资资金为自有或募集合法资金；支付完毕增资款后取得本次增资股权的完整所有权并享有相应股东权利。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    current = items[0]["draft_content"]
+    assert "签约授权：各方具备签署、履行交易文件的法律能力及授权。" in current
+    assert "出资合法性：投资方增资款足额且来源合法，相关主体不存在代持、委托持股或禁止持股。" in current
+    assert "过渡期经营：过渡期内公司应按过往惯例正常经营。" in current
+    assert "过渡期限制：未经投资方事先书面同意，不得修改章程、增减注册资本、控制权变更、合并、分立、重组、清算、解散、终止等。" in current
+    assert "通知义务：交割前，公司和创始人应及时书面通知投资方。" in current
+    assert "通知事项：陈述保证严重失实、不完整、不准确、实质违约事件及重大不利影响或重要进展。" in current
+
+    a_current = items[1]["draft_content"]
+    assert "公司方陈述：公司及现有相关方就附件I事项向投资方共同连带作出陈述保证。" in a_current
+    assert "投资方陈述：投资方分别且不连带作出主体资格、授权及资金来源等陈述。" in a_current
+    assert "资金来源：投资方确认增资资金为自有或募集合法资金。" in a_current
+    assert "股权取得：支付完毕增资款后取得本次增资股权的完整所有权并享有相应股东权利。" in a_current
+    assert "签约及出资合法性：" not in current
+    assert "陈述保证主体：" not in a_current
 
 
 def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:
@@ -3322,6 +3453,7 @@ if __name__ == "__main__":
     test_redemption_price_formula_guard_fills_both_formulas()
     test_dividend_guard_fills_special_approval_threshold()
     test_post_polish_compacts_dividend_approval_references()
+    test_post_polish_splits_dividend_priority_and_esop_allocation()
     test_complete_soft_review_status_normalizes_to_drafted()
     test_complete_hard_review_status_stays_needs_review()
     test_drafted_hard_review_status_upgrades_to_needs_review()
@@ -3378,8 +3510,11 @@ if __name__ == "__main__":
     test_post_polish_compacts_termination_kts_language()
     test_post_polish_compacts_preemptive_right_kts_language()
     test_post_polish_compacts_rofr_tag_formula_language()
+    test_post_polish_splits_rofr_purchase_and_secondary_rights()
     test_post_polish_compacts_transfer_restriction_internal_references()
     test_post_polish_normalizes_transaction_capital_and_signing_lines()
+    test_post_polish_splits_liability_subjects_events_and_exceptions()
+    test_post_polish_splits_representations_subpoints()
     test_post_polish_keeps_export_lines_readable_for_dense_kts_items()
     test_post_polish_splits_inline_notes_and_liquidation_special_arrangements()
     print("ok")

@@ -4634,6 +4634,51 @@ def clean_representations_absence_tone(extraction: dict[str, Any]) -> None:
     extraction["review_notes"] = filtered
 
 
+def normalize_representations_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for raw_line in draft_content.splitlines():
+        stripped = raw_line.strip()
+        label, body = stripped.split("：", 1) if "：" in stripped else ("", "")
+        if label == "签约及出资合法性" and "；" in body:
+            authority, capital = body.split("；", 1)
+            lines.append("签约授权：" + authority.rstrip("。") + "。")
+            lines.append("出资合法性：" + capital.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "过渡期限制" and "；未经" in body:
+            normal_course, restrictions = body.split("；未经", 1)
+            lines.append("过渡期经营：" + normal_course.rstrip("。") + "。")
+            lines.append("过渡期限制：未经" + restrictions.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "重大事项通知" and "应就" in body and "及时书面通知投资方" in body:
+            match = re.match(r"(?P<who>.+?)应就(?P<events>.+?)及时书面通知投资方", body.rstrip("。"))
+            if match:
+                lines.append("通知义务：" + match.group("who").rstrip("。") + "应及时书面通知投资方。")
+                lines.append("通知事项：" + match.group("events").rstrip("。") + "。")
+                changed = True
+                continue
+        if label == "陈述保证主体" and "；投资方" in body:
+            company, investor = body.split("；投资方", 1)
+            lines.append("公司方陈述：" + company.rstrip("。") + "。")
+            lines.append("投资方陈述：投资方" + investor.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "资金及持股" and "；支付完毕" in body:
+            funding, ownership = body.split("；支付完毕", 1)
+            lines.append("资金来源：" + funding.rstrip("。") + "。")
+            lines.append("股权取得：支付完毕" + ownership.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def clean_redemption_review_tone(extraction: dict[str, Any]) -> None:
     draft_content = str(extraction.get("draft_content") or "")
     if draft_content:
@@ -6165,18 +6210,56 @@ def normalize_rofr_tag_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        label, body = stripped.split("：", 1) if "：" in stripped else ("", "")
+        if label == "优先购买权" and "；购买回复期为" in body:
+            right, deadline = body.split("；购买回复期为", 1)
+            if "，" in right:
+                period, right_body = right.split("，", 1)
+                lines.append("适用期间：" + period.rstrip("。") + "。")
+                lines.append("优先购买权：" + right_body.rstrip("。") + "。")
+            else:
+                lines.append("优先购买权：" + right.rstrip("。") + "。")
+            lines.append("回复期限：" + deadline.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "优先购买权" and "可在收到出售通知后" in body and "，按" in body:
+            holder, rest = body.split("可在", 1)
+            deadline, condition = rest.split("，按", 1)
+            lines.append("优先购买权人：" + holder.rstrip("。") + "。")
+            lines.append("行权期限：" + deadline.rstrip("。") + "。")
+            lines.append("购买条件：按" + condition.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "二次购买权" and "第一次购买期限届满后" in body and "，已完全行权者可在" in body:
+            trigger, rest = body.split("，已完全行权者可在", 1)
+            deadline, mechanism = rest.split("内继续购买", 1)
+            lines.append("二次购买触发：" + trigger.rstrip("。") + "。")
+            lines.append("二次购买期限：已完全行权者可在" + deadline.rstrip("。") + "内继续购买。")
+            mechanism = mechanism.lstrip("，,并")
+            if mechanism:
+                lines.append("递补机制：" + mechanism.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("共同出售权：") and "共售数量按" in stripped:
-            lines.append(
-                "共同出售权：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知，"
-                "并按转股方及实际共售方持股口径计算的约定比例共同出售。"
-            )
+            lines.append("共售通知：未行使或放弃优先购买权的投资人可在购买回复期届满前发出共售通知。")
+            lines.append("共售比例：按转股方及实际共售方持股口径计算的约定比例共同出售。")
+            changed = True
+            continue
+        if label == "共同出售权" and ("，并按" in body or "；并按" in body):
+            notice, ratio = re.split(r"[；，]并按", body.rstrip("。"), 1)
+            lines.append("共售通知：" + notice.rstrip("。") + "。")
+            lines.append("共售比例：按" + ratio.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("共售比例及控制权变更：") and "一般共售数量按" in stripped:
-            lines.append(
-                "共售比例及控制权变更：一般共售按卖方及拟共售权人持股比例计算；"
-                "如出售导致控制权变更，共售权人可出售其全部股权。"
-            )
+            lines.append("共售比例：一般共售按卖方及拟共售权人持股比例计算。")
+            lines.append("控制权变更共售：如出售导致控制权变更，共售权人可出售其全部股权。")
+            changed = True
+            continue
+        if label == "共售比例及控制权变更" and "；如出售导致控制权变更" in body:
+            ratio, change = body.split("；如出售导致控制权变更", 1)
+            lines.append("共售比例：" + ratio.rstrip("。") + "。")
+            lines.append("控制权变更共售：如出售导致控制权变更" + change.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -6212,6 +6295,25 @@ def normalize_liability_subpoints(item: dict[str, Any]) -> None:
             lines.append("违约赔偿：" + body.rstrip("。") + "。")
             changed = True
             continue
+        if label == "违约赔偿" and "；守约方解除协议不免除" in body:
+            indemnity, termination = body.split("；守约方解除协议不免除", 1)
+            lines.append("违约赔偿：" + indemnity.rstrip("。") + "。")
+            lines.append("解除不免责：守约方解除协议不免除" + termination.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "违约赔偿" and "就违反协议约定向" in body and "使其免受损害" in body:
+            match = re.match(r"(?P<subject>.+?)就违反协议约定向(?P<beneficiary>.+?)赔偿，使其免受损害", body.rstrip("。"))
+            if match:
+                lines.append(
+                    "违约赔偿："
+                    + match.group("subject").rstrip("。")
+                    + "违反协议约定时，应赔偿"
+                    + match.group("beneficiary").rstrip("。")
+                    + "。"
+                )
+                lines.append("赔偿后果：使受偿方免受损害。")
+                changed = True
+                continue
         if label == "连带责任" and "；" in body:
             parts = [part.strip("。；; ") for part in re.split(r"[；;]", body) if part.strip("。；; ")]
             if len(parts) >= 2:
@@ -6239,6 +6341,26 @@ def normalize_liability_subpoints(item: dict[str, Any]) -> None:
                 lines.append("税负补偿例外：投资方未严格配合导致损失的除外。")
             else:
                 lines.append("架构调整税负：" + tax.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "特殊赔偿" and "就" in body and "导致" in body and "承担赔偿" in body:
+            match = re.match(r"(?P<subject>.+?)就(?P<event>.+?)导致(?P<loss>.+?)，(?P<consequence>承担.+)", body.rstrip("。"))
+            if match:
+                lines.append("特殊赔偿主体：" + match.group("subject").rstrip("。") + "。")
+                lines.append("特殊赔偿事项：" + match.group("event").rstrip("。") + "。")
+                lines.append(
+                    "赔偿后果：导致"
+                    + match.group("loss").rstrip("。")
+                    + "，"
+                    + match.group("consequence").rstrip("。")
+                    + "。"
+                )
+                changed = True
+                continue
+        if label == "责任上限" and "；" in body and "不受限" in body:
+            cap, exception = body.split("；", 1)
+            lines.append("责任上限：" + cap.rstrip("。") + "。")
+            lines.append("上限例外：" + exception.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -6511,6 +6633,21 @@ def normalize_dividend_subpoints(item: dict[str, Any]) -> None:
             lines.append("法律限制补偿：如因法律限制" + fallback.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("投资方优先取得：") and "全额取得" in stripped and "前，其他股东不得" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            match = re.match(r"在(?P<investor>.+?)全额取得(?P<amount>.+?)前，其他股东不得(?P<restriction>.+)", body)
+            if match:
+                lines.append("优先分红：" + match.group("investor").rstrip("。") + "应先全额取得" + match.group("amount").rstrip("。") + "。")
+                lines.append("分红限制：在上述金额全额取得前，其他股东不得" + match.group("restriction").rstrip("。") + "。")
+                changed = True
+                continue
+        if stripped.startswith("分配比例：") and "，并按" in stripped and "激励股权" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            allocation, basis = body.split("，并按", 1)
+            lines.append("激励股分配：" + allocation.rstrip("。") + "。")
+            lines.append("持股计算口径：按" + basis.rstrip("。") + "。")
+            changed = True
+            continue
         split_priority = split_dividend_priority_line(stripped)
         if split_priority:
             lines.extend(split_priority)
@@ -6696,6 +6833,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_termination_subpoints(item)
         elif item_id == "spa.compliance":
             normalize_compliance_subpoints(item)
+        elif item_id == "spa.representations_warranties":
+            normalize_representations_subpoints(item)
         elif item_id == "spa.liability":
             normalize_liability_subpoints(item)
         elif item_id == "spa.other":
