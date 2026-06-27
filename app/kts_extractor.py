@@ -6754,7 +6754,10 @@ def transaction_capital_change_subpoint_lines(value: str) -> list[str]:
     text = value.strip()
     if not text:
         return []
-    pre_match = re.search(r"签署日注册资本为人民币?([0-9][0-9,]*(?:\.\d+)?)元", text)
+    pre_match = re.search(
+        r"(?:签署日|截至签署日|本次增资前|增资前)注册资本为人民币?([0-9][0-9,]*(?:\.\d+)?)元",
+        text,
+    )
     added_match = re.search(
         r"(?:新增人民币?([0-9][0-9,]*(?:\.\d+)?)元(?:注册资本)?|新增注册资本人民币?([0-9][0-9,]*(?:\.\d+)?)元)",
         text,
@@ -6763,8 +6766,15 @@ def transaction_capital_change_subpoint_lines(value: str) -> list[str]:
         r"(?:增资完成后(?:认缴出资合计|注册资本)?为|增资后注册资本(?:可按证据金额)?推算为)人民币?([0-9][0-9,]*(?:\.\d+)?)元",
         text,
     )
-    if pre_match and added_match and post_match:
-        added_amount = added_match.group(1) or added_match.group(2)
+    if pre_match and post_match:
+        added_amount = (added_match.group(1) or added_match.group(2)) if added_match else ""
+        if not added_amount:
+            pre_amount = decimal_from_amount(pre_match.group(1))
+            post_amount = decimal_from_amount(post_match.group(1))
+            if pre_amount is not None and post_amount is not None and post_amount >= pre_amount:
+                added_amount = format_decimal_amount(post_amount - pre_amount)
+        if not added_amount:
+            return []
         post_suffix = "（按证据金额推算）" if "推算" in text else ""
         return [
             f"签署日注册资本：人民币{pre_match.group(1)}元。",
@@ -6788,17 +6798,41 @@ def normalize_transaction_capital_change_line(draft_content: str, extracted_fact
     capital_change_value = extracted_field_value(extracted_facts, "capital_change")
     capital_lines = transaction_capital_change_subpoint_lines(capital_change_value)
     capital_change = concise_transaction_capital_change(capital_change_value)
-    if not capital_change:
-        return draft_content, False
     lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
     changed = False
     normalized_lines: list[str] = []
     for line in lines:
+        if line.startswith("交易安排：") and "；本轮融资额" in line and "注册资本" not in line:
+            valuation, financing = line.split("；", 1)
+            normalized_lines.append("投前估值：" + valuation.split("：", 1)[1].rstrip("。") + "。")
+            normalized_lines.append("融资额：" + financing.rstrip("。") + "。")
+            changed = True
+            continue
+        if capital_lines and line.startswith("交易安排：") and "注册资本" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            if "；" in body:
+                summary, capital = body.split("；", 1)
+                if "注册资本" in capital:
+                    normalized_lines.append("估值及融资额：" + summary.rstrip("。") + "。")
+                    normalized_lines.extend(capital_lines)
+                    changed = True
+                    continue
         if capital_lines and line.startswith(("注册资本及结构：", "注册资本及股权结构：", "股权结构：", "注册资本变化：")):
             if "新增" in line or "注册资本" in line:
                 normalized_lines.extend(capital_lines)
                 changed = True
                 continue
+        if line.startswith("注册资本及入账：") and "；本次增资款中" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            registered_capital, booking = body.split("；", 1)
+            cap_match = re.search(r"签署日公司注册资本人民币?([0-9][0-9,]*(?:\.\d+)?)元", registered_capital)
+            if cap_match:
+                normalized_lines.append("签署日注册资本：人民币" + cap_match.group(1) + "元。")
+            else:
+                normalized_lines.append("签署日注册资本：" + registered_capital.rstrip("。") + "。")
+            normalized_lines.append("增资款入账：" + booking.rstrip("。") + "。")
+            changed = True
+            continue
         normalized_lines.append(line)
     lines = normalized_lines
     for index, line in enumerate(lines):
@@ -6813,13 +6847,30 @@ def normalize_transaction_capital_change_line(draft_content: str, extracted_fact
 def normalize_transaction_signing_parties_line(draft_content: str) -> tuple[str, bool]:
     lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
     changed = False
-    for index, line in enumerate(lines):
+    normalized_lines: list[str] = []
+    for line in lines:
         if line.startswith("签署方：") and "甲方、现有股东、创始股东及其他各方" in line:
-            lines[index] = "签署方：由本轮投资方（甲方）、现有股东、公司及创始股东等共同签署。"
+            normalized_lines.append("签署方：由本轮投资方（甲方）、现有股东、公司及创始股东等共同签署。")
             changed = True
+            continue
+        if line.startswith("签署方及股权结构：") and "；完成后" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            signing, cap_table = body.split("；完成后", 1)
+            normalized_lines.append("签署方：" + signing.rstrip("。") + "。")
+            normalized_lines.append("新增持股：本次增资完成后" + cap_table.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("签署方及股东结构：") and "；签署日" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            signing, shareholder = body.split("；签署日", 1)
+            normalized_lines.append("签署方：" + signing.rstrip("。") + "。")
+            normalized_lines.append("签署日股东结构：签署日" + shareholder.rstrip("。") + "。")
+            changed = True
+            continue
+        normalized_lines.append(line)
     if not changed:
         return draft_content, False
-    return "\n".join(lines), True
+    return "\n".join(normalized_lines), True
 
 
 def ensure_transaction_core_terms_after_polish(item: dict[str, Any]) -> None:

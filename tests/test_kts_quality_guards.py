@@ -3952,7 +3952,37 @@ def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
                 ]
             },
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "spa.transaction_arrangement",
+            "draft_content": (
+                "交易安排：本次增资投前估值为人民币10亿元，整体融资额为人民币170,000,000元；"
+                "增资前注册资本为人民币7,950,852.25元，完成后为人民币9,302,497.12元。\n"
+                "签署方及股权结构：《[公司或组织_P]增资协议》由甲方、[公司或组织_AU]、创始股东[人名_B]等共同订立；"
+                "完成后[公司或组织_L]持股2.56%、[公司或组织_V]持股0.85%。"
+            ),
+            "extracted_facts": {
+                "field_values": [
+                    {
+                        "key": "capital_change",
+                        "label": "注册资本变化",
+                        "status": "found",
+                        "value": "本次增资前注册资本为人民币7,950,852.25元；本次增资完成后注册资本为人民币9,302,497.12元。",
+                    }
+                ]
+            },
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.transaction_arrangement",
+            "draft_content": (
+                "交易安排：公司投前估值为人民币4.5亿元；本轮融资额为人民币172,019,700元。\n"
+                "注册资本及入账：签署日公司注册资本人民币136,363.63元；本次增资款中人民币52,128元计入注册资本，余额计入资本公积。\n"
+                "签署方及股东结构：增资协议由投资方、现有股东、公司及创始股东等相关方签署；签署日工商登记层面现有股东合计持股100%。"
+            ),
+            "extracted_facts": {},
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3964,6 +3994,26 @@ def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
     assert "注册资本变化：" not in draft
     assert "新增[公司或组织_L]持股" not in draft
     assert "签署方：由本轮投资方（甲方）、现有股东、公司及创始股东等共同签署。" in draft
+
+    draft = items[1]["draft_content"]
+    assert "估值及融资额：本次增资投前估值为人民币10亿元，整体融资额为人民币170,000,000元。" in draft
+    assert "签署日注册资本：人民币7,950,852.25元。" in draft
+    assert "本次新增注册资本：人民币1,351,644.87元。" in draft
+    assert "增资后注册资本：人民币9,302,497.12元。" in draft
+    assert "签署方：《[公司或组织_P]增资协议》由甲方、[公司或组织_AU]、创始股东[人名_B]等共同订立。" in draft
+    assert "新增持股：本次增资完成后[公司或组织_L]持股2.56%、[公司或组织_V]持股0.85%。" in draft
+    assert "交易安排：" not in draft
+    assert "签署方及股权结构：" not in draft
+
+    draft = items[2]["draft_content"]
+    assert "投前估值：公司投前估值为人民币4.5亿元。" in draft
+    assert "融资额：本轮融资额为人民币172,019,700元。" in draft
+    assert "签署日注册资本：人民币136,363.63元。" in draft
+    assert "增资款入账：本次增资款中人民币52,128元计入注册资本，余额计入资本公积。" in draft
+    assert "签署方：增资协议由投资方、现有股东、公司及创始股东等相关方签署。" in draft
+    assert "签署日股东结构：签署日工商登记层面现有股东合计持股100%。" in draft
+    assert "注册资本及入账：" not in draft
+    assert "签署方及股东结构：" not in draft
 
 
 def test_post_polish_splits_liability_subjects_events_and_exceptions() -> None:
