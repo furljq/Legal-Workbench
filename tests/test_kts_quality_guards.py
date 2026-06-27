@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -21,6 +22,9 @@ from kts_extractor import (  # noqa: E402
     validate_polished_content,
 )
 from kts_docx_exporter import export_items  # noqa: E402
+
+
+BARE_ORG_PLACEHOLDER_RE = re.compile(r"(?<![\[或])组织_[A-Z]{1,3}(?![\]A-Za-z])")
 
 
 def test_anti_dilution_price_reset_guard() -> None:
@@ -2209,6 +2213,9 @@ def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
                 "系统根据全篇关键词补充未见明确约定事项。",
                 "固定优先分红为absence_ok字段，证据未见明确约定，已作为缺失检查项提示。",
                 "工商变更未完成解除条款中的具体时限未在候选证据中体现。",
+                "候选摘录中“每一轮次多数”的具体持股比例定义被截断，建议核对完整条款确认多数门槛。",
+                "第8条批准机制的具体机构、表决门槛及是否需投资方同意未在证据窗口体现，建议核对完整第8条。",
+                "回购价格公式中的I虽可结合上下文理解为回购权人支付成本，但证据窗口未完整展示定义，建议核对原文第9.3条完整公式定义。",
                 "需律师重点复核工商变更登记作为付款先决条件的交易顺序。",
                 "子公司董事会一致安排不明确，已作为需确认事项提示。",
             ],
@@ -2224,6 +2231,9 @@ def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
 
     assert items[0]["review_notes"] == [
         "工商变更未完成解除条款中的具体时限未在材料中体现。",
+        "“每一轮次多数”的具体持股比例定义未完整体现，需确认多数门槛。",
+        "第8条批准机制的具体机构、表决门槛及是否需投资方同意未完整体现，需确认第8条。",
+        "回购价格公式中的I虽可结合上下文理解为回购权人支付成本，但未完整体现定义，需确认第9.3条公式定义。",
         "需律师重点复核工商变更登记作为付款先决条件的交易顺序。",
         "需确认子公司董事会结构是否与公司董事会保持一致。",
     ]
@@ -2502,8 +2512,12 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
             "taxonomy_id": "sha.anti_dilution",
             "draft_content": (
                 "触发及方式：交割日后公司发生新融资，且新增股东取得新增注册资本的新认购价格低于反稀释权人原始认购价格的，"
-                "反稀释权人可要求按广义加权平均方式调整原始认购价格，公式为P2=P1*(A+B)/(A+C)。"
+                "反稀释权人可要求按广义加权平均方式调整原始认购价格，公式为P2=P1*(A+B)/(A+C)。\n"
+                "替代安排：无法实施时，反稀释权人可选择由组织_C无偿或象征性价格转让股权，或由公司现金补偿并用于对公司增资。"
             ),
+            "source_evidence": [
+                "无法实施时，反稀释权人可选择由[[公司或组织_AE]或组织_C]无偿或象征性价格转让股权。",
+            ],
             "review_notes": [],
         },
         {
@@ -2512,6 +2526,9 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
                 "投资方优先：公司批准分配利润时，组织_H和组织_C应采取必要行动，确保组织_K优先于其他股东取得按两种方式计算金额中较高者确定的优先分红额；"
                 "如因法律限制不能实现，获益股东应向受损组织_K让与相应比例金额。"
             ),
+            "source_evidence": [
+                "公司批准分配利润时，[[公司或组织_AE]或组织_H]和[[公司或组织_AE]或组织_C]应采取必要行动，确保[[公司或组织_AE]或组织_K]优先取得优先分红额。",
+            ],
             "review_notes": [],
         },
     ]
@@ -2531,8 +2548,15 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
     assert "优先清算额：" in items[3]["draft_content"]
     assert "触发情形：" in items[4]["draft_content"]
     assert "调整方式：" in items[4]["draft_content"]
+    assert not BARE_ORG_PLACEHOLDER_RE.search(items[4]["draft_content"])
+    assert "[[公司或组织_AE]或组织_C]" in items[4]["draft_content"]
+    assert "分红协助义务：" in items[5]["draft_content"]
     assert "优先分红：" in items[5]["draft_content"]
     assert "法律限制补偿：" in items[5]["draft_content"]
+    assert not BARE_ORG_PLACEHOLDER_RE.search(items[5]["draft_content"])
+    assert "[[公司或组织_AE]或组织_H]" in items[5]["draft_content"]
+    assert "[[公司或组织_AE]或组织_C]" in items[5]["draft_content"]
+    assert "[[公司或组织_AE]或组织_K]" in items[5]["draft_content"]
 
 
 def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:

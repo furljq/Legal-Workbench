@@ -5783,6 +5783,78 @@ def normalize_anti_dilution_subpoints(item: dict[str, Any]) -> None:
         item["draft_content"] = "\n".join(line for line in lines if line)
 
 
+NESTED_ORG_PLACEHOLDER_RE = re.compile(r"\[\[公司或组织_[A-Z]{1,3}\]或(?P<short>组织_[A-Z]{1,3})\]")
+BARE_ORG_PLACEHOLDER_RE = re.compile(r"(?<![\[或])组织_[A-Z]{1,3}(?![\]A-Za-z])")
+
+
+def nested_org_placeholder_replacements(item: dict[str, Any]) -> dict[str, str]:
+    serialized = json.dumps(item, ensure_ascii=False, default=str)
+    replacements: dict[str, str] = {}
+    conflicts: set[str] = set()
+    for match in NESTED_ORG_PLACEHOLDER_RE.finditer(serialized):
+        short = match.group("short")
+        full = match.group(0)
+        existing = replacements.get(short)
+        if existing and existing != full:
+            conflicts.add(short)
+            continue
+        replacements[short] = full
+    for short in conflicts:
+        replacements.pop(short, None)
+    return replacements
+
+
+def repair_nested_org_placeholders_in_text(text: str, replacements: dict[str, str]) -> str:
+    if not text or not replacements:
+        return text
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        return replacements.get(token, token)
+
+    return BARE_ORG_PLACEHOLDER_RE.sub(replace, text)
+
+
+def repair_bare_nested_org_placeholders(item: dict[str, Any]) -> None:
+    replacements = nested_org_placeholder_replacements(item)
+    if not replacements:
+        return
+    draft_content = str(item.get("draft_content") or "")
+    repaired = repair_nested_org_placeholders_in_text(draft_content, replacements)
+    if repaired != draft_content:
+        item["draft_content"] = repaired
+
+    for key in ("review_notes", "lawyer_notes", "missing_or_unclear"):
+        values = normalize_string_list(item.get(key))
+        repaired_values = [
+            repair_nested_org_placeholders_in_text(value, replacements) for value in values
+        ]
+        if repaired_values != values:
+            item[key] = repaired_values
+
+
+def split_dividend_priority_line(line: str) -> list[str] | None:
+    if not line.startswith("优先分红："):
+        return None
+    body = line.split("：", 1)[1].strip().rstrip("。")
+    if "应采取必要行动，确保" not in body or "优先于其他股东取得" not in body:
+        return None
+    if "时，" not in body:
+        return None
+    condition, rest = body.split("时，", 1)
+    helpers, rest = rest.split("应采取必要行动，确保", 1)
+    beneficiary, amount = rest.split("优先于其他股东取得", 1)
+    helpers = helpers.strip("，。；; ")
+    beneficiary = beneficiary.strip("，。；; ")
+    amount = amount.strip("，。；; ")
+    if not helpers or not beneficiary or not amount:
+        return None
+    return [
+        f"分红协助义务：{condition}时，{helpers}应采取必要行动。",
+        f"优先分红：{beneficiary}优先于其他股东取得{amount}。",
+    ]
+
+
 def normalize_dividend_subpoints(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -5794,8 +5866,15 @@ def normalize_dividend_subpoints(item: dict[str, Any]) -> None:
         if stripped.startswith("投资方优先：") and "；如因法律限制" in stripped:
             body = stripped.split("：", 1)[1]
             priority, fallback = body.split("；如因法律限制", 1)
-            lines.append("优先分红：" + priority.rstrip("。") + "。")
+            priority_line = "优先分红：" + priority.rstrip("。") + "。"
+            split_priority = split_dividend_priority_line(priority_line)
+            lines.extend(split_priority or [priority_line])
             lines.append("法律限制补偿：如因法律限制" + fallback.rstrip("。") + "。")
+            changed = True
+            continue
+        split_priority = split_dividend_priority_line(stripped)
+        if split_priority:
+            lines.extend(split_priority)
             changed = True
             continue
         lines.append(stripped)
@@ -5878,6 +5957,22 @@ def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
             "子公司董事会一致安排不明确，已作为需确认事项提示。",
             "需确认子公司董事会结构是否与公司董事会保持一致。",
         )
+        note = note.replace("候选摘录中", "")
+        note = note.replace("候选证据", "材料")
+        note = note.replace("证据片段不完整，", "")
+        note = note.replace("定义被截断", "定义未完整体现")
+        note = note.replace("未在证据窗口体现", "未完整体现")
+        note = note.replace("证据窗口未完整展示", "未完整体现")
+        note = note.replace("证据窗口", "材料")
+        note = note.replace("证据未完整展示", "未完整体现")
+        note = note.replace("建议核对完整条款确认", "需确认")
+        note = note.replace("建议核对完整第", "需确认第")
+        note = note.replace("建议核对原文", "需确认")
+        note = note.replace("核对原文", "确认")
+        note = note.replace("原文第", "第")
+        note = note.replace("完整公式定义", "公式定义")
+        note = note.replace("完整条款", "相关条款")
+        note = note.replace("完整文本", "相关文本")
         if note.startswith(nonblocking_prefixes):
             continue
         if any(
@@ -5912,7 +6007,6 @@ def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
             marker in note for marker in ("未纳入", "不直接支持", "非", "用于识别")
         ):
             continue
-        note = note.replace("候选证据", "材料")
         cleaned.append(note)
     return cleaned
 
@@ -6005,6 +6099,7 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         item["lawyer_notes"] = remove_nonblocking_workpaper_review_notes(item.get("lawyer_notes", []))
         item["missing_or_unclear"] = remove_nonblocking_workpaper_review_notes(item.get("missing_or_unclear", []))
         remove_duplicate_missing_notes(item)
+        repair_bare_nested_org_placeholders(item)
 
 
 def normalize_absence_checks(value: Any) -> list[dict[str, Any]]:
