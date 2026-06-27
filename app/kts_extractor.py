@@ -3007,6 +3007,18 @@ def normalize_transfer_restriction_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith("受限转让：") and any(marker in stripped for marker in ("乙方四", "乙方五", "丁方")):
+            lines.append("受限转让：合格上市前，特定现有股东/创始方或持股平台向第三方转让公司股权或接受购买要约，须经全体投资人同意。")
+            changed = True
+            continue
+        if stripped.startswith("适用前提：") and "上述转让" in stripped:
+            lines.append("适用前提：受限转让仍须遵守增资协议及相关转股程序。")
+            changed = True
+            continue
+        if stripped.startswith("同意门槛：上述转让或处分"):
+            lines.append(stripped.replace("同意门槛：上述转让或处分", "同意门槛：受限转让或处分", 1))
+            changed = True
+            continue
         if stripped.startswith("受限主体及期间：") and "，任何" in stripped and "，未经同意不得" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             period, rest = body.split("，任何", 1)

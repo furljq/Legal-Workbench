@@ -2792,6 +2792,34 @@ def test_post_polish_compacts_rofr_tag_formula_language() -> None:
     assert "一般共售数量按" not in items[1]["draft_content"]
 
 
+def test_post_polish_compacts_transfer_restriction_internal_references() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.transfer_restriction",
+            "draft_content": (
+                "受限转让：合格上市前，乙方四、乙方五、乙方六或丁方向第三方转让公司股权或接受购买要约，须经全体投资人同意。\n"
+                "适用前提：上述转让另以遵守增资协议及第3.2条为前提。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.transfer_restriction",
+            "draft_content": "同意门槛：上述转让或处分须经[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。",
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["draft_content"] == (
+        "受限转让：合格上市前，特定现有股东/创始方或持股平台向第三方转让公司股权或接受购买要约，须经全体投资人同意。\n"
+        "适用前提：受限转让仍须遵守增资协议及相关转股程序。"
+    )
+    assert items[1]["draft_content"] == "同意门槛：受限转让或处分须经[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。"
+    assert "乙方四" not in items[0]["draft_content"]
+    assert "上述转让" not in items[0]["draft_content"] + items[1]["draft_content"]
+
+
 def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
     items = [
         {
@@ -3009,6 +3037,7 @@ if __name__ == "__main__":
     test_post_polish_compacts_termination_kts_language()
     test_post_polish_compacts_preemptive_right_kts_language()
     test_post_polish_compacts_rofr_tag_formula_language()
+    test_post_polish_compacts_transfer_restriction_internal_references()
     test_post_polish_normalizes_transaction_capital_and_signing_lines()
     test_post_polish_keeps_export_lines_readable_for_dense_kts_items()
     test_post_polish_splits_inline_notes_and_liquidation_special_arrangements()
