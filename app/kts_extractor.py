@@ -3362,7 +3362,7 @@ def guard_shareholder_dual_majority_matters(
     draft_content = replace_or_insert_kts_line(
         draft_content,
         "保护事项：第(1)项覆盖修改投资人权利或设置不利限制；第(2)-(12)项覆盖章程修改、增减资及稀释性发行、减资回购注销、清算分红、重组/控制权变更、上市方案、董事会构成、主营业务重大变化、发行数字资产及其他重大事项。",
-        ("保护事项", "多数事项", "特定/每轮投资人同意事项"),
+        ("保护事项", "多数事项", "特定/每轮投资人同意事项", "投资人权利事项", "重大保护事项"),
         1,
     )
     if "[[公司或组织_AE]或组织_G]" in combined_candidate_text(candidates) and "[商标品牌_G]" in combined_candidate_text(candidates):
@@ -3449,8 +3449,20 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
             changed = True
             continue
         lines.append(stripped)
-    if changed:
-        item["draft_content"] = "\n".join(lines)
+
+    deduped: list[str] = []
+    seen_labels: set[str] = set()
+    for line in lines:
+        label = line.split("：", 1)[0] if "：" in line else ""
+        if label in {"投资人权利事项", "重大保护事项"}:
+            if label in seen_labels:
+                changed = True
+                continue
+            seen_labels.add(label)
+        deduped.append(line)
+
+    if changed or deduped != lines:
+        item["draft_content"] = "\n".join(deduped)
 
 
 def has_liquidation_event_definition(candidates: list[dict[str, Any]]) -> bool:
@@ -5400,6 +5412,12 @@ def normalize_liability_subpoints(item: dict[str, Any]) -> None:
     for line in draft_content.splitlines():
         stripped = line.strip()
         label, body = stripped.split("：", 1) if "：" in stripped else ("", "")
+        if label == "公司/创始人连带责任" and any(
+            marker in body for marker in ("仅就自身行为负责", "不为其他", "不承担连带")
+        ):
+            lines.append("责任独立性：" + body.rstrip("。") + "。")
+            changed = True
+            continue
         if label == "一般赔偿" and "；书面豁免情形除外" in body:
             indemnity, rest = body.split("；书面豁免情形除外", 1)
             lines.append("违约赔偿：" + indemnity.rstrip("。") + "。")
@@ -5412,7 +5430,12 @@ def normalize_liability_subpoints(item: dict[str, Any]) -> None:
         if label == "连带责任" and "；" in body:
             parts = [part.strip("。；; ") for part in re.split(r"[；;]", body) if part.strip("。；; ")]
             if len(parts) >= 2:
-                lines.append("公司/创始人连带责任：" + parts[0].rstrip("。") + "。")
+                first_label = (
+                    "责任独立性"
+                    if any(marker in parts[0] for marker in ("仅就自身行为负责", "不为其他", "不承担连带"))
+                    else "公司/创始人连带责任"
+                )
+                lines.append(first_label + "：" + parts[0].rstrip("。") + "。")
                 second = parts[1]
                 if "投资方付款义务分别且不连带" in second:
                     second = second.split("投资方付款义务分别且不连带", 1)[0]

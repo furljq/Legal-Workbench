@@ -1712,6 +1712,17 @@ def test_shareholder_reserved_guard_resolves_dual_majority_mechanism() -> None:
     assert "未完整显示" not in extraction["draft_content"]
     assert not extraction["review_notes"]
 
+    item = {"taxonomy_id": "sha.shareholder_reserved_matters", **extraction}
+    apply_post_polish_quality_guards([item])
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "sha.shareholder_reserved_matters"},
+        item,
+        candidates,
+    )
+    apply_post_polish_quality_guards([item])
+    assert item["draft_content"].count("投资人权利事项：") == 1
+    assert item["draft_content"].count("重大保护事项：") == 1
+
 
 def test_shareholder_reserved_guard_removes_client_veto_practicality_blocker() -> None:
     item = {
@@ -2431,6 +2442,8 @@ def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:
             "draft_content": (
                 "一般赔偿：[公司或组织_AF]及[[公司或组织_AF]或组织_AB]就违反协议约定向投资方及其关联方等受偿方赔偿，使其免受损害；"
                 "书面豁免情形除外。任何一方违约时，其他方亦可要求实际且全面履行。\n"
+                "连带责任：各增资人仅就自身行为负责，不为其他增资人承担连带保证或连带赔偿责任；"
+                "各公司方在协议项下责任和义务为共同且连带；投资方付款义务分别且不连带。\n"
                 "特殊赔偿：未如实反映的现实或潜在债务由[[公司或组织_AF]或组织_AB]承担偿还及赔偿；"
                 "架构调整导致投资方未来退出税基成本低于增资款的，[[公司或组织_AF]或组织_AA]连带补偿税赋成本增加，投资方未严格配合导致损失的除外。"
             ),
@@ -2484,6 +2497,8 @@ def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:
     assert all(len(line) <= 95 for line in exported_lines)
     assert "主要投资方1：" in items[0]["draft_content"]
     assert "未披露债务：" in items[1]["draft_content"]
+    assert "责任独立性：" in items[1]["draft_content"]
+    assert "公司/创始人连带责任：各增资人仅就自身行为负责" not in items[1]["draft_content"]
     assert "限制期间：" in items[2]["draft_content"]
     assert "清偿顺位：" in items[3]["draft_content"]
     assert "后轮经济权益例外：" in items[4]["draft_content"]
