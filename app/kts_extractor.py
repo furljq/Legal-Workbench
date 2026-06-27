@@ -2844,7 +2844,7 @@ def ensure_representations_core_lines(draft_content: str) -> str:
     inserted_info = False
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith(("签约及出资合法性", "持股及资料真实性", "增资款及持股合法性")):
+        if stripped.startswith(("签约及出资合法性", "签约及持股合法性", "持股及资料真实性", "增资款及持股合法性")):
             if not inserted_core:
                 new_lines.append(core_line)
                 inserted_core = True
@@ -2876,7 +2876,9 @@ def guard_representations_core_fields(
         return
 
     fixed = False
-    if has_representations_authority_evidence(candidates):
+    has_authority_evidence = has_representations_authority_evidence(candidates)
+    has_capital_legality_evidence = has_representations_capital_legality_evidence(candidates)
+    if has_authority_evidence:
         fixed = upsert_extracted_field(
             extracted_facts,
             "authority",
@@ -2885,7 +2887,7 @@ def guard_representations_core_fields(
             candidate_ids_with_text_markers(candidates, ("4.6", "签约授权")),
             "系统根据第4.6条签约授权补足。",
         ) or fixed
-    if has_representations_capital_legality_evidence(candidates):
+    if has_capital_legality_evidence:
         fixed = upsert_extracted_field(
             extracted_facts,
             "capital_legality",
@@ -2894,7 +2896,7 @@ def guard_representations_core_fields(
             candidate_ids_with_text_markers(candidates, ("4.7", "增资款")),
             "系统根据第4.7条增资款足额且合法及第4.8条真实性保证补足。",
         ) or fixed
-    if not fixed:
+    if not fixed and not (has_authority_evidence and has_capital_legality_evidence):
         return
     extraction["draft_content"] = ensure_representations_core_lines(str(extraction.get("draft_content") or ""))
     extraction["review_notes"] = remove_stale_representations_notes(extraction.get("review_notes", []))
@@ -4786,10 +4788,17 @@ def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
         "已剔除",
         "摘要已",
         "当前摘要已",
+        "本摘要已",
         "已完成",
         "已将",
+        "已仅",
     )
-    return [note for note in normalized if not note.startswith(nonblocking_prefixes)]
+    return [
+        note
+        for note in normalized
+        if not note.startswith(nonblocking_prefixes)
+        and "已作为缺失检查结论处理" not in note
+    ]
 
 
 def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:

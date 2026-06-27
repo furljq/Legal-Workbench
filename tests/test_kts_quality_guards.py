@@ -1312,6 +1312,59 @@ def test_representations_core_guard_fills_authority_and_capital_legality() -> No
     assert extraction["draft_content"].count("资料真实准确：") == 1
 
 
+def test_representations_core_guard_deduplicates_existing_legality_lines() -> None:
+    extraction = {
+        "status": "drafted",
+        "draft_content": (
+            "签约及出资合法性：各方具备签署、履行交易文件的法律能力及授权；投资方增资款足额且来源合法。\n"
+            "资料真实准确：公司方提供资料在重大方面真实、准确、完整。\n"
+            "签约及持股合法性：各方具备签署、履行交易文件的法律权利、能力及授权；相关方确认不存在代持、委托持股或禁止持股情形。\n"
+            "过渡期限制：过渡期内公司应按过往惯例正常经营。"
+        ),
+        "extracted_facts": {
+            "field_values": [
+                {
+                    "key": "authority",
+                    "label": "签署授权和法律能力",
+                    "status": "found",
+                    "value": "各方具有签署授权和法律能力。",
+                    "note": "模型已抽取。",
+                },
+                {
+                    "key": "capital_legality",
+                    "label": "增资款及持股合法性",
+                    "status": "found",
+                    "value": "投资方资金来源合法，相关主体不存在代持。",
+                    "note": "模型已抽取。",
+                },
+            ]
+        },
+        "review_notes": ["本摘要已排除违约责任等非本KTS事项内容。"],
+    }
+    candidates = [
+        {
+            "candidate_id": "spa.representations_warranties-C04",
+            "text": (
+                "4.6 签约授权。各方均具有完全法律权利、能力以签署和履行本协议之全部约定。"
+                "各方已经取得了签署本次增资交易文件并履行义务的所有权利或授权。"
+                "4.7 投资方增资款足额且合法，资金来源符合国家法律、法规的相关要求。"
+                "4.8 相关主体不存在代持或委托持股，不存在禁止持股情况。"
+            ),
+        }
+    ]
+
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "spa.representations_warranties"},
+        extraction,
+        candidates,
+    )
+    apply_post_polish_quality_guards([{"taxonomy_id": "spa.representations_warranties", **extraction}])
+
+    assert extraction["draft_content"].count("签约及出资合法性：") == 1
+    assert "签约及持股合法性：" not in extraction["draft_content"]
+    assert extraction["draft_content"].count("资料真实准确：") == 1
+
+
 def test_shareholder_reserved_guard_resolves_ap_required_matters() -> None:
     extraction = {
         "status": "needs_review",
@@ -1743,6 +1796,9 @@ def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
             "draft_content": "交割安排：按协议约定完成。",
             "review_notes": [
                 "已剔除解除、违约责任及费用类内容，仅保留交割及工商变更安排。",
+                "本摘要已排除违约赔偿、解除及商标使用等非本KTS事项内容。",
+                "已仅基于high和medium证据形成摘要；C02未纳入当前摘要。",
+                "未见过渡期限制事项的，已作为缺失检查结论处理。",
                 "需律师重点复核工商变更登记作为付款先决条件的交易顺序。",
             ],
         }
@@ -1778,7 +1834,10 @@ if __name__ == "__main__":
     test_rofr_tag_guard_resolves_ap_ak_alias()
     test_rofr_tag_guard_fills_tag_along_terms()
     test_representations_core_guard_fills_authority_and_capital_legality()
+    test_representations_core_guard_deduplicates_existing_legality_lines()
     test_shareholder_reserved_guard_resolves_ap_required_matters()
+    test_shareholder_reserved_guard_resolves_dual_majority_mechanism()
+    test_shareholder_reserved_guard_removes_client_veto_practicality_blocker()
     test_liquidation_preference_guard_fills_events_and_new_project()
     test_post_polish_liquidation_review_focuses_cross_reference_issue()
     test_founder_obligations_guard_completes_service_and_non_compete_summary()
