@@ -4049,41 +4049,139 @@ def ensure_required_draft_content(items: list[dict[str, Any]]) -> None:
         }
 
 
+def format_decimal_amount(amount: Decimal) -> str:
+    if amount == amount.to_integral_value():
+        return f"{amount:,.0f}"
+    text = f"{amount:,.2f}".rstrip("0").rstrip(".")
+    return text
+
+
+def parse_transaction_investor_amount_value(value: str) -> list[tuple[str, Decimal]]:
+    rows: list[tuple[str, Decimal]] = []
+    for part in re.split(r"[；;]\s*", value.rstrip("。")):
+        text = part.strip()
+        if not text:
+            continue
+        match = re.search(r"(?P<investor>.+?)人民币(?P<amount>[0-9][0-9,]*(?:\.\d+)?)元", text)
+        if not match:
+            continue
+        amount = decimal_from_amount(match.group("amount"))
+        if amount is None:
+            continue
+        rows.append((match.group("investor").strip(" ：:"), amount))
+    return rows
+
+
+def compact_transaction_investor_line(extracted_facts: dict[str, Any]) -> str:
+    value = extracted_field_value(extracted_facts, "investors_and_amounts")
+    rows = parse_transaction_investor_amount_value(value)
+    if len(rows) <= 3:
+        return ""
+    total = sum((amount for _investor, amount in rows), Decimal("0"))
+    ranked = sorted(rows, key=lambda row: row[1], reverse=True)
+    top_rows = ranked[:3]
+    rest_total = sum((amount for _investor, amount in ranked[3:]), Decimal("0"))
+    top_text = "、".join(
+        f"{investor}人民币{format_decimal_amount(amount)}元" for investor, amount in top_rows
+    )
+    return (
+        f"投资方明细：共{len(rows)}名投资方，合计人民币{format_decimal_amount(total)}元；"
+        f"主要包括{top_text}，其余{len(rows) - len(top_rows)}名合计人民币{format_decimal_amount(rest_total)}元。"
+    )
+
+
+def concise_transaction_valuation(value: str) -> str:
+    text = value.strip().rstrip("。")
+    if not text:
+        return ""
+    parts = [
+        part.strip()
+        for part in re.split(r"[；;]", text)
+        if part.strip()
+        and "候选证据" not in part
+        and not ("未" in part and any(term in part for term in ("投前", "投后", "估值")))
+    ]
+    if not parts:
+        return ""
+    return parts[0].rstrip("。") + "。"
+
+
+def concise_transaction_money(value: str) -> str:
+    text = value.strip()
+    match = re.search(r"人民币\s*([0-9][0-9,]*(?:\.\d+)?)\s*元", text)
+    if match:
+        return f"人民币{match.group(1)}元。"
+    return text
+
+
 def ensure_transaction_core_terms_after_polish(item: dict[str, Any]) -> None:
     if str(item.get("taxonomy_id") or "") != "spa.transaction_arrangement":
         return
     extracted_facts = item.get("extracted_facts", {})
     if not isinstance(extracted_facts, dict):
         return
-    valuation = extracted_field_value(extracted_facts, "valuation")
-    financing_amount = extracted_field_value(extracted_facts, "financing_amount")
+    valuation = concise_transaction_valuation(extracted_field_value(extracted_facts, "valuation"))
+    financing_amount = concise_transaction_money(extracted_field_value(extracted_facts, "financing_amount"))
     capital_change = extracted_field_value(extracted_facts, "capital_change")
-    if not valuation and not financing_amount:
-        return
-
     draft_content = str(item.get("draft_content") or "")
+    draft_content = draft_content.replace("候选证据未见", "未见")
+    draft_content = re.sub(r"；?候选证据[^。；;\n]*(?:。|；|;)?", "。", draft_content)
+    draft_content = re.sub(
+        r"本轮融资额为(?:本次增资)?投资方合计缴付(人民币[0-9][0-9,]*(?:\.\d+)?元)",
+        r"本轮融资额为\1",
+        draft_content,
+    )
+    draft_content = draft_content.replace("。本轮融资额", "；本轮融资额")
     compact_draft = re.sub(r"\s+", "", draft_content)
     missing_valuation = bool(valuation) and "估值" not in compact_draft
     financing_number = re.sub(r"\D", "", financing_amount)
     missing_financing = bool(financing_number) and financing_number not in re.sub(r"\D", "", compact_draft)
-    if not missing_valuation and not missing_financing:
-        return
+    changed = draft_content != str(item.get("draft_content") or "")
 
-    parts: list[str] = []
-    if valuation:
-        parts.append("公司" + valuation.rstrip("。"))
-    if financing_amount:
-        amount = financing_amount.rstrip("。")
-        parts.append(f"本轮融资额为{amount}")
-    if capital_change:
-        parts.append(capital_change.rstrip("。"))
-    core_line = "交易安排：" + "；".join(parts) + "。"
-    item["draft_content"] = replace_or_insert_kts_line(
-        draft_content,
-        core_line,
-        ("交易安排", "本次交易", "增资安排"),
-        0,
+    if missing_valuation or missing_financing:
+        parts: list[str] = []
+        if valuation:
+            parts.append("公司" + valuation.rstrip("。"))
+        if financing_amount:
+            amount = financing_amount.rstrip("。")
+            parts.append(f"本轮融资额为{amount}")
+        if capital_change and not any(term in compact_draft for term in ("注册资本", "股权结构")):
+            parts.append(capital_change.rstrip("。"))
+        core_line = "交易安排：" + "；".join(parts) + "。"
+        draft_content = replace_or_insert_kts_line(
+            draft_content,
+            core_line,
+            ("交易安排", "本次交易", "增资安排"),
+            0,
+        )
+        changed = True
+
+    lines = [line for line in draft_content.splitlines() if line.strip()]
+    has_separate_capital_line = any(
+        line.strip().startswith(("注册资本", "股权结构", "注册资本及")) for line in lines[1:]
     )
+    if valuation and financing_amount and has_separate_capital_line:
+        concise_core = f"交易安排：公司{valuation.rstrip('。')}；本轮融资额为{financing_amount.rstrip('。')}。"
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith(("交易安排", "本次交易", "增资安排")) and "注册资本" in stripped:
+                lines[index] = concise_core
+                draft_content = "\n".join(lines)
+                changed = True
+                break
+
+    compact_investor_line = compact_transaction_investor_line(extracted_facts)
+    if compact_investor_line:
+        lines = [line for line in draft_content.splitlines() if line.strip()]
+        for index, line in enumerate(lines):
+            if line.strip().startswith(("投资方明细", "投资方及金额")) and len(line) > 160:
+                lines[index] = compact_investor_line
+                draft_content = "\n".join(lines)
+                changed = True
+                break
+
+    if changed:
+        item["draft_content"] = draft_content
 
 
 def refresh_final_statuses(items: list[dict[str, Any]]) -> None:

@@ -1048,12 +1048,23 @@ def test_post_polish_guards_remove_soft_hard_markers() -> None:
     items = [
         {
             "taxonomy_id": "spa.transaction_arrangement",
-            "draft_content": "交易安排：投资方拟以货币方式增资。\n投资方明细：A人民币50,000,000元。",
+            "draft_content": (
+                "交易安排：投资方拟以货币方式增资。\n"
+                "注册资本及结构：增资后注册资本为人民币9,302,497.12元。\n"
+                "投资方明细：[公司或组织_A]：人民币50,000,000元；[公司或组织_B]：人民币25,000,000元；[公司或组织_C]：人民币10,000,000元；[公司或组织_D]：人民币5,000,000元；[公司或组织_E]：人民币4,000,000元；[公司或组织_F]：人民币3,000,000元。\n"
+                "【注：候选证据未见ESOP来源安排。】"
+            ),
             "extracted_facts": {
                 "field_values": [
-                    {"key": "valuation", "label": "投前/投后估值", "status": "found", "value": "投前估值为10亿元。"},
-                    {"key": "financing_amount", "label": "整体融资额", "status": "found", "value": "人民币170,000,000元。"},
+                    {"key": "valuation", "label": "投前/投后估值", "status": "found", "value": "投前估值为10亿元；候选证据未明确列示投后估值。"},
+                    {"key": "financing_amount", "label": "整体融资额", "status": "found", "value": "本次增资投资方合计缴付人民币170,000,000元。"},
                     {"key": "capital_change", "label": "注册资本变化", "status": "found", "value": "注册资本由人民币7,950,852.25元增加至人民币9,302,497.12元。"},
+                    {
+                        "key": "investors_and_amounts",
+                        "label": "投资方及投资金额",
+                        "status": "found",
+                        "value": "[公司或组织_A]人民币50,000,000元；[公司或组织_B]人民币25,000,000元；[公司或组织_C]人民币10,000,000元；[公司或组织_D]人民币5,000,000元；[公司或组织_E]人民币4,000,000元；[公司或组织_F]人民币3,000,000元。",
+                    },
                 ]
             },
             "review_notes": [],
@@ -1083,6 +1094,10 @@ def test_post_polish_guards_remove_soft_hard_markers() -> None:
     assert "未完整显示" not in combined
     assert "投前估值为10亿元" in combined
     assert "人民币170,000,000元" in combined
+    assert "交易安排：公司投前估值为10亿元；本轮融资额为人民币170,000,000元。" in combined
+    assert "共6名投资方，合计人民币97,000,000元" in combined
+    assert "主要包括[公司或组织_A]人民币50,000,000元、[公司或组织_B]人民币25,000,000元、[公司或组织_C]人民币10,000,000元" in combined
+    assert "候选证据" not in combined
     assert "【注：两项10%额度是否累计适用、审批机构口径可结合协议定义确认。】" in combined
     assert "【注：第4.0.7条10%违约金可能与逾期违约金并行适用。】" in combined
     assert "【注：未见控制权变更全额共售安排。】" in combined
