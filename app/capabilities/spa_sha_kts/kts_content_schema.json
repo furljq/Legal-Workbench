@@ -251,14 +251,15 @@
       "lawyer_note_prompts": ["如后续ESOP增发额度较高或条件特殊，应提示客户确认。"]
     },
     "sha.redemption": {
-      "drafting_guidance": "必须写清触发事项、义务人、价格公式、支付期限、逾期责任和顺位。若回购条款只写“触发事件”，应向前查找同一条/前置条款中“违反本条”“第2.3条履行回购义务”“业务行为道德合规/廉洁/反腐败”等表述，并把该前置违约事项作为触发事项摘要；不得仅写触发事件未明。",
+      "drafting_guidance": "必须按常规KTS子点写清回购事项、义务人、回购价格、行权/付款期限、逾期责任、清偿顺位和创始股东责任。若回购条款只写“触发事件”，应向前查找同一条/前置条款中“违反本条”“第2.3条履行回购义务”“业务行为道德合规/廉洁/反腐败”等表述，并把该前置违约事项作为回购事项摘要；不得仅写触发事件未明。",
       "fields": [
-        {"key": "trigger", "label": "回购触发事项", "required": true, "aliases": ["利益输送", "代持", "资金往来", "触发事件", "违反本条", "第2.3条履行回购义务", "不当利益"]},
+        {"key": "trigger", "label": "回购事项", "required": true, "aliases": ["回购触发事项", "利益输送", "代持", "资金往来", "触发事件", "违反本条", "第2.3条履行回购义务", "不当利益"]},
         {"key": "obligor", "label": "回购义务人", "required": true, "aliases": ["回购义务人", "及/或", "连带回购责任"]},
         {"key": "price_formula", "label": "回购价格", "required": true, "aliases": ["投资款", "8%", "净资产", "孰高"]},
         {"key": "exercise_and_payment", "label": "行使及付款期限", "required": true, "aliases": ["回购通知", "6个月", "60日"]},
         {"key": "default_penalty", "label": "逾期责任", "required": false, "aliases": ["日万分之三", "违约金"]},
-        {"key": "priority", "label": "回购顺位", "required": false, "aliases": ["顺位", "相对比例"]}
+        {"key": "priority", "label": "回购顺位", "required": false, "aliases": ["顺位", "相对比例"]},
+        {"key": "founder_liability", "label": "创始股东责任", "required": false, "aliases": ["创始人", "创始股东", "连带回购责任", "补充责任"]}
       ],
       "lawyer_note_prompts": ["如特殊回购设立背景不明，应提示需与公司沟通确认。"]
     },

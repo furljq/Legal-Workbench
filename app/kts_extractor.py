@@ -129,7 +129,7 @@ EXTRA_TERMS = {
     "sha.founder_obligations": ["创始人", "核心人员", "全职", "持续任职", "不竞争", "竞业", "受限股权", "股权成熟", "过错理由"],
     "sha.esop": ["员工股权激励", "期权池", "员工持股", "ESOP", "后续融资"],
     "sha.information_audit": ["信息权", "检查权", "查看核对", "经营记录", "访问", "审计权", "独立审计权", "财务报表", "预算"],
-    "sha.redemption": ["特殊回购权", "回购触发事项", "回购义务人", "连带回购责任", "回购价款", "利益输送"],
+    "sha.redemption": ["特殊回购权", "回购事项", "回购触发事项", "回购义务人", "连带回购责任", "回购价款", "利益输送"],
     "sha.registration_rights": ["登记权", "注册权", "registration rights", "要求登记", "附带登记"],
     "sha.mfn_special_rights": ["最惠国", "更优惠", "同等享有", "Side Letter", "新项目优先投资权", "优先征询权", "优先投资"],
     "sha.dividend": ["分红权", "利润分配", "股利", "不得分红"],
@@ -4190,7 +4190,7 @@ def guard_redemption_obligor(
     if "回购义务人" not in draft_content and "义务人" not in draft_content:
         draft_content = replace_or_insert_kts_line(
             draft_content,
-            "义务人：回购权人可向公司及/或相关创始人/持股平台要求回购；公司未按期足额支付时，相关创始人承担连带回购责任。",
+            "回购义务人：回购权人可向公司及/或相关创始人/持股平台要求回购。\n创始股东责任：公司未按期足额支付时，相关创始人承担连带回购责任。",
             ("义务人", "回购义务人"),
             1,
         )
@@ -4198,7 +4198,7 @@ def guard_redemption_obligor(
     elif "义务人" in draft_content and "未显示" in draft_content:
         draft_content = replace_or_insert_kts_line(
             draft_content,
-            "义务人：回购权人可向公司及/或相关创始人/持股平台要求回购；公司未按期足额支付时，相关创始人承担连带回购责任。",
+            "回购义务人：回购权人可向公司及/或相关创始人/持股平台要求回购。\n创始股东责任：公司未按期足额支付时，相关创始人承担连带回购责任。",
             ("义务人", "回购义务人"),
             1,
         )
@@ -4237,10 +4237,10 @@ def guard_redemption_trigger(
                 field["note"] = "系统根据前置廉洁/业务行为道德合规条款与第2.3条回购义务联动补足。"
 
     draft_content = str(extraction.get("draft_content") or "")
-    trigger_line = f"触发事项：{trigger_text}"
+    trigger_line = f"回购事项：{trigger_text}"
     lines = [line for line in draft_content.splitlines() if line.strip()]
     replaced = False
-    trigger_prefixes = ("触发事项：", "回购触发事项：", "触发及义务人：", "触发及义务：", "触发：")
+    trigger_prefixes = ("触发事项：", "回购事项：", "回购触发事项：", "触发及义务人：", "触发及义务：", "触发：")
     for index, line in enumerate(lines):
         stripped = line.strip()
         if not stripped.startswith(trigger_prefixes):
@@ -4260,19 +4260,13 @@ def guard_redemption_trigger(
         if line.strip().startswith(trigger_prefixes)
     ]
     if len(trigger_indices) > 1:
-        preferred_index = next(
-            (
-                index
-                for index in trigger_indices
-                if "义务人" in lines[index] or "可要求" in lines[index]
-            ),
-            trigger_indices[0],
-        )
+        insert_at = trigger_indices[0]
         lines = [
             line
             for index, line in enumerate(lines)
-            if index == preferred_index or index not in trigger_indices
+            if index not in trigger_indices
         ]
+        lines.insert(insert_at, trigger_line)
     extraction["draft_content"] = "\n".join(lines)
 
     notes = remove_stale_trigger_missing_notes(extraction.get("review_notes", []))
@@ -4458,25 +4452,29 @@ def canonical_redemption_trigger_line(trigger_lines: list[str]) -> str:
         marker in combined
         for marker in ("廉洁", "道德合规", "反腐败", "不当利益", "代持", "利益输送", "资金往来")
     ):
-        return "回购触发事项：" + REDEMPTION_COMPLIANCE_TRIGGER_BODY
-    return trigger_lines[0]
+        return "回购事项：" + REDEMPTION_COMPLIANCE_TRIGGER_BODY
+    return trigger_lines[0].replace("回购触发事项：", "回购事项：", 1)
 
 
 def normalize_single_redemption_trigger_line(line: str) -> tuple[str, bool]:
-    if not line.startswith("回购触发事项："):
+    converted = False
+    if line.startswith("回购触发事项："):
+        line = "回购事项：" + line.split("：", 1)[1]
+        converted = True
+    if not line.startswith("回购事项："):
         return line, False
     if not any(marker in line for marker in ("廉洁", "道德合规", "反腐败", "不当利益", "代持", "利益输送", "资金往来")):
-        return line, False
+        return line, converted
     if len(line) <= 80 and "第" not in line:
-        return line, False
-    return "回购触发事项：" + REDEMPTION_COMPLIANCE_TRIGGER_BODY, True
+        return line, converted
+    return "回购事项：" + REDEMPTION_COMPLIANCE_TRIGGER_BODY, True
 
 
 def dedupe_redemption_trigger_lines(lines: list[str]) -> tuple[list[str], bool]:
     trigger_indices = [
         index
         for index, line in enumerate(lines)
-        if line.strip().startswith("回购触发事项：")
+        if line.strip().startswith(("回购事项：", "回购触发事项："))
     ]
     if len(trigger_indices) == 1:
         index = trigger_indices[0]
@@ -4503,6 +4501,42 @@ def dedupe_redemption_trigger_lines(lines: list[str]) -> tuple[list[str], bool]:
     return deduped, True
 
 
+def split_redemption_obligor_line(line: str) -> list[str] | None:
+    if not line.startswith(("义务人：", "回购义务人：")) or "；" not in line:
+        return None
+    label, body = line.split("：", 1)
+    if not any(marker in body for marker in ("创始人", "创始股东", "连带回购责任")):
+        return None
+    obligor, founder = body.split("；", 1)
+    obligor = obligor.strip("。；; ")
+    founder = founder.strip("。；; ")
+    if not obligor or not founder:
+        return None
+    if label == "义务人":
+        label = "回购义务人"
+    return [
+        f"{label}：{obligor}。",
+        f"创始股东责任：{founder}。",
+    ]
+
+
+def split_redemption_obligor_and_exercise_line(line: str) -> list[str] | None:
+    if not line.startswith("回购义务人及行权："):
+        return None
+    body = line.split("：", 1)[1].strip().rstrip("。")
+    match = re.match(r"(?P<right_holder>任一回购权人可在.+?内)通知(?P<obligor>.+)", body)
+    if not match:
+        return None
+    exercise = match.group("right_holder").strip("，。；; ")
+    obligor = match.group("obligor").strip("，。；; ")
+    if not exercise or not obligor:
+        return None
+    return [
+        f"行权期限：{exercise}发出回购通知。",
+        f"回购义务人：{obligor}。",
+    ]
+
+
 def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -4511,8 +4545,8 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
     changed = False
     for raw_line in draft_content.splitlines():
         line = raw_line.strip()
-        if line.startswith("触发事项："):
-            line = "回购触发事项：" + line.split("：", 1)[1]
+        if line.startswith(("触发事项：", "回购触发事项：")):
+            line = "回购事项：" + line.split("：", 1)[1]
             changed = True
         elif line.startswith("义务人及价格："):
             body = line.split("：", 1)[1]
@@ -4529,6 +4563,16 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
         elif line.startswith("义务人与行权："):
             line = "回购义务人及行权：" + line.split("：", 1)[1]
             changed = True
+        split_obligor_exercise = split_redemption_obligor_and_exercise_line(line)
+        if split_obligor_exercise:
+            lines.extend(split_obligor_exercise)
+            changed = True
+            continue
+        split_obligor = split_redemption_obligor_line(line)
+        if split_obligor:
+            lines.extend(split_obligor)
+            changed = True
+            continue
         elif line.startswith("价格与付款："):
             body = line.split("：", 1)[1]
             split_match = re.search(r"；\s*(?P<deadline>(?:义务人|回购义务人).+)", body)
@@ -4547,6 +4591,13 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
         elif line.startswith("行使期限及付款："):
             line = "回购期限：" + line.split("：", 1)[1]
             changed = True
+        elif line.startswith("回购期限：") and "；回购义务人" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            exercise, payment = body.split("；", 1)
+            lines.append("行权期限：" + exercise.rstrip("。") + "。")
+            lines.append("付款期限：" + payment.rstrip("。") + "。")
+            changed = True
+            continue
         elif line.startswith("回购价格及付款期限："):
             body = line.split("：", 1)[1]
             split_match = re.search(r"；\s*(?P<deadline>(?:义务人|回购义务人).+)", body)

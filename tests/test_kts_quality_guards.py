@@ -69,7 +69,7 @@ def test_redemption_compliance_trigger_guard() -> None:
             "field_values": [
                 {
                     "key": "trigger",
-                    "label": "回购触发事项",
+                    "label": "回购事项",
                     "status": "unclear",
                     "value": "触发事件",
                     "note": "需确认。",
@@ -94,7 +94,7 @@ def test_redemption_compliance_trigger_guard() -> None:
         candidates,
     )
 
-    assert extraction["draft_content"].splitlines()[0].startswith("触发事项：违反廉洁/反腐败/业务行为道德合规")
+    assert extraction["draft_content"].splitlines()[0].startswith("回购事项：违反廉洁/反腐败/业务行为道德合规")
     trigger = extraction["extracted_facts"]["field_values"][0]
     assert trigger["status"] == "found"
     assert "代持、利益输送、资金往来" in trigger["value"]
@@ -113,7 +113,7 @@ def test_redemption_guard_does_not_duplicate_existing_trigger_line() -> None:
             "field_values": [
                 {
                     "key": "trigger",
-                    "label": "回购触发事项",
+                    "label": "回购事项",
                     "status": "found",
                     "value": "违反廉洁条款",
                 }
@@ -137,8 +137,8 @@ def test_redemption_guard_does_not_duplicate_existing_trigger_line() -> None:
     )
 
     lines = extraction["draft_content"].splitlines()
-    assert len([line for line in lines if line.startswith("触发")]) == 1
-    assert lines[0].startswith("触发及义务人：")
+    assert len([line for line in lines if line.startswith("回购事项：")]) == 1
+    assert lines[0].startswith("回购事项：")
 
 
 def test_absence_ok_required_field_counts_as_handled() -> None:
@@ -441,6 +441,7 @@ def test_redemption_guard_fills_obligor_definition() -> None:
     assert field["status"] == "found"
     assert "公司及/或相关创始人/持股平台" in field["value"]
     assert "连带回购责任" in extraction["draft_content"]
+    assert "创始股东责任：公司未按期足额支付时，相关创始人承担连带回购责任。" in extraction["draft_content"]
     assert "候选证据未显示回购义务人" not in extraction["draft_content"]
     assert not extraction["review_notes"]
 
@@ -1438,7 +1439,7 @@ def test_post_polish_guards_remove_soft_hard_markers() -> None:
     assert "排他安排：" not in combined
     assert "【注：两项10%额度是否累计适用、审批机构口径可结合协议定义确认。】" in combined
     assert "【注：第4.0.7条10%违约金可能与逾期违约金并行适用。】" in combined
-    assert "回购触发事项：违反廉洁条款时可要求回购。" in combined
+    assert "回购事项：违反廉洁条款时可要求回购。" in combined
     assert "回购义务人：公司及/或创始人。" in combined
     assert "回购价格：按投资成本加收益与公允价值孰高确定。" in combined
     assert "回购期限：回购通知后60日内付款。" in combined
@@ -1476,12 +1477,30 @@ def test_post_polish_deduplicates_redemption_trigger_lines() -> None:
     apply_post_polish_quality_guards(items)
 
     lines = items[0]["draft_content"].splitlines()
-    trigger_lines = [line for line in lines if line.startswith("回购触发事项：")]
+    trigger_lines = [line for line in lines if line.startswith("回购事项：")]
     assert trigger_lines == [
-        "回购触发事项：违反廉洁/反腐败/业务行为道德合规及利益安排承诺（包括不当利益、代持、利益输送、资金往来等）时，投资方可要求回购。"
+        "回购事项：违反廉洁/反腐败/业务行为道德合规及利益安排承诺（包括不当利益、代持、利益输送、资金往来等）时，投资方可要求回购。"
     ]
     assert not items[0]["review_notes"]
     assert items[1]["draft_content"].splitlines()[0] == trigger_lines[0]
+
+
+def test_post_polish_splits_redemption_exercise_and_payment_deadlines() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.redemption",
+            "draft_content": (
+                "回购期限：触发事件发生后30日内通知投资方；"
+                "回购义务人收到回购通知后1个月内签署相关协议，并于60日内全额支付回购价款。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert "行权期限：触发事件发生后30日内通知投资方。" in items[0]["draft_content"]
+    assert "付款期限：回购义务人收到回购通知后1个月内签署相关协议，并于60日内全额支付回购价款。" in items[0]["draft_content"]
 
 
 def test_rofr_tag_guard_resolves_ap_ak_alias() -> None:
@@ -2778,6 +2797,7 @@ if __name__ == "__main__":
     test_style_polish_validation_allows_removing_workpaper_note()
     test_candidate_context_centers_on_source_quote()
     test_post_polish_deduplicates_redemption_trigger_lines()
+    test_post_polish_splits_redemption_exercise_and_payment_deadlines()
     test_transaction_arrangement_adds_header_and_cap_table_candidates()
     test_transaction_arrangement_guard_fills_signing_parties_and_cap_table()
     test_rofr_tag_adds_sha_definition_candidate()
