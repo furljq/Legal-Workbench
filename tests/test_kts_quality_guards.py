@@ -2818,6 +2818,63 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
     assert "[[公司或组织_AE]或组织_K]" in items[5]["draft_content"]
 
 
+def test_post_polish_compacts_anti_dilution_formula_and_compensation_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.anti_dilution",
+            "draft_content": (
+                "触发情形：公司以低于任一反稀释权人每单位认购价格进行增资扩股时触发，并以满足协议第1.1.5条及第1.2.4条为前提。\n"
+                "调整方式：反稀释权人持股比例按投资总额、调整后每单位认购价格及低价增资后总注册资本计算；"
+                "可由公司以人民币1元名义价格或法律允许最低对价发行股权，或由相关股东以同等低价转让所需股权。\n"
+                "例外事项：员工激励或股权薪酬计划、经股东会通过的利润转增注册资本或资本公积转增股本、"
+                "股份制改制转换、合格上市发行及类似证券发行等不适用。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.anti_dilution",
+            "draft_content": (
+                "触发及方式：交割日后公司发生新融资，且新增股东取得新增注册资本的新认购价格低于反稀释权人原始认购价格的，"
+                "反稀释权人可要求按广义加权平均方式调整原始认购价格，公式为P2=P1*(A+B)/(A+C)。\n"
+                "调整及补偿：按调整后认购价格重新确定反稀释权人在前轮融资中应取得的注册资本额；"
+                "公司以无偿或象征性价格增发股权，或以经反稀释权人事先书面同意的其他合法方式补足。\n"
+                "替代安排：无法实施时，反稀释权人可选择由[[公司或组织_AE]或组织_C]无偿或象征性价格转让股权，"
+                "或由公司现金补偿并用于对公司增资。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.anti_dilution",
+            "draft_content": "调整计算：按投资总额、调整后每单位认购价格及低价增资后总注册资本计算。",
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    price_reset = items[0]["draft_content"]
+    assert "触发情形：公司以低于任一反稀释权人每单位认购价格进行增资扩股时触发。" in price_reset
+    assert "触发前提：满足协议第1.1.5条及第1.2.4条。" in price_reset
+    assert "调整计算：按投资总额、调整后每单位认购价格及低价增资后总注册资本确定持股比例。" in price_reset
+    assert "补足方式：公司以人民币1元名义价格或法律允许最低对价发行股权，或相关股东以同等低价转让所需股权。" in price_reset
+    assert "例外事项：员工激励/股权薪酬、利润或资本公积转增、股份制改制、合格上市发行及类似证券发行不适用。" in price_reset
+    assert "调整方式：" not in price_reset
+
+    weighted_average = items[1]["draft_content"]
+    assert "触发情形：交割后新融资价格低于反稀释权人原始认购价格。" in weighted_average
+    assert "调整方式：按广义加权平均方式调整原始认购价格。" in weighted_average
+    assert "调整结果：按调整后认购价格重新确定反稀释权人在前轮融资中应取得的注册资本额。" in weighted_average
+    assert "补足方式：公司以无偿/象征性价格增发股权，或以反稀释权人同意的其他合法方式补足。" in weighted_average
+    assert "替代股权补偿：无法实施时，可由[[公司或组织_AE]或组织_C]无偿/象征性价格转让股权。" in weighted_average
+    assert "替代现金补偿：公司现金补偿并用于对公司增资。" in weighted_average
+    assert "公式为" not in weighted_average
+    assert "调整及补偿：" not in weighted_average
+    assert "替代安排：" not in weighted_average
+
+    assert items[2]["draft_content"] == "调整计算：按投资总额、调整后每单位认购价格及低价增资后总注册资本确定持股比例。"
+
+
 def test_post_polish_compacts_compliance_kts_language() -> None:
     items = [
         {
@@ -3179,6 +3236,7 @@ if __name__ == "__main__":
     test_post_polish_splits_reserved_matters_and_mfn_lines()
     test_post_polish_compacts_mfn_and_new_project_special_rights()
     test_post_polish_splits_remaining_long_substantive_lines()
+    test_post_polish_compacts_anti_dilution_formula_and_compensation_lines()
     test_post_polish_compacts_compliance_kts_language()
     test_post_polish_compacts_termination_kts_language()
     test_post_polish_compacts_preemptive_right_kts_language()

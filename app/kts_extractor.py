@@ -6132,7 +6132,63 @@ def normalize_anti_dilution_subpoints(item: dict[str, Any]) -> None:
             body = stripped.split("：", 1)[1]
             trigger, method = body.split("，反稀释权人可要求", 1)
             lines.append("触发情形：" + trigger.rstrip("。") + "。")
-            lines.append("调整方式：反稀释权人可要求" + method.rstrip("。") + "。")
+            if "广义加权平均" in method and "公式为" in method:
+                lines.append("调整方式：按广义加权平均方式调整原始认购价格。")
+            else:
+                lines.append("调整方式：反稀释权人可要求" + method.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("触发情形：") and "并以满足协议" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            trigger, condition = body.split("，并以", 1)
+            condition = re.sub(r"为前提$", "", condition.rstrip("。"))
+            lines.append("触发情形：" + trigger.rstrip("。") + "。")
+            lines.append("触发前提：" + condition.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("触发情形：交割日后公司发生新融资") and "新认购价格低于" in stripped:
+            lines.append("触发情形：交割后新融资价格低于反稀释权人原始认购价格。")
+            changed = True
+            continue
+        if stripped.startswith("调整方式：") and "广义加权平均" in stripped and "公式为" in stripped:
+            lines.append("调整方式：按广义加权平均方式调整原始认购价格。")
+            changed = True
+            continue
+        if stripped.startswith("调整方式：") and "；可由公司" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            calculation, compensation = body.split("；", 1)
+            calculation = calculation.replace("反稀释权人持股比例按", "按")
+            if calculation.endswith("计算"):
+                calculation = calculation[: -len("计算")] + "确定持股比例"
+            lines.append("调整计算：" + calculation.rstrip("。") + "。")
+            compensation = compensation.removeprefix("可由").replace("，或由相关股东", "，或相关股东")
+            lines.append("补足方式：" + compensation.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("调整计算：按") and stripped.endswith("计算。") and "确定持股比例" not in stripped:
+            lines.append(stripped[: -len("计算。")] + "确定持股比例。")
+            changed = True
+            continue
+        if stripped.startswith("调整及补偿：") and "；公司以" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            result, compensation = body.split("；", 1)
+            compensation = compensation.replace("无偿或象征性价格", "无偿/象征性价格")
+            compensation = compensation.replace("经反稀释权人事先书面同意的", "反稀释权人同意的")
+            lines.append("调整结果：" + result.rstrip("。") + "。")
+            lines.append("补足方式：" + compensation.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("替代安排：") and "，或由公司现金补偿" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            equity, cash = body.split("，或由公司", 1)
+            equity = equity.replace("反稀释权人可选择由", "可由")
+            equity = equity.replace("无偿或象征性价格", "无偿/象征性价格")
+            lines.append("替代股权补偿：" + equity.rstrip("。") + "。")
+            lines.append("替代现金补偿：公司" + cash.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("例外事项：员工激励或股权薪酬计划"):
+            lines.append("例外事项：员工激励/股权薪酬、利润或资本公积转增、股份制改制、合格上市发行及类似证券发行不适用。")
             changed = True
             continue
         lines.append(stripped)
