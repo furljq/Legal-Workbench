@@ -741,7 +741,69 @@ def test_post_closing_covenants_guard_compacts_overlong_summary() -> None:
     assert "2029年12月31日" in extraction["draft_content"]
     assert "[公司或组织_BH]同意" in extraction["draft_content"]
     assert "业务许可/备案里程碑" in extraction["draft_content"]
+    assert "背景事实显示" not in extraction["draft_content"]
     assert "候选证据" not in "\n".join(extraction["review_notes"])
+
+
+def test_post_closing_covenants_guard_replaces_stale_case_compact() -> None:
+    extraction = {
+        "status": "drafted",
+        "draft_content": (
+            "资金用途：限业务拓展、研发、生产、资本支出及主营业务；偿债需股东会全票同意，对外投资/委托贷款/证券期货需[公司或组织_BH]同意。\n"
+            "实缴承诺：相关现有股东应于第一次交割日后三年内实缴；[公司或组织_BF]应于2029年12月31日前实缴。\n"
+            "团队/IP/任职：落实知识产权权属或授权、团队保密/IP/竞业安排；两名创始股东承诺八年或合格上市后一周年孰早前不主动离职。"
+        ),
+        "extracted_facts": {
+            "summary_points": [
+                "交割后三个月内应完成对相关主体100%股权收购或注销并办理工商变更登记。",
+                "主营业务所需知识产权具备申请条件后六个月内应提交注册登记或申请。",
+            ],
+            "field_values": [
+                {
+                    "key": "use_of_proceeds",
+                    "label": "增资款用途限制",
+                    "status": "found",
+                    "value": "交割日后，增资款应按经[商标品牌_H]或其提名董事批准的公司预算，用于主营业务发展及相关运营；未经[商标品牌_H]同意或协议另有约定，不得用于与主营业务无关用途，包括偿还公司任何债务。",
+                },
+                {
+                    "key": "capital_contribution",
+                    "label": "历史/现有股东实缴承诺",
+                    "status": "found",
+                    "value": "证据显示公司历次出资或增资及相关手续符合当时有效法律法规，不存在延迟出资、出资不实或抽逃出资；未见新增交割后补缴出资承诺。",
+                },
+                {
+                    "key": "ip_transfer",
+                    "label": "知识产权转移",
+                    "status": "found",
+                    "value": "交割日后，公司/创始方应促使员工及研发人员将与公司主营业务相关的无形资产合法转至公司名下，或由公司作为申请人提交登记/申请；未经[商标品牌_H]书面同意，不得处分或用于主营业务以外活动。",
+                },
+                {
+                    "key": "regulatory_milestones",
+                    "label": "业务许可/备案里程碑",
+                    "status": "found",
+                    "value": "投资方承诺提供必要文件，协助公司取得履行协议所需的政府批准、同意、许可、登记和备案；公司未来为境内外融资、取得特定政府许可牌照、IPO或各方商定目的进行架构调整时，方案须经相关各方协商并获[商标品牌_H]认可。",
+                },
+                {"key": "continued_service", "label": "创始团队持续任职", "status": "not_found", "value": "未见创始团队持续任职期限。"},
+                {"key": "non_compete_and_priority", "label": "竞业限制/业务唯一性", "status": "unclear", "value": "未见明确竞业限制。"},
+            ],
+        },
+        "review_notes": [],
+        "lawyer_notes": [],
+    }
+
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "spa.post_closing_covenants"},
+        extraction,
+        [],
+    )
+
+    assert "[公司或组织_BH]" not in extraction["draft_content"]
+    assert "[公司或组织_BF]" not in extraction["draft_content"]
+    assert "2029年12月31日" not in extraction["draft_content"]
+    assert "资金用途：按经投资方或其提名董事批准的预算" in extraction["draft_content"]
+    assert "IP/无形资产归属：" in extraction["draft_content"]
+    assert "股权/架构整理：" in extraction["draft_content"]
+    assert "创始团队持续任职期限" in extraction["draft_content"]
 
 
 def test_style_polish_payload_includes_fields_and_review_context() -> None:

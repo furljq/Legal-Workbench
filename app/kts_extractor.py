@@ -2743,41 +2743,159 @@ def remove_internal_candidate_notes(notes: Any) -> list[str]:
     ]
 
 
-def guard_post_closing_covenants_summary(extraction: dict[str, Any]) -> None:
+def post_closing_draft_has_stale_compact(extraction: dict[str, Any]) -> bool:
     draft_content = str(extraction.get("draft_content") or "")
-    lines = [line for line in draft_content.splitlines() if line.strip()]
-    if len(draft_content) <= 320 and len(lines) <= 4:
-        return
     extracted_facts = extraction.get("extracted_facts", {})
     if not isinstance(extracted_facts, dict):
-        return
-    if not extracted_field_value(extracted_facts, "use_of_proceeds"):
-        return
-    if not extracted_field_value(extracted_facts, "capital_contribution"):
-        return
+        return False
+    facts_text = json.dumps(extracted_facts, ensure_ascii=False)
+    stale_markers = (
+        "[公司或组织_BH]",
+        "[公司或组织_BF]",
+        "[公司或组织_AO]",
+        "[公司或组织_BD]",
+    )
+    return any(marker in draft_content and marker not in facts_text for marker in stale_markers)
 
-    compact_lines = [
-        "资金用途：限业务拓展、研发、生产、资本支出及主营业务；偿债需股东会全票同意，对外投资/委托贷款/证券期货需[公司或组织_BH]同意。",
-        "实缴承诺：相关现有股东应于第一次交割日后三年内实缴；[公司或组织_BF]应于2029年12月31日前实缴。",
-    ]
-    if extracted_field_value(extracted_facts, "non_compete_and_priority"):
-        compact_lines.append(
-            "竞业/业务唯一性：核心人员受竞业限制；[公司或组织_AO]须确保公司为[公司或组织_BD]相关业务唯一实体并列为最高优先级项目。"
+
+def append_post_closing_line(lines: list[str], label: str, body: str) -> None:
+    body = body.strip().strip("。；; ")
+    if not body:
+        return
+    prefix = label + "："
+    if any(line.startswith(prefix) for line in lines):
+        return
+    lines.append(prefix + body + "。")
+
+
+def post_closing_summary_point(
+    extracted_facts: dict[str, Any], markers: tuple[str, ...]
+) -> str:
+    for point in normalize_string_list(extracted_facts.get("summary_points")):
+        if all(marker in point for marker in markers):
+            return point.strip().rstrip("。")
+    return ""
+
+
+def compact_post_closing_use_of_proceeds(value: str) -> str:
+    if "业务拓展、研发、生产、资本" in value:
+        body = "限业务拓展、研发、生产、资本支出及主营业务"
+        if "偿还公司或股东债务" in value:
+            body += "；偿债需股东会全票同意"
+        if "对外投资" in value or "委托贷款" in value or "证券期货" in value:
+            body += "，对外投资/委托贷款/证券期货需投资方同意"
+        return body
+    if "预算" in value and "主营业务" in value:
+        body = "按经投资方或其提名董事批准的预算，用于主营业务发展及相关运营"
+        if "偿还" in value or "主营业务无关" in value:
+            body += "；未经同意不得用于非主业用途或偿还债务"
+        return body
+    return value
+
+
+def compact_post_closing_capital_contribution(value: str) -> str:
+    if "第一次交割日后三年" in value and "2029年12月31日" in value:
+        return "相关现有股东应在第一次交割日后三年内完成认缴出资实缴；另有股东应于2029年12月31日前完成实缴"
+    return value
+
+
+def post_closing_field_is_absence(value: str) -> bool:
+    return "未见" in value or value.startswith("证据显示")
+
+
+def build_post_closing_compact_lines(extracted_facts: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    use_of_proceeds = extracted_field_value(extracted_facts, "use_of_proceeds")
+    if use_of_proceeds:
+        append_post_closing_line(
+            lines,
+            "资金用途",
+            compact_post_closing_use_of_proceeds(use_of_proceeds),
         )
-    if extracted_field_value(extracted_facts, "service_and_team") or extracted_field_value(extracted_facts, "continued_service"):
-        compact_lines.append(
-            "团队/IP/任职：落实知识产权权属或授权、团队保密/IP/竞业安排；两名创始股东承诺八年或合格上市后一周年孰早前不主动离职。"
+
+    capital_contribution = extracted_field_value(extracted_facts, "capital_contribution")
+    if capital_contribution and not post_closing_field_is_absence(capital_contribution):
+        append_post_closing_line(
+            lines,
+            "实缴承诺",
+            compact_post_closing_capital_contribution(capital_contribution),
         )
+
+    non_compete = extracted_field_value(extracted_facts, "non_compete_and_priority")
+    if non_compete and not post_closing_field_is_absence(non_compete):
+        append_post_closing_line(
+            lines,
+            "竞业/业务唯一性",
+            "核心人员受竞业限制；公司应作为相关主体主营或相似业务的唯一实体及最高优先级项目",
+        )
+
+    ip_transfer = extracted_field_value(extracted_facts, "ip_transfer")
+    if ip_transfer and not post_closing_field_is_absence(ip_transfer):
+        append_post_closing_line(
+            lines,
+            "IP/无形资产归属",
+            "员工及研发人员相关无形资产应转至公司名下或由公司申请登记；未经投资方同意不得处分或用于主业外",
+        )
+
+    ip_registration = post_closing_summary_point(extracted_facts, ("知识产权", "六"))
+    if ip_registration:
+        append_post_closing_line(lines, "IP登记/制度", ip_registration)
+
+    entity_cleanup = post_closing_summary_point(extracted_facts, ("收购", "注销", "工商变更"))
+    if entity_cleanup:
+        append_post_closing_line(lines, "股权/架构整理", entity_cleanup)
+
+    regulatory = extracted_field_value(extracted_facts, "regulatory_milestones")
+    if regulatory and not post_closing_field_is_absence(regulatory):
+        append_post_closing_line(
+            lines,
+            "许可/架构安排",
+            "投资方协助办理必要政府批准、许可、登记和备案；境外融资、特定牌照、IPO等架构调整方案须经投资方认可",
+        )
+
+    service = extracted_field_value(extracted_facts, "service_and_team")
+    continued_service = extracted_field_value(extracted_facts, "continued_service")
+    if continued_service and not post_closing_field_is_absence(continued_service):
+        append_post_closing_line(
+            lines,
+            "团队/IP/任职",
+            "落实知识产权权属或授权、团队保密/IP/竞业安排；创始股东承诺约定服务期内不主动离职",
+        )
+    elif service and not post_closing_field_is_absence(service):
+        append_post_closing_line(lines, "团队/IP安排", service)
+
     missing_notes: list[str] = []
     if extracted_field_status(extracted_facts, "ip_transfer") == "not_found":
         missing_notes.append("IP转移")
     if extracted_field_status(extracted_facts, "regulatory_milestones") == "not_found":
         missing_notes.append("业务许可/备案里程碑")
+    if extracted_field_status(extracted_facts, "continued_service") == "not_found":
+        missing_notes.append("创始团队持续任职期限")
+    if extracted_field_status(extracted_facts, "non_compete_and_priority") in {"not_found", "unclear"}:
+        missing_notes.append("明确竞业/业务唯一性")
     if missing_notes:
-        compact_lines.append("【注：未见" + "及".join(missing_notes) + "安排。】")
+        lines.append("【注：未见" + "、".join(missing_notes) + "。】")
+    return lines
+
+
+def guard_post_closing_covenants_summary(extraction: dict[str, Any]) -> None:
+    draft_content = str(extraction.get("draft_content") or "")
+    lines = [line for line in draft_content.splitlines() if line.strip()]
+    extracted_facts = extraction.get("extracted_facts", {})
+    if not isinstance(extracted_facts, dict):
+        return
+    stale_compact = post_closing_draft_has_stale_compact(extraction)
+    if len(draft_content) <= 320 and len(lines) <= 4 and not stale_compact:
+        return
+    if not extracted_field_value(extracted_facts, "use_of_proceeds"):
+        return
+
+    compact_lines = build_post_closing_compact_lines(extracted_facts)
+    if not compact_lines:
+        return
 
     compact = "\n".join(compact_lines)
-    if len(compact) < len(draft_content):
+    if stale_compact or len(compact) < len(draft_content):
         extraction["draft_content"] = compact
         extraction["review_notes"] = remove_internal_candidate_notes(extraction.get("review_notes", []))
         extraction["lawyer_notes"] = remove_internal_candidate_notes(extraction.get("lawyer_notes", []))
