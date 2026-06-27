@@ -2723,6 +2723,41 @@ def test_post_polish_compacts_termination_kts_language() -> None:
     assert "若[公司或组织_AM]" not in items[0]["draft_content"]
 
 
+def test_post_polish_compacts_preemptive_right_kts_language() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.preemptive_right",
+            "draft_content": (
+                "认购权：公司增加注册资本、发行新股或后续融资时，相关投资人享有按其在公司持股比例认购新增注册资本或新发股权的优先权，认购价格、条款和条件应与其他潜在投资方、认购方实质相同。\n"
+                "例外：公司为实施经股东会批准的员工持股计划而新增注册资本，以及因协议批准的股票分拆、股息支付和类似交易而发行股权或股份，不适用优先认购权。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.preemptive_right",
+            "draft_content": (
+                "认购比例：[[公司或组织_AE]或组织_K]及/或其合格关联方可按持股比例优先认购新增注册资本，额度以拟新增注册资本总额乘以其持股占届时全体股东持股总和的比例计算。\n"
+                "二次认购：首次未足额认购的，已完全行权的权利人可按其在超额认购权人中的持股比例认购剩余新增注册资本，并可继续认购至售罄或无人继续行权。\n"
+                "例外情形：优先认购权不适用于经第8条批准的员工股权/期权激励计划、反稀释保护项下增资及利润或资本公积等比例转增注册资本。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["draft_content"] == (
+        "认购权：相关投资人可按持股比例优先认购新增注册资本/新发股权，认购条件与第三方实质相同。\n"
+        "例外事项：经批准的员工持股计划、股票分拆、股息支付及类似交易不适用。"
+    )
+    assert items[1]["draft_content"] == (
+        "认购比例：权利人及/或合格关联方可按届时持股比例优先认购新增注册资本。\n"
+        "二次认购：首次未足额认购时，已足额行权的权利人可按比例继续认购剩余额度。\n"
+        "例外事项：员工股权/期权激励、反稀释保护及利润或资本公积转增等不适用。"
+    )
+    assert "拟新增注册资本总额乘以" not in items[1]["draft_content"]
+
+
 def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
     items = [
         {
@@ -2938,6 +2973,7 @@ if __name__ == "__main__":
     test_post_polish_splits_remaining_long_substantive_lines()
     test_post_polish_compacts_compliance_kts_language()
     test_post_polish_compacts_termination_kts_language()
+    test_post_polish_compacts_preemptive_right_kts_language()
     test_post_polish_normalizes_transaction_capital_and_signing_lines()
     test_post_polish_keeps_export_lines_readable_for_dense_kts_items()
     test_post_polish_splits_inline_notes_and_liquidation_special_arrangements()

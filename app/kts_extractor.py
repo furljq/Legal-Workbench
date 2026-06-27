@@ -5753,6 +5753,40 @@ def normalize_termination_subpoints(item: dict[str, Any]) -> None:
         item["draft_content"] = "\n".join(line for line in lines if line)
 
 
+def normalize_preemptive_right_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        label, body = stripped.split("：", 1) if "：" in stripped else ("", "")
+        if label in {"认购权", "认购比例"} and (
+            "优先认购" in body or ("认购新增注册资本" in body and "优先权" in body)
+        ):
+            if "合格关联方" in body:
+                lines.append("认购比例：权利人及/或合格关联方可按届时持股比例优先认购新增注册资本。")
+            else:
+                lines.append("认购权：相关投资人可按持股比例优先认购新增注册资本/新发股权，认购条件与第三方实质相同。")
+            changed = True
+            continue
+        if label == "二次认购" and any(marker in body for marker in ("未足额认购", "剩余新增注册资本", "售罄")):
+            lines.append("二次认购：首次未足额认购时，已足额行权的权利人可按比例继续认购剩余额度。")
+            changed = True
+            continue
+        if label in {"例外", "例外情形", "例外事项"} and any(marker in body for marker in ("员工", "股权", "股票分拆", "转增")):
+            if "反稀释" in body:
+                lines.append("例外事项：员工股权/期权激励、反稀释保护及利润或资本公积转增等不适用。")
+            else:
+                lines.append("例外事项：经批准的员工持股计划、股票分拆、股息支付及类似交易不适用。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def normalize_liability_subpoints(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -6220,6 +6254,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_transfer_restriction_subpoints(item)
         elif item_id == "sha.shareholder_reserved_matters":
             normalize_shareholder_reserved_subpoints(item)
+        elif item_id == "sha.preemptive_right":
+            normalize_preemptive_right_subpoints(item)
         elif item_id == "sha.anti_dilution":
             clean_anti_dilution_review_tone(item)
             normalize_anti_dilution_subpoints(item)
