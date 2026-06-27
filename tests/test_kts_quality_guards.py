@@ -2699,6 +2699,30 @@ def test_post_polish_compacts_compliance_kts_language() -> None:
     assert "第6.1.5条" not in items[0]["draft_content"]
 
 
+def test_post_polish_compacts_termination_kts_language() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.termination",
+            "draft_content": (
+                "违约解除：任一方根本违约致使协议目的无法实现的，任一非违约方可依法解除；一般违约经通知后30日内未补救或补救仍不符合约定的，守约方可通知解除。\n"
+                "协商终止：各方经协商一致可终止本协议。\n"
+                "工商变更未完成：若[公司或组织_AM]无法按协议约定时限办理完毕本次增资相关工商变更登记手续，[公司或组织_BH]有权单方面解除协议。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["draft_content"] == (
+        "违约解除：根本违约致协议目的无法实现时可依法解除；一般违约经通知后30日未有效补救的，守约方可解除。\n"
+        "协商解除：各方协商一致可解除/终止。\n"
+        "工商变更未完成：公司未按期完成本次增资工商变更登记的，投资方可单方解除。"
+    )
+    assert "本协议" not in items[0]["draft_content"]
+    assert "若[公司或组织_AM]" not in items[0]["draft_content"]
+
+
 def test_post_polish_normalizes_transaction_capital_and_signing_lines() -> None:
     items = [
         {
@@ -2913,6 +2937,7 @@ if __name__ == "__main__":
     test_post_polish_splits_reserved_matters_and_mfn_lines()
     test_post_polish_splits_remaining_long_substantive_lines()
     test_post_polish_compacts_compliance_kts_language()
+    test_post_polish_compacts_termination_kts_language()
     test_post_polish_normalizes_transaction_capital_and_signing_lines()
     test_post_polish_keeps_export_lines_readable_for_dense_kts_items()
     test_post_polish_splits_inline_notes_and_liquidation_special_arrangements()

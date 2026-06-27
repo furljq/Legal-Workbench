@@ -5728,6 +5728,31 @@ def compact_compliance_prohibition(line: str) -> str:
     return ("廉洁承诺：" if label == "禁止行为" else label + "：") + body
 
 
+def normalize_termination_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("违约解除：") and "根本违约致使协议目的无法实现" in stripped and "30日" in stripped:
+            lines.append("违约解除：根本违约致协议目的无法实现时可依法解除；一般违约经通知后30日未有效补救的，守约方可解除。")
+            changed = True
+            continue
+        if stripped.startswith("协商终止：") and "经协商一致" in stripped:
+            lines.append("协商解除：各方协商一致可解除/终止。")
+            changed = True
+            continue
+        if stripped.startswith("工商变更未完成：") and "工商变更" in stripped and "解除" in stripped:
+            lines.append("工商变更未完成：公司未按期完成本次增资工商变更登记的，投资方可单方解除。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def normalize_liability_subpoints(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -6172,6 +6197,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_closing_conditions_subpoints(item)
         elif item_id == "spa.closing":
             normalize_closing_payment_subpoints(item)
+        elif item_id == "spa.termination":
+            normalize_termination_subpoints(item)
         elif item_id == "spa.compliance":
             normalize_compliance_subpoints(item)
         elif item_id == "spa.liability":
