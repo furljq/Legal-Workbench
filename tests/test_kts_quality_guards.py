@@ -1084,6 +1084,11 @@ def test_post_polish_guards_remove_soft_hard_markers() -> None:
             "draft_content": "共同出售权：共售比例按公式计算。【注：共同出售权条款未完整显示，暂无法确认共售权人、共售比例；未见控制权变更全额共售安排。】",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.other",
+            "draft_content": "排他安排：签署日至交割日，公司未经投资方同意不得与其他投资人签署融资文件。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -1098,6 +1103,8 @@ def test_post_polish_guards_remove_soft_hard_markers() -> None:
     assert "共6名投资方，合计人民币97,000,000元" in combined
     assert "主要包括[公司或组织_A]人民币50,000,000元、[公司或组织_B]人民币25,000,000元、[公司或组织_C]人民币10,000,000元" in combined
     assert "候选证据" not in combined
+    assert "排他期承诺：签署日至交割日" in combined
+    assert "排他安排：" not in combined
     assert "【注：两项10%额度是否累计适用、审批机构口径可结合协议定义确认。】" in combined
     assert "【注：第4.0.7条10%违约金可能与逾期违约金并行适用。】" in combined
     assert "【注：未见控制权变更全额共售安排。】" in combined

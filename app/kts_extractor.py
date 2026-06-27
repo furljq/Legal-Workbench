@@ -2512,6 +2512,29 @@ def clean_esop_review_tone(extraction: dict[str, Any]) -> None:
     ]
 
 
+def normalize_conventional_kts_labels(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    replacements = {
+        "排他安排": "排他期承诺",
+        "排他/独家安排": "排他期承诺",
+        "独家安排": "排他期承诺",
+    }
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        for old, new in replacements.items():
+            if stripped.startswith(old + "："):
+                stripped = new + "：" + stripped.split("：", 1)[1]
+                changed = True
+                break
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def extracted_field_value(extracted_facts: dict[str, Any], key: str) -> str:
     field_values = extracted_facts.get("field_values", [])
     if not isinstance(field_values, list):
@@ -4205,6 +4228,7 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             ensure_transaction_core_terms_after_polish(item)
         elif item_id == "spa.other":
             remove_spa_other_workpaper_tone(item)
+            normalize_conventional_kts_labels(item)
         elif item_id == "sha.rofr_tag":
             clean_rofr_tag_workpaper_tone(item)
         elif item_id == "sha.board_reserved_matters":
