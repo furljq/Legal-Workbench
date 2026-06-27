@@ -3000,7 +3000,8 @@ def test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto()
     assert "资本/清算事项：章程修改、增减资及稀释性发行、减资回购注销、清算分红。" in a_style
     assert "交易/治理事项：重组/控制权变更、上市方案、董事会构成、主营业务重大变化。" in a_style
     assert "其他重大事项：发行数字资产及其他重大事项。" in a_style
-    assert "特别否决事项：第(2)/(5)/(10)项中涉及整体性变更主营或核心业务的事项，需[[公司或组织_AE]或组织_G]和[商标品牌_G]同意。" in a_style
+    assert "特别否决范围：第(2)/(5)/(10)项中涉及整体性变更主营或核心业务的事项。" in a_style
+    assert "特别否决权人：需[[公司或组织_AE]或组织_G]和[商标品牌_G]同意。" in a_style
     assert "特别否决终止：后续融资新增投资人董事后该单独否决权终止。" in a_style
     assert "通过机制：" not in a_style
     assert "特别否决：" not in a_style
@@ -3054,6 +3055,87 @@ def test_post_polish_compacts_mfn_and_new_project_special_rights() -> None:
     ) in mfn
     assert "以不高于其适用原始认购价格认缴新增注册资本" not in mfn
     assert "最惠国待遇不适用于" not in mfn
+
+
+def test_post_polish_splits_remaining_dense_kts_subpoints() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.other",
+            "draft_content": "允许披露：法律、监管要求及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外，披露方应确保接收方承担不低于协议标准的保密义务。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.redemption",
+            "draft_content": "清偿顺位：多名回购权人行权时，先[[公司或组织_AE]或组织_AA]、后[[公司或组织_AE]或组织_X]，同顺位资金不足按应付金额比例分配。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.shareholder_reserved_matters",
+            "draft_content": (
+                "重大交易事项：合并分立并购重组、控制权变更、重大资产/权益处置或设负担、预算外设立或处置控股企业等，适用多数投资人同意机制。\n"
+                "治理及股权事项：上市方案、董事会及ESOP、投资人权利修改、员工持股平台一次或累计转让超过总股本10%，适用多数投资人同意机制。\n"
+                "特别否决事项：第(2)/(5)/(10)项中涉及整体性变更主营或核心业务的事项，需[[公司或组织_AE]或组织_G]和[商标品牌_G]同意。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.transfer_restriction",
+            "draft_content": "允许例外：员工股权/期权激励计划、反稀释保护权、第9条回购权及经[[公司或组织_AE]或组织_K]事先书面同意的股权转让不受该限制。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.drag_along",
+            "draft_content": (
+                "权利门槛：需[[公司或组织_AE]或组织_AL]及[[公司或组织_AE]或组织_K]多数共同同意，条款未单独使用“领售权人”表述。\n"
+                "被领售及配合：公司其他所有股东应同意并参与交易，促使相关机构通过交易决议，并配合签署相关协议文件。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.founder_obligations",
+            "draft_content": (
+                "持续任职：创始股东在服务期内未经投资人事先书面同意，不得主动离职或主动终止劳动/顾问关系，并不得消极怠工、严重失职或恶意损害公司利益。\n"
+                "外部任职限制：全职加入前后均不得在公司/集团外任职、投资或提供服务；经投资人同意的研究机构任职除外，但不得实质影响其对公司职责和经营管理。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    spa_other = items[0]["draft_content"]
+    assert "允许披露情形：法律、监管要求及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外。" in spa_other
+    assert "接收方义务：披露方应确保接收方承担不低于协议标准的保密义务。" in spa_other
+
+    redemption = items[1]["draft_content"]
+    assert "优先顺位：多名回购权人行权时，先[[公司或组织_AE]或组织_AA]、后[[公司或组织_AE]或组织_X]。" in redemption
+    assert "同顺位分配：同顺位资金不足按应付金额比例分配。" in redemption
+    assert "清偿顺位：" not in redemption
+
+    reserved = items[2]["draft_content"]
+    assert "交易重组事项：合并分立并购重组、控制权变更，适用多数投资人同意机制。" in reserved
+    assert "资产/企业事项：重大资产/权益处置或设负担、预算外设立或处置控股企业等，适用多数投资人同意机制。" in reserved
+    assert "上市/治理事项：上市方案、董事会及ESOP。" in reserved
+    assert "投资人权利调整：投资人权利修改、员工持股平台一次或累计转让超过总股本10%，适用多数投资人同意机制。" in reserved
+    assert "特别否决范围：第(2)/(5)/(10)项中涉及整体性变更主营或核心业务的事项。" in reserved
+    assert "特别否决权人：需[[公司或组织_AE]或组织_G]和[商标品牌_G]同意。" in reserved
+
+    transfer = items[3]["draft_content"]
+    assert "激励/反稀释例外：员工股权/期权激励计划、反稀释保护权不受限制。" in transfer
+    assert "回购/同意转让例外：第9条回购权及经[[公司或组织_AE]或组织_K]事先书面同意的股权转让不受该限制。" in transfer
+
+    drag = items[4]["draft_content"]
+    assert "同意门槛：需[[公司或组织_AE]或组织_AL]及[[公司或组织_AE]或组织_K]多数共同同意。" in drag
+    assert "术语口径：条款未单独使用“领售权人”表述。" in drag
+    assert "被领售主体：公司其他所有股东应同意并参与交易。" in drag
+    assert "配合义务：促使相关机构通过交易决议，并配合签署相关协议文件。" in drag
+
+    founder = items[5]["draft_content"]
+    assert "持续任职：创始股东在服务期内未经投资人事先书面同意，不得主动离职或主动终止劳动/顾问关系。" in founder
+    assert "履职义务：不得消极怠工、严重失职或恶意损害公司利益。" in founder
+    assert "外部任职限制：全职加入前后均不得在公司/集团外任职、投资或提供服务。" in founder
+    assert "研究机构例外：经投资人同意的研究机构任职除外，但不得实质影响其对公司职责和经营管理。" in founder
 
 
 def test_post_polish_splits_remaining_long_substantive_lines() -> None:
@@ -3569,7 +3651,8 @@ def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:
     assert "责任独立性：" in items[1]["draft_content"]
     assert "公司/创始人连带责任：各增资人仅就自身行为负责" not in items[1]["draft_content"]
     assert "限制期间：" in items[2]["draft_content"]
-    assert "清偿顺位：" in items[3]["draft_content"]
+    assert "优先顺位：" in items[3]["draft_content"]
+    assert "同顺位分配：" in items[3]["draft_content"]
     assert "后轮经济权益例外：" in items[4]["draft_content"]
     assert any(line.startswith("【注：") for line in exported_lines)
 
@@ -3683,6 +3766,7 @@ if __name__ == "__main__":
     test_post_polish_splits_reserved_matters_and_mfn_lines()
     test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto()
     test_post_polish_compacts_mfn_and_new_project_special_rights()
+    test_post_polish_splits_remaining_dense_kts_subpoints()
     test_post_polish_splits_remaining_long_substantive_lines()
     test_post_polish_compacts_anti_dilution_formula_and_compensation_lines()
     test_post_polish_compacts_compliance_kts_language()

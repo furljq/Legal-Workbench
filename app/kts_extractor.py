@@ -2775,6 +2775,13 @@ def normalize_spa_other_confidentiality_subpoints(item: dict[str, Any]) -> None:
             lines.append("公开披露：" + disclosure_body + "。")
             changed = True
             continue
+        if stripped.startswith("允许披露：") and "，披露方应确保接收方承担" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            permitted, obligation = body.split("，披露方应", 1)
+            lines.append("允许披露情形：" + permitted.rstrip("。") + "。")
+            lines.append("接收方义务：披露方应" + obligation.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("争议解决：") and "15日" in stripped and "仲裁" in stripped:
             if "友好协商" in stripped:
                 lines.append("争议解决：争议先友好协商；15日内未解决的，提交约定仲裁机构仲裁，非争议事项继续履行。")
@@ -3264,6 +3271,19 @@ def normalize_transfer_restriction_subpoints(item: dict[str, Any]) -> None:
             permitted, succession = body.split("；婚姻关系变动或继承", 1)
             lines.append("允许例外：" + permitted.rstrip("。") + "。")
             lines.append("间接转让例外：婚姻关系变动或继承" + succession.rstrip("。") + "。")
+            changed = True
+            continue
+        if (
+            stripped.startswith("允许例外：")
+            and "员工股权/期权激励计划" in stripped
+            and "第9条回购权" in stripped
+            and "经" in stripped
+            and "同意的股权转让" in stripped
+        ):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            first, second = body.split("、第9条回购权", 1)
+            lines.append("激励/反稀释例外：" + first.rstrip("、，,。") + "不受限制。")
+            lines.append("回购/同意转让例外：第9条回购权" + second.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -3881,6 +3901,27 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
             veto = veto.replace("还需", "需")
             lines.append("特别否决事项：" + veto.rstrip("。") + "。")
             lines.append("特别否决终止：" + termination.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("特别否决事项：") and "，需" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            scope, holders = body.rsplit("，需", 1)
+            lines.append("特别否决范围：" + scope.rstrip("。") + "。")
+            lines.append("特别否决权人：需" + holders.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("重大交易事项：") and "、重大资产/权益处置" in stripped and "适用多数投资人同意机制" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            transaction, asset = body.split("、重大资产/权益处置", 1)
+            lines.append("交易重组事项：" + transaction.rstrip("，,。") + "，适用多数投资人同意机制。")
+            lines.append("资产/企业事项：重大资产/权益处置" + asset.rstrip("，,。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("治理及股权事项：") and "、投资人权利修改" in stripped and "适用多数投资人同意机制" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            governance, investor_rights = body.split("、投资人权利修改", 1)
+            lines.append("上市/治理事项：" + governance.rstrip("，,。") + "。")
+            lines.append("投资人权利调整：投资人权利修改" + investor_rights.rstrip("，,。") + "。")
             changed = True
             continue
         if stripped.startswith("重大交易：") and has_protection_line:
@@ -4909,6 +4950,19 @@ def split_redemption_price_formula_line(line: str) -> list[str] | None:
     return lines
 
 
+def append_redemption_payment_order_lines(lines: list[str], body: str) -> bool:
+    text = body.strip().rstrip("。")
+    if "多名回购权人行权时" in text and "同顺位资金不足" in text:
+        priority, same_rank = text.split("，同顺位资金不足", 1)
+        lines.append("优先顺位：" + priority.rstrip("。") + "。")
+        lines.append("同顺位分配：同顺位资金不足" + same_rank.rstrip("。") + "。")
+        return True
+    if "多人同时行权且资金不足时" in text and "实际投资金额相对比例分配" in text:
+        lines.append("同顺位分配：" + text.rstrip("。") + "。")
+        return True
+    return False
+
+
 def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -4996,7 +5050,14 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
             body = line.split("：", 1)[1].rstrip("。")
             overdue, order = body.split("；", 1)
             lines.append("逾期责任：" + overdue.rstrip("。") + "。")
-            lines.append("清偿顺位：" + order.rstrip("。") + "。")
+            if not append_redemption_payment_order_lines(lines, order):
+                lines.append("清偿顺位：" + order.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("清偿顺位：") and append_redemption_payment_order_lines(
+            lines,
+            line.split("：", 1)[1],
+        ):
             changed = True
             continue
         lines.append(line)
@@ -5015,8 +5076,8 @@ FOUNDER_SERVICE_LINE = (
     "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前后均应投入实质性全部工作时间和精力。"
 )
 FOUNDER_EXTERNAL_ROLE_LINE = (
-    "外部任职限制：全职加入前后均不得在公司/集团外任职、投资或提供服务；"
-    "经投资人同意的研究机构任职除外，但不得实质影响其对公司职责和经营管理。"
+    "外部任职限制：全职加入前后均不得在公司/集团外任职、投资或提供服务。\n"
+    "研究机构例外：经投资人同意的研究机构任职除外，但不得实质影响其对公司职责和经营管理。"
 )
 FOUNDER_BREACH_LINE = (
     "离职/过错后果：成熟期内主动离职、不续签或因过错被解职的，受限股权无论是否成熟均按约定无偿或以法定最低价格转让。\n"
@@ -5218,6 +5279,20 @@ def normalize_founder_obligation_subpoints(draft_content: str) -> str:
             continue
         if line.startswith("其他离职的未成熟部分"):
             lines.append("其他离职后果：" + line.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("持续任职：") and "不得主动离职" in line and "，并不得消极怠工" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            service, conduct = body.split("，并不得", 1)
+            lines.append("持续任职：" + service.rstrip("。") + "。")
+            lines.append("履职义务：不得" + conduct.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("外部任职限制：") and "；经投资人同意的研究机构任职除外" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            restriction, exception = body.split("；", 1)
+            lines.append("外部任职限制：" + restriction.rstrip("。") + "。")
+            lines.append("研究机构例外：" + exception.rstrip("。") + "。")
             changed = True
             continue
         if line.startswith("竞业及保密/IP："):
@@ -6639,6 +6714,20 @@ def normalize_drag_along_subpoints(item: dict[str, Any]) -> None:
             lines.append("触发时间：" + timing.rstrip("。") + "后。")
             lines.append("触发交易：如" + trigger.rstrip("。") + "。")
             lines.append("估值门槛：公司整体估值" + valuation.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("权利门槛：") and "，条款未单独使用" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            threshold, terminology = body.split("，条款未单独使用", 1)
+            lines.append("同意门槛：" + threshold.rstrip("。") + "。")
+            lines.append("术语口径：条款未单独使用" + terminology.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("被领售及配合：") and "，促使相关机构通过交易决议" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            parties, cooperation = body.split("，", 1)
+            lines.append("被领售主体：" + parties.rstrip("。") + "。")
+            lines.append("配合义务：" + cooperation.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
