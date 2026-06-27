@@ -1358,7 +1358,18 @@ def test_post_polish_splits_board_composition_long_line() -> None:
                 "【注：未见独立观察员委派权。】"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "sha.board_composition",
+            "draft_content": (
+                "董事会构成：董事会7席，[[公司或组织_AE]或组织_C]委派4席并含董事长；"
+                "[商标品牌_G]持股不低于8%时委派1席，[商标品牌_A]、[商标品牌_F]各委派1席。\n"
+                "席位调整：A/F/G任一方持股低于5%即丧失董事委派权；持股不低于2%时可改派1名观察员。\n"
+                "观察员：除已获董事席位投资人外，其他投资人中持股最高前两名可各委派1名观察员，交割后为[商标品牌_D]和[商标品牌_C]。\n"
+                "子公司/集团公司：[商标品牌_A]、[商标品牌_F]、[商标品牌_G]可分别要求向其他[[公司或组织_AE]或组织_H]董事会委派1名董事。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -1366,11 +1377,24 @@ def test_post_polish_splits_board_composition_long_line() -> None:
 
     draft = items[0]["draft_content"]
     assert "董事会规模：本次交易完成后，董事会设五名董事，由股东会选举产生。" in draft
-    assert "席位分配：组织_W、组织_Z、组织_N各推选一名董事，组织_F推选两名董事。" in draft
+    assert "一席委派方：组织_W、组织_Z、组织_N各推选一名董事。" in draft
+    assert "两席委派方：组织_F推选两名董事。" in draft
     assert "董事会构成：本次交易完成后" not in draft
     assert draft.count("董事会规模：") == 1
     assert "董事长：由组织_F提名的董事担任。" in draft
     assert "未见独立观察员委派权" in draft
+
+    draft = items[1]["draft_content"]
+    assert "董事会规模：董事会7席。" in draft
+    assert "四席委派方：[[公司或组织_AE]或组织_C]委派4席并含董事长。" in draft
+    assert "其他席位：[商标品牌_G]持股不低于8%时委派1席，[商标品牌_A]、[商标品牌_F]各委派1席。" in draft
+    assert "董事席位门槛：A/F/G任一方持股低于5%即丧失董事委派权。" in draft
+    assert "观察员替代：持股不低于2%时可改派1名观察员。" in draft
+    assert "观察员名额：除已获董事席位投资人外，其他投资人中持股最高前两名可各委派1名观察员。" in draft
+    assert "交割后观察员：[商标品牌_D]和[商标品牌_C]。" in draft
+    assert "集团公司董事：[商标品牌_A]、[商标品牌_F]、[商标品牌_G]可分别要求向其他集团公司董事会委派1名董事。" in draft
+    assert "席位调整：" not in draft
+    assert "子公司/集团公司：" not in draft
 
 
 def test_board_reserved_guard_removes_cross_item_seat_blocker() -> None:

@@ -2964,6 +2964,16 @@ def remove_board_client_identity_draft_note(draft_content: str) -> str:
     return "\n".join(line.rstrip() for line in cleaned.splitlines() if line.strip())
 
 
+def append_board_allocation_subpoints(lines: list[str], allocation: str) -> bool:
+    allocation = allocation.strip().rstrip("。")
+    if "各推选一名董事，" in allocation and "推选两名董事" in allocation:
+        single_seat, double_seat = allocation.split("，", 1)
+        lines.append("一席委派方：" + single_seat.rstrip("。") + "。")
+        lines.append("两席委派方：" + double_seat.rstrip("。") + "。")
+        return True
+    return False
+
+
 def normalize_board_composition_subpoints(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -2987,7 +2997,56 @@ def normalize_board_composition_subpoints(item: dict[str, Any]) -> None:
                 allocation = allocation.replace("，由股东会选举产生", "").replace("；由股东会选举产生", "")
                 election_suffix = "，由股东会选举产生"
             lines.append("董事会规模：" + scale.rstrip("。") + election_suffix + "。")
-            lines.append("席位分配：" + allocation.rstrip("。") + "。")
+            if not append_board_allocation_subpoints(lines, allocation):
+                lines.append("席位分配：" + allocation.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("席位分配：") and append_board_allocation_subpoints(lines, line.split("：", 1)[1]):
+            changed = True
+            continue
+        if (
+            line.startswith("董事会构成：董事会")
+            and "席" in line
+            and "委派4席并含董事长；" in line
+            and "各委派1席" in line
+        ):
+            body = line.split("：", 1)[1].rstrip("。")
+            scale, allocation = body.split("，", 1)
+            four_seat, other_seats = allocation.split("；", 1)
+            lines.append("董事会规模：" + scale.rstrip("。") + "。")
+            lines.append("四席委派方：" + four_seat.rstrip("。") + "。")
+            lines.append("其他席位：" + other_seats.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("董事长：") and "；董事长不能履职时" in line:
+            primary, fallback = line.split("；", 1)
+            fallback = fallback.replace("董事长不能履职时，", "不能履职时，")
+            fallback = fallback.replace("代行董事长职务", "代行")
+            lines.append(primary.rstrip("。") + "。")
+            lines.append("董事长替代：" + fallback.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("子公司董事会：如公司设立全资子公司且股东方明确要求"):
+            lines.append("子公司董事会：设立全资子公司且股东方要求时，董事会结构与公司保持一致。")
+            changed = True
+            continue
+        if line.startswith("席位调整：") and "；持股不低于2%时可改派" in line:
+            board_threshold, observer = line.split("；", 1)
+            lines.append("董事席位门槛：" + board_threshold.split("：", 1)[1].rstrip("。") + "。")
+            lines.append("观察员替代：" + observer.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("观察员：除已获董事席位投资人外") and "交割后为" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            observer_rule, post_closing = body.split("，交割后为", 1)
+            lines.append("观察员名额：" + observer_rule.rstrip("。") + "。")
+            lines.append("交割后观察员：" + post_closing.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("子公司/集团公司：") and "可分别要求向其他" in line and "董事会委派1名董事" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            subjects, _rest = body.split("可分别要求向其他", 1)
+            lines.append("集团公司董事：" + subjects.rstrip("。") + "可分别要求向其他集团公司董事会委派1名董事。")
             changed = True
             continue
         lines.append(line)
