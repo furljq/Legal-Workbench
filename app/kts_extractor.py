@@ -4055,9 +4055,11 @@ FOUNDER_VESTING_LINE = (
     "约定收购/兼并且收购方同意或完成IPO时，全部加速成熟。"
 )
 FOUNDER_SERVICE_LINE = (
-    "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前应投入剩余实质性全部工作时间和精力；"
-    "全职加入后应投入实质性全部工作时间和精力，均不得在公司/集团外任职、投资或提供服务；"
-    "经投资人同意的研究机构任职例外，但不得实质影响其对公司的职责和经营管理。"
+    "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前后均应投入实质性全部工作时间和精力。"
+)
+FOUNDER_EXTERNAL_ROLE_LINE = (
+    "外部任职限制：全职加入前后均不得在公司/集团外任职、投资或提供服务；"
+    "经投资人同意的研究机构任职除外，但不得实质影响其对公司职责和经营管理。"
 )
 FOUNDER_BREACH_LINE = (
     "离职/过错后果：成熟期内主动离职、不续签或因过错被解职的，受限股权无论是否成熟均按约定无偿或以法定最低价格转让；"
@@ -4180,6 +4182,7 @@ def founder_obligations_compact_draft(
         lines.append(FOUNDER_VESTING_LINE)
     if include_service:
         lines.append(FOUNDER_SERVICE_LINE)
+        lines.append(FOUNDER_EXTERNAL_ROLE_LINE)
     if include_breach:
         lines.append(FOUNDER_BREACH_LINE)
     if include_non_compete:
@@ -4215,6 +4218,25 @@ def clean_founder_obligations_draft_notes(draft_content: str) -> str:
     return "\n".join(line.rstrip() for line in cleaned.splitlines() if line.strip())
 
 
+def normalize_founder_service_subpoints(draft_content: str) -> str:
+    lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
+    has_external_role_line = any(line.startswith("外部任职限制：") for line in lines)
+    normalized: list[str] = []
+    for line in lines:
+        if (
+            line.startswith("持续服务：")
+            and "全职加入前" in line
+            and "全职加入后" in line
+            and "研究机构" in line
+        ):
+            normalized.append(FOUNDER_SERVICE_LINE)
+            if not has_external_role_line:
+                normalized.append(FOUNDER_EXTERNAL_ROLE_LINE)
+            continue
+        normalized.append(line)
+    return "\n".join(normalized)
+
+
 def refresh_founder_obligations_status(extraction: dict[str, Any]) -> None:
     notes = normalize_string_list(extraction.get("review_notes"))
     if not notes and str(extraction.get("status") or "") == "needs_review":
@@ -4243,7 +4265,9 @@ def founder_facts_support_compact_draft(item: dict[str, Any]) -> tuple[bool, boo
 
 
 def clean_founder_obligations_review_tone(item: dict[str, Any]) -> None:
-    draft_content = clean_founder_obligations_draft_notes(str(item.get("draft_content") or ""))
+    draft_content = normalize_founder_service_subpoints(
+        clean_founder_obligations_draft_notes(str(item.get("draft_content") or ""))
+    )
     include_vesting, include_service, include_breach, include_non_compete = founder_facts_support_compact_draft(item)
     if include_service and include_non_compete and (
         "未完整" in draft_content

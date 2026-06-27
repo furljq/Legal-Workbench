@@ -1781,12 +1781,38 @@ def test_post_polish_guard_rewrites_founder_stale_review_tone() -> None:
 
     item = items[0]
     assert "持续服务：" in item["draft_content"]
+    assert "外部任职限制：" in item["draft_content"]
     assert "竞业及保密/IP：" in item["draft_content"]
     assert "未完整" not in item["draft_content"]
     assert "截断" not in item["draft_content"]
     assert not item["review_notes"]
     assert not item["lawyer_notes"]
     assert not item["missing_or_unclear"]
+
+
+def test_post_polish_splits_founder_service_long_line() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.founder_obligations",
+            "draft_content": (
+                "股权成熟：创始人/相关高管持有的受限股权分4年成熟。\n"
+                "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前应投入剩余实质性全部工作时间和精力；"
+                "全职加入后应投入实质性全部工作时间和精力，均不得在公司/集团外任职、投资或提供服务；"
+                "经投资人同意的研究机构任职例外，但不得实质影响其对公司的职责和经营管理。\n"
+                "竞业及保密/IP：限制期至离职后两年或不再持股后两年孰晚。"
+            ),
+            "review_notes": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前后均应投入实质性全部工作时间和精力。" in draft
+    assert "外部任职限制：全职加入前后均不得在公司/集团外任职、投资或提供服务" in draft
+    assert "持续服务：自天使轮增资交割日至IPO后一周年，相关创始人/核心人员在全职加入前应投入" not in draft
+    assert draft.count("外部任职限制：") == 1
 
 
 def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
@@ -1871,6 +1897,7 @@ if __name__ == "__main__":
     test_post_polish_liquidation_review_focuses_cross_reference_issue()
     test_founder_obligations_guard_completes_service_and_non_compete_summary()
     test_post_polish_guard_rewrites_founder_stale_review_tone()
+    test_post_polish_splits_founder_service_long_line()
     test_post_polish_removes_nonblocking_workpaper_review_notes()
     test_post_polish_normalizes_esop_milestone_labels()
     print("ok")
