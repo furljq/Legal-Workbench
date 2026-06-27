@@ -1211,6 +1211,43 @@ def test_anti_dilution_guard_converts_exception_check_to_note() -> None:
     assert "【注：第3.5.4第(3)项作为反稀释例外的口径可结合协议版本确认。】" in extraction["draft_content"]
 
 
+def test_anti_dilution_guard_fills_complete_exception_list() -> None:
+    extraction = {
+        "status": "drafted",
+        "draft_content": (
+            "反稀释方式：采用价格重设/接近全棘轮机制。\n"
+            "例外事项：员工激励或股权薪酬计划，经股东会通过的利润转增注册资本、资本公积转增股本等不适用。\n"
+            "【注：第3.5.4第(3)项作为反稀释例外的口径可结合协议版本确认。】"
+        ),
+        "extracted_facts": {"field_values": []},
+        "review_notes": ["建议律师重点复核第3.5.4第(3)项是否应列入反稀释例外。"],
+        "lawyer_notes": ["3.5.4第(3)项关于清算剩余财产分配，表述上不像反稀释例外事项，建议核对材料版本或条款编号。"],
+    }
+    candidates = [
+        {
+            "candidate_id": "sha.anti_dilution-C06",
+            "text": (
+                "3.5.4在下列情况下，反稀释权人不享有本第3.5条下的反稀释权利："
+                "（1）为实施任何员工激励计划或涉及股权的薪酬计划而新增的注册资本；"
+                "（2）经股东会通过的，利润转增注册资本、资本公积转增股本等情况下新增的注册资本；或"
+                "（3）经股东会批准公司改制为股份有限公司后的股份、红利或分拆等情况下进行转换而发行的股份、"
+                "在合格上市中发行的证券、或类似的证券发行。"
+            ),
+        }
+    ]
+
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "sha.anti_dilution"},
+        extraction,
+        candidates,
+    )
+
+    assert "股份制改制转换、合格上市发行及类似证券发行" in extraction["draft_content"]
+    assert "第3.5.4第(3)项作为反稀释例外" not in extraction["draft_content"]
+    assert not extraction["review_notes"]
+    assert not extraction["lawyer_notes"]
+
+
 def test_post_polish_guards_remove_soft_hard_markers() -> None:
     items = [
         {
@@ -1477,6 +1514,46 @@ def test_representations_core_guard_fills_authority_and_capital_legality() -> No
         candidates,
     )
     assert extraction["draft_content"].count("资料真实准确：") == 1
+
+
+def test_representations_core_guard_cleans_stale_lawyer_notes() -> None:
+    extraction = {
+        "status": "drafted",
+        "draft_content": "资料真实准确：公司方提供资料在重大方面真实、准确、完整。",
+        "extracted_facts": {
+            "field_values": [],
+            "lawyer_notes": ["材料未见签署授权和法律能力相关陈述保证，建议结合协议第4条完整文本确认。"],
+            "missing_or_unclear": ["增资款来源合法性未在材料中直接体现。"],
+        },
+        "review_notes": ["以下关键字段未见明确约定或未被模型提取：签署授权和法律能力。"],
+        "lawyer_notes": [
+            "材料未见签署授权和法律能力相关陈述保证，建议结合协议第4条完整文本确认。",
+            "增资款来源合法性未在材料中直接体现，仅见持股合法性。",
+        ],
+    }
+    candidates = [
+        {
+            "candidate_id": "spa.representations_warranties-C04",
+            "text": (
+                "4.6 签约授权。各方均具有完全法律权利、能力以签署和履行本协议之全部约定。"
+                "各方已经取得了签署本次增资交易文件并履行义务的所有权利或授权。"
+                "4.7 投资方增资款足额且合法，资金来源符合国家法律、法规的相关要求。"
+                "4.8 相关主体不存在代持或委托持股，不存在禁止持股情况。"
+            ),
+        }
+    ]
+
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "spa.representations_warranties"},
+        extraction,
+        candidates,
+    )
+
+    assert "签约及出资合法性：" in extraction["draft_content"]
+    assert not extraction["review_notes"]
+    assert not extraction["lawyer_notes"]
+    assert not extraction["extracted_facts"]["lawyer_notes"]
+    assert not extraction["extracted_facts"]["missing_or_unclear"]
 
 
 def test_representations_core_guard_deduplicates_existing_legality_lines() -> None:
@@ -1789,6 +1866,39 @@ def test_liquidation_preference_guard_fills_events_and_new_project() -> None:
     assert extraction["draft_content"].splitlines()[0].startswith("清算事件：")
     assert "新项目" in extraction["draft_content"]
     assert not extraction["review_notes"]
+
+
+def test_liquidation_preference_guard_cleans_stale_lawyer_notes() -> None:
+    extraction = {
+        "status": "drafted",
+        "draft_content": "清算触发：清算事件具体范围未完整显示。",
+        "extracted_facts": {"field_values": []},
+        "review_notes": ["清算事件定义不完整，建议律师复核原协议第3.4条前文。"],
+        "lawyer_notes": ["清算事件定义在材料中未完整呈现，建议核对完整第3.4条及前文列举事件。"],
+        "missing_or_unclear": ["清算事件未完整。"],
+    }
+    candidates = [
+        {
+            "candidate_id": "sha.liquidation_preference-C03",
+            "text": (
+                "3.4.1 如果发生以下任何事件（清算事件）：(1)清算、解散或者关闭等法定清算事由；"
+                "(2) 公司被兼并、收购或其他类似导致公司控制权发生变更的交易，使原股东在存续实体中"
+                "持股比例或表决权比例少于50%；(3) 公司全部或实质上全部资产被出售、全部知识产权或实质上"
+                "全部知识产权被许可或出售给第三方。"
+            ),
+        }
+    ]
+
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "sha.liquidation_preference"},
+        extraction,
+        candidates,
+    )
+
+    assert extraction["draft_content"].startswith("清算事件：")
+    assert not extraction["review_notes"]
+    assert not extraction["lawyer_notes"]
+    assert not extraction["missing_or_unclear"]
 
 
 def test_post_polish_liquidation_review_focuses_cross_reference_issue() -> None:
@@ -2385,9 +2495,15 @@ def test_post_polish_splits_inline_notes_and_liquidation_special_arrangements() 
     liquidation = items[0]["draft_content"]
     assert "剩余分配：" in liquidation
     assert "法定分配偏离：" in liquidation
+    assert liquidation.count("法定分配偏离：") == 1
     assert liquidation.count("新项目补偿：") == 1
     assert "剩余及特殊安排：" not in liquidation
     assert "特殊安排：" not in liquidation
+
+    apply_post_polish_quality_guards(items)
+    liquidation = items[0]["draft_content"]
+    assert liquidation.count("法定分配偏离：") == 1
+    assert liquidation.count("新项目补偿：") == 1
 
     esop = items[1]["draft_content"].splitlines()
     assert esop == [
@@ -2427,12 +2543,15 @@ if __name__ == "__main__":
     test_post_polish_splits_board_composition_long_line()
     test_rofr_tag_guard_resolves_ap_ak_alias()
     test_rofr_tag_guard_fills_tag_along_terms()
+    test_anti_dilution_guard_fills_complete_exception_list()
     test_representations_core_guard_fills_authority_and_capital_legality()
+    test_representations_core_guard_cleans_stale_lawyer_notes()
     test_representations_core_guard_deduplicates_existing_legality_lines()
     test_shareholder_reserved_guard_resolves_ap_required_matters()
     test_shareholder_reserved_guard_resolves_dual_majority_mechanism()
     test_shareholder_reserved_guard_removes_client_veto_practicality_blocker()
     test_liquidation_preference_guard_fills_events_and_new_project()
+    test_liquidation_preference_guard_cleans_stale_lawyer_notes()
     test_post_polish_liquidation_review_focuses_cross_reference_issue()
     test_founder_obligations_guard_completes_service_and_non_compete_summary()
     test_post_polish_guard_rewrites_founder_stale_review_tone()

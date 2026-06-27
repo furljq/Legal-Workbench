@@ -2472,6 +2472,65 @@ def clean_anti_dilution_review_tone(extraction: dict[str, Any]) -> None:
             and any(marker in note for marker in ("核对", "复核", "误植"))
         )
     ]
+    extraction["lawyer_notes"] = remove_stale_anti_dilution_exception_notes(extraction.get("lawyer_notes", []))
+    extraction["missing_or_unclear"] = remove_stale_anti_dilution_exception_notes(
+        extraction.get("missing_or_unclear", [])
+    )
+
+
+def has_anti_dilution_conversion_ipo_exception(candidates: list[dict[str, Any]]) -> bool:
+    compact_text = re.sub(r"\s+", "", combined_candidate_text(candidates))
+    return (
+        "3.5.4" in compact_text
+        and "改制为股份有限" in compact_text
+        and "合格上市" in compact_text
+        and "类似的证券发行" in compact_text
+    )
+
+
+def remove_stale_anti_dilution_exception_notes(notes: Any) -> list[str]:
+    normalized = normalize_string_list(notes)
+    return [
+        note
+        for note in normalized
+        if not (
+            (
+                "3.5.4" in note
+                and any(term in note for term in ("反稀释例外", "清算剩余财产分配", "文本误植"))
+            )
+            or ("清算剩余财产分配" in note and "反稀释" in note)
+        )
+    ]
+
+
+def guard_anti_dilution_exceptions(
+    extraction: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> None:
+    if not has_anti_dilution_conversion_ipo_exception(candidates):
+        return
+
+    exception_line = (
+        "例外事项：员工激励或股权薪酬计划、经股东会通过的利润转增注册资本或资本公积转增股本、"
+        "股份制改制转换、合格上市发行及类似证券发行等不适用。"
+    )
+    draft_content = replace_or_insert_kts_line(
+        str(extraction.get("draft_content") or ""),
+        exception_line,
+        ("例外事项", "适用例外"),
+        3,
+    )
+    draft_content = re.sub(
+        r"\n?【(?:注|待核)[：:][^】]*(?:3\.5\.4|反稀释例外|清算剩余财产分配|文本误植)[^】]*】",
+        "",
+        draft_content,
+    )
+    extraction["draft_content"] = "\n".join(line.rstrip() for line in draft_content.splitlines() if line.strip())
+    extraction["review_notes"] = remove_stale_anti_dilution_exception_notes(extraction.get("review_notes", []))
+    extraction["lawyer_notes"] = remove_stale_anti_dilution_exception_notes(extraction.get("lawyer_notes", []))
+    extraction["missing_or_unclear"] = remove_stale_anti_dilution_exception_notes(
+        extraction.get("missing_or_unclear", [])
+    )
 
 
 def clean_rofr_tag_workpaper_tone(extraction: dict[str, Any]) -> None:
@@ -3015,8 +3074,8 @@ def remove_stale_representations_notes(notes: Any) -> list[str]:
         note
         for note in normalized
         if not (
-            any(term in note for term in ("签署授权", "法律能力", "增资款来源", "增资款及持股合法性"))
-            and any(marker in note for marker in ("未见", "未体现", "未被模型提取", "缺失"))
+            any(term in note for term in ("签署授权", "法律能力", "增资款来源", "来源合法性", "增资款及持股合法性"))
+            and any(marker in note for marker in ("未见", "未体现", "未在材料", "未被模型提取", "缺失"))
         )
     ]
 
@@ -3089,6 +3148,12 @@ def guard_representations_core_fields(
         return
     extraction["draft_content"] = ensure_representations_core_lines(str(extraction.get("draft_content") or ""))
     extraction["review_notes"] = remove_stale_representations_notes(extraction.get("review_notes", []))
+    extraction["lawyer_notes"] = remove_stale_representations_notes(extraction.get("lawyer_notes", []))
+    extraction["missing_or_unclear"] = remove_stale_representations_notes(extraction.get("missing_or_unclear", []))
+    extracted_facts["lawyer_notes"] = remove_stale_representations_notes(extracted_facts.get("lawyer_notes", []))
+    extracted_facts["missing_or_unclear"] = remove_stale_representations_notes(
+        extracted_facts.get("missing_or_unclear", [])
+    )
 
 
 def has_shareholder_unanimous_matter_evidence(candidates: list[dict[str, Any]]) -> bool:
@@ -3419,6 +3484,8 @@ def has_liquidation_cross_reference_issue(item: dict[str, Any]) -> bool:
 def clean_liquidation_review_tone(item: dict[str, Any]) -> None:
     if not has_liquidation_cross_reference_issue(item):
         item["review_notes"] = remove_stale_liquidation_notes(item.get("review_notes", []))
+        item["lawyer_notes"] = remove_stale_liquidation_notes(item.get("lawyer_notes", []))
+        item["missing_or_unclear"] = remove_stale_liquidation_notes(item.get("missing_or_unclear", []))
         return
 
     draft_content = str(item.get("draft_content") or "")
@@ -3484,6 +3551,8 @@ def guard_liquidation_preference(
         )
     extraction["draft_content"] = draft_content
     extraction["review_notes"] = remove_stale_liquidation_notes(extraction.get("review_notes", []))
+    extraction["lawyer_notes"] = remove_stale_liquidation_notes(extraction.get("lawyer_notes", []))
+    extraction["missing_or_unclear"] = remove_stale_liquidation_notes(extraction.get("missing_or_unclear", []))
 
 
 def has_price_reset_anti_dilution_formula(candidates: list[dict[str, Any]]) -> bool:
@@ -4694,6 +4763,7 @@ def apply_deterministic_quality_guards(
         guard_shareholder_reserved_matters(extraction, candidates)
     if item_id == "sha.anti_dilution":
         guard_anti_dilution_method(extraction, candidates)
+        guard_anti_dilution_exceptions(extraction, candidates)
         clean_anti_dilution_review_tone(extraction)
     if item_id == "sha.information_audit":
         guard_information_audit_inspection(extraction, candidates)
@@ -5364,7 +5434,9 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
         return
     lines: list[str] = []
     changed = False
-    has_new_project_compensation = False
+    source_lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
+    has_new_project_compensation = any(line.startswith("新项目补偿：") for line in source_lines)
+    has_redistribution = any(line.startswith("法定分配偏离：") for line in source_lines)
     for line in draft_content.splitlines():
         stripped = line.strip()
         if stripped.startswith("清算事件：") and "；视为清算事件包括" in stripped:
@@ -5398,15 +5470,32 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
             body = stripped.split("：", 1)[1].rstrip("。")
             if "；如清算所得" in body:
                 redistribution, compensation = body.split("；如清算所得", 1)
-                lines.append("法定分配偏离：" + redistribution.rstrip("。") + "。")
+                if not has_redistribution:
+                    lines.append("法定分配偏离：" + redistribution.rstrip("。") + "。")
+                    has_redistribution = True
                 if not has_new_project_compensation:
                     lines.append("新项目补偿：如清算所得" + compensation.rstrip("。") + "。")
                     has_new_project_compensation = True
                 changed = True
                 continue
         lines.append(stripped)
-    if changed:
-        item["draft_content"] = "\n".join(line for line in lines if line)
+
+    deduped: list[str] = []
+    label_indexes: dict[str, int] = {}
+    for line in lines:
+        label = line.split("：", 1)[0] if "：" in line else ""
+        if label in {"新项目补偿", "法定分配偏离"}:
+            if label in label_indexes:
+                changed = True
+                existing_index = label_indexes[label]
+                if len(line) > len(deduped[existing_index]):
+                    deduped[existing_index] = line
+                continue
+            label_indexes[label] = len(deduped)
+        deduped.append(line)
+
+    if changed or deduped != lines:
+        item["draft_content"] = "\n".join(line for line in deduped if line)
 
 
 def normalize_anti_dilution_subpoints(item: dict[str, Any]) -> None:
