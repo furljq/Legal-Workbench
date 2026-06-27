@@ -29,6 +29,9 @@ TRANSIENT_ERROR_KEYWORDS = (
     "connection reset",
     "connection aborted",
     "remote end closed",
+    "did not contain output text",
+    "empty response",
+    "stream read failed",
 )
 
 
