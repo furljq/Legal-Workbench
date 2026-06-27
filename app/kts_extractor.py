@@ -4939,6 +4939,11 @@ def demote_drafted_review_notes(item: dict[str, Any]) -> None:
     item["review_notes"] = []
 
 
+def clear_drafted_missing_or_unclear(item: dict[str, Any]) -> None:
+    if str(item.get("status") or "") == "drafted":
+        item["missing_or_unclear"] = []
+
+
 def residual_rights_fallback_content(item: dict[str, Any]) -> str:
     if str(item.get("taxonomy_id") or "") != "sha.other":
         return ""
@@ -5353,6 +5358,7 @@ def refresh_final_statuses(items: list[dict[str, Any]]) -> None:
             normalize_string_list(item.get("review_notes")),
         )
         demote_drafted_review_notes(item)
+        clear_drafted_missing_or_unclear(item)
 
 
 def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
@@ -5380,6 +5386,10 @@ def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
     )
     cleaned: list[str] = []
     for note in normalized:
+        note = note.replace(
+            "子公司董事会一致安排不明确，已作为需确认事项提示。",
+            "需确认子公司董事会结构是否与公司董事会保持一致。",
+        )
         if note.startswith(nonblocking_prefixes):
             continue
         if any(
@@ -5387,6 +5397,20 @@ def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
             for marker in (
                 "已按规则",
                 "已分别判断",
+                "已分别检索",
+                "摘要中仅作为",
+                "摘要中宜",
+                "摘要应避免",
+                "本事项仅",
+                "不宜起草",
+                "不宜概括",
+                "根据本事项输出政策",
+                "无需因",
+                "虽不属于字段之一",
+                "当前证据除",
+                "不建议据此",
+                "材料未见ESOP来源安排。",
+                "常规回购权已见",
                 "已作为缺失检查结论处理",
                 "已作为缺失检查项提示",
                 "absence_ok字段",
@@ -5403,6 +5427,37 @@ def remove_nonblocking_workpaper_review_notes(notes: Any) -> list[str]:
         note = note.replace("候选证据", "材料")
         cleaned.append(note)
     return cleaned
+
+
+DUPLICATE_NOTE_MARKER_GROUPS = (
+    ("工商变更", "付款先决条件"),
+    ("本方", "董事席位"),
+    ("子公司董事会",),
+    ("第10.2/10.3", "第11.1"),
+)
+
+
+def note_has_marker_group(note: str, marker_group: tuple[str, ...]) -> bool:
+    return all(marker in note for marker in marker_group)
+
+
+def remove_duplicate_missing_notes(item: dict[str, Any]) -> None:
+    review_notes = normalize_string_list(item.get("review_notes"))
+    missing_notes = normalize_string_list(item.get("missing_or_unclear"))
+    if not review_notes or not missing_notes:
+        return
+    filtered: list[str] = []
+    for missing in missing_notes:
+        duplicate = False
+        for marker_group in DUPLICATE_NOTE_MARKER_GROUPS:
+            if not note_has_marker_group(missing, marker_group):
+                continue
+            if any(note_has_marker_group(review, marker_group) for review in review_notes):
+                duplicate = True
+                break
+        if not duplicate:
+            filtered.append(missing)
+    item["missing_or_unclear"] = filtered
 
 
 def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
@@ -5458,6 +5513,7 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         item["review_notes"] = remove_nonblocking_workpaper_review_notes(item.get("review_notes", []))
         item["lawyer_notes"] = remove_nonblocking_workpaper_review_notes(item.get("lawyer_notes", []))
         item["missing_or_unclear"] = remove_nonblocking_workpaper_review_notes(item.get("missing_or_unclear", []))
+        remove_duplicate_missing_notes(item)
 
 
 def normalize_absence_checks(value: Any) -> list[dict[str, Any]]:

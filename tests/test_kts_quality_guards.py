@@ -502,6 +502,7 @@ def test_refresh_final_statuses_demotes_soft_drafted_review_notes() -> None:
             "draft_content": "信息权：按协议约定提供年度报告。",
             "review_notes": ["建议律师确认是否需要补充月报。"],
             "lawyer_notes": ["既有律师提示。", "C06为其他事项，未纳入本事项摘要。"],
+            "missing_or_unclear": ["未见明确月报安排。"],
         },
         {
             "status": "drafted",
@@ -513,6 +514,7 @@ def test_refresh_final_statuses_demotes_soft_drafted_review_notes() -> None:
             "draft_content": "清算权：按协议约定分配。",
             "review_notes": ["需核对全文。"],
             "lawyer_notes": [],
+            "missing_or_unclear": ["完整文本未见。"],
         },
     ]
 
@@ -521,9 +523,11 @@ def test_refresh_final_statuses_demotes_soft_drafted_review_notes() -> None:
     assert items[0]["status"] == "drafted"
     assert items[0]["review_notes"] == []
     assert items[0]["lawyer_notes"] == ["既有律师提示。", "建议律师确认是否需要补充月报。"]
+    assert items[0]["missing_or_unclear"] == []
     assert items[1]["status"] == "needs_review"
     assert items[1]["review_notes"] == ["需核对全文。"]
     assert items[1]["lawyer_notes"] == []
+    assert items[1]["missing_or_unclear"] == ["完整文本未见。"]
 
 
 def test_residual_rights_fallback_prevents_empty_sha_other_content() -> None:
@@ -1768,7 +1772,7 @@ def test_post_polish_liquidation_review_focuses_cross_reference_issue() -> None:
 
     item = items[0]
     assert item["review_notes"] == ["需律师核对第10.2/10.3条对“第11.1条”的交叉引用是否为编号误植。"]
-    assert item["missing_or_unclear"] == ["第10.2/10.3条对“第11.1条”的交叉引用疑与清算分配条款编号不一致。"]
+    assert item["missing_or_unclear"] == []
     assert "参与型优先清算" not in "\n".join(item["review_notes"])
     assert "主体占位符" not in "\n".join(item["review_notes"])
     assert item["draft_content"].count("【待核：") == 1
@@ -1955,6 +1959,12 @@ def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
                 "固定优先分红为absence_ok字段，证据未见明确约定，已作为缺失检查项提示。",
                 "工商变更未完成解除条款中的具体时限未在候选证据中体现。",
                 "需律师重点复核工商变更登记作为付款先决条件的交易顺序。",
+                "子公司董事会一致安排不明确，已作为需确认事项提示。",
+            ],
+            "lawyer_notes": [
+                "材料未发现登记权/注册权安排；根据本事项输出政策，不宜起草登记权KTS正文。",
+                "常规回购权已见未完成首次公开发行、严重违法/违约等触发事由，不仅是廉洁或特殊事项触发的回购权。",
+                "需确认交割日安排。",
             ],
         }
     ]
@@ -1964,7 +1974,43 @@ def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
     assert items[0]["review_notes"] == [
         "工商变更未完成解除条款中的具体时限未在材料中体现。",
         "需律师重点复核工商变更登记作为付款先决条件的交易顺序。",
+        "需确认子公司董事会结构是否与公司董事会保持一致。",
     ]
+    assert items[0]["lawyer_notes"] == ["需确认交割日安排。"]
+
+
+def test_post_polish_deduplicates_missing_notes_already_in_review_notes() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.closing",
+            "draft_content": "交割安排：按协议约定完成。",
+            "review_notes": [
+                "需律师重点复核工商变更登记作为付款先决条件的交易顺序，以及股东名册/出资证明书是否应调整为交割时交付。",
+            ],
+            "missing_or_unclear": [
+                "工商变更登记作为付款先决条件而非交割后事项，需确认顺序安排。",
+                "未见当前证据明确付款通知发出与交割期限起算之间的具体时间关系。",
+            ],
+        },
+        {
+            "taxonomy_id": "sha.liquidation_preference",
+            "draft_content": "清算顺位：按协议约定执行。",
+            "review_notes": [
+                "需律师核对第10.2/10.3条对“第11.1条”的交叉引用是否为编号误植。",
+            ],
+            "missing_or_unclear": [
+                "第10.2/10.3条对“第11.1条”的交叉引用疑与清算分配条款编号不一致。",
+                "未见固定倍数回报。",
+            ],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["missing_or_unclear"] == [
+        "未见当前证据明确付款通知发出与交割期限起算之间的具体时间关系。",
+    ]
+    assert items[1]["missing_or_unclear"] == []
 
 
 def test_post_polish_normalizes_esop_milestone_labels() -> None:
@@ -2283,6 +2329,7 @@ if __name__ == "__main__":
     test_post_polish_guard_rewrites_founder_stale_review_tone()
     test_post_polish_splits_founder_service_long_line()
     test_post_polish_removes_nonblocking_workpaper_review_notes()
+    test_post_polish_deduplicates_missing_notes_already_in_review_notes()
     test_post_polish_normalizes_esop_milestone_labels()
     test_post_polish_splits_long_confidentiality_and_information_lines()
     test_post_polish_splits_reserved_matters_and_mfn_lines()
