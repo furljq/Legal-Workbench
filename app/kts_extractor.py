@@ -6085,11 +6085,67 @@ def normalize_closing_payment_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith("付款及交割：") and "；投资方应自收到通知书之日起" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            notice, rest = body.split("；投资方应", 1)
+            payment, closing = rest.split("，足额付款日为", 1)
+            lines.append("付款通知：" + notice.rstrip("。") + "。")
+            lines.append("付款期限：投资方应" + payment.rstrip("。") + "。")
+            lines.append("交割日：足额付款日为" + closing.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("付款期限：第四条先决条件满足") and "各投资方分别向" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            trigger_deadline, payment = body.split("，各投资方分别", 1)
+            trigger_match = re.match(r"(?P<trigger>.+?豁免)后(?P<deadline>.+)", trigger_deadline)
+            if trigger_match:
+                lines.append("付款触发：" + trigger_match.group("trigger").rstrip("。") + "。")
+                lines.append("付款期限：" + trigger_match.group("deadline").rstrip("。") + "。")
+            else:
+                lines.append("付款期限：" + trigger_deadline.rstrip("。") + "。")
+            lines.append("付款方式：各投资方分别" + payment.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("付款及交割：") and "；足额支付即构成交割" in stripped:
             body = stripped.split("：", 1)[1]
             payment, closing = body.split("；", 1)
             lines.append("付款期限：" + payment.rstrip("。") + "。")
             lines.append("交割日：" + closing.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("交割交付：") and "；并于交割日后" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            closing_day, later = body.split("；并于", 1)
+            lines.append("交割日交付：" + closing_day.rstrip("。") + "。")
+            lines.append("后续交付：于" + later.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("交割日：") and "，各投资方付款义务及交割相互独立" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            closing, independence = body.split("，各投资方", 1)
+            lines.append("交割日：" + closing.rstrip("。") + "。")
+            lines.append("交割独立性：各投资方" + independence.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("股东文件：") and "；整体交割后" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            certificate, register = body.split("；整体交割后", 1)
+            lines.append("出资证明书：" + certificate.rstrip("。") + "。")
+            lines.append("股东名册：整体交割后" + register.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("工商变更：公司应在协议生效日起") and "，且不晚于" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            registration, filing = body.split("，且不晚于", 1)
+            lines.append("登记期限：" + registration.rstrip("。") + "。")
+            lines.append("资料提交：不晚于" + filing.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("工商变更：本次增资工商变更") and "被列为付款先决条件" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            condition, license_copy = body.split("，公司并需", 1)
+            lines.append("付款前条件：" + condition.rstrip("。") + "。")
+            lines.append("营业执照：公司需" + license_copy.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)

@@ -2505,6 +2505,54 @@ def test_post_polish_removes_nonblocking_workpaper_review_notes() -> None:
     assert items[0]["lawyer_notes"] == ["需确认交割日安排。"]
 
 
+def test_post_polish_splits_closing_payment_delivery_and_registration_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.closing",
+            "draft_content": (
+                "付款及交割：先决条件满足后，公司可向投资方发出缴款通知书；投资方应自收到通知书之日起10个工作日内全额缴付投资款，足额付款日为本次交割日。\n"
+                "交割交付：公司应于交割日当日提供签署版股东名册及出资证明书，出资证明书可日期留空；并于交割日后三个工作日内递交完整签署版出资证明书扫描件。\n"
+                "工商变更：公司应在协议生效日起30日内完成增资变更登记并提供登记证明，且不晚于投资款缴付日后10日内提交全部登记资料。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.closing",
+            "draft_content": (
+                "付款期限：第四条先决条件满足或被投资方书面豁免后10个工作日内，或另行书面约定时间，各投资方分别向公司指定专用账户足额付款。\n"
+                "交割日：足额支付即构成交割，付款完成日为交割日，各投资方付款义务及交割相互独立。\n"
+                "股东文件：各投资方交割日后1个工作日内取得收款确认函及出资证明书；整体交割后1个工作日内取得增资后股东名册。\n"
+                "工商变更：本次增资工商变更、外商投资信息报告及外汇登记被列为付款先决条件，公司并需提供换发营业执照复印件。"
+            ),
+            "review_notes": ["需律师重点复核工商变更登记作为付款先决条件的交易顺序。"],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    current = items[0]["draft_content"]
+    assert "付款通知：先决条件满足后，公司可向投资方发出缴款通知书。" in current
+    assert "付款期限：投资方应自收到通知书之日起10个工作日内全额缴付投资款。" in current
+    assert "交割日：足额付款日为本次交割日。" in current
+    assert "交割日交付：公司应于交割日当日提供签署版股东名册及出资证明书，出资证明书可日期留空。" in current
+    assert "后续交付：于交割日后三个工作日内递交完整签署版出资证明书扫描件。" in current
+    assert "登记期限：公司应在协议生效日起30日内完成增资变更登记并提供登记证明。" in current
+    assert "资料提交：不晚于投资款缴付日后10日内提交全部登记资料。" in current
+
+    a_current = items[1]["draft_content"]
+    assert "付款触发：第四条先决条件满足或被投资方书面豁免。" in a_current
+    assert "付款期限：10个工作日内，或另行书面约定时间。" in a_current
+    assert "付款方式：各投资方分别向公司指定专用账户足额付款。" in a_current
+    assert "交割日：足额支付即构成交割，付款完成日为交割日。" in a_current
+    assert "交割独立性：各投资方付款义务及交割相互独立。" in a_current
+    assert "出资证明书：各投资方交割日后1个工作日内取得收款确认函及出资证明书。" in a_current
+    assert "股东名册：整体交割后1个工作日内取得增资后股东名册。" in a_current
+    assert "付款前条件：本次增资工商变更、外商投资信息报告及外汇登记被列为付款先决条件。" in a_current
+    assert "营业执照：公司需提供换发营业执照复印件。" in a_current
+    assert items[1]["review_notes"] == ["需律师重点复核工商变更登记作为付款先决条件的交易顺序。"]
+
+
 def test_post_polish_deduplicates_missing_notes_already_in_review_notes() -> None:
     items = [
         {
@@ -3540,6 +3588,7 @@ if __name__ == "__main__":
     test_post_polish_guard_rewrites_founder_stale_review_tone()
     test_post_polish_splits_founder_service_long_line()
     test_post_polish_removes_nonblocking_workpaper_review_notes()
+    test_post_polish_splits_closing_payment_delivery_and_registration_lines()
     test_post_polish_deduplicates_missing_notes_already_in_review_notes()
     test_post_polish_normalizes_esop_milestone_labels()
     test_post_polish_splits_esop_condition_and_usage_lines()
