@@ -4743,8 +4743,8 @@ def compact_transaction_investor_line(extracted_facts: dict[str, Any]) -> str:
         f"{investor}人民币{format_decimal_amount(amount)}元" for investor, amount in top_rows
     )
     return (
-        f"投资方明细：共{len(rows)}名投资方，合计人民币{format_decimal_amount(total)}元；"
-        f"主要包括{top_text}，其余{len(rows) - len(top_rows)}名合计人民币{format_decimal_amount(rest_total)}元。"
+        f"投资方概览：共{len(rows)}名投资方，合计人民币{format_decimal_amount(total)}元。\n"
+        f"主要投资方：{top_text}；其余{len(rows) - len(top_rows)}名合计人民币{format_decimal_amount(rest_total)}元。"
     )
 
 
@@ -4832,7 +4832,9 @@ def ensure_transaction_core_terms_after_polish(item: dict[str, Any]) -> None:
     if compact_investor_line:
         lines = [line for line in draft_content.splitlines() if line.strip()]
         for index, line in enumerate(lines):
-            if line.strip().startswith(("投资方明细", "投资方及金额")) and len(line) > 160:
+            if line.strip().startswith(("投资方明细", "投资方及金额")) and (
+                len(line) > 100 or "主要包括" in line
+            ):
                 lines[index] = compact_investor_line
                 draft_content = "\n".join(lines)
                 changed = True

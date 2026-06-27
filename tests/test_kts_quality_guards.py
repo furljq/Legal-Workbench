@@ -1131,8 +1131,8 @@ def test_post_polish_guards_remove_soft_hard_markers() -> None:
     assert "投前估值为10亿元" in combined
     assert "人民币170,000,000元" in combined
     assert "交易安排：公司投前估值为10亿元；本轮融资额为人民币170,000,000元。" in combined
-    assert "共6名投资方，合计人民币97,000,000元" in combined
-    assert "主要包括[公司或组织_A]人民币50,000,000元、[公司或组织_B]人民币25,000,000元、[公司或组织_C]人民币10,000,000元" in combined
+    assert "投资方概览：共6名投资方，合计人民币97,000,000元。" in combined
+    assert "主要投资方：[公司或组织_A]人民币50,000,000元、[公司或组织_B]人民币25,000,000元、[公司或组织_C]人民币10,000,000元" in combined
     assert "候选证据" not in combined
     assert "排他期承诺：签署日至交割日" in combined
     assert "排他安排：" not in combined
