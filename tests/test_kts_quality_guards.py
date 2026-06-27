@@ -510,6 +510,38 @@ def test_residual_rights_fallback_prevents_empty_sha_other_content() -> None:
     assert items[0]["style_polish"]["postprocess_fallback"] == "residual_rights_content"
 
 
+def test_sha_other_absence_policy_counts_missing_rights_as_handled() -> None:
+    item = {
+        "taxonomy_id": "sha.other",
+        "content_schema": {
+            "fields": [
+                {
+                    "key": "ordinary_redemption",
+                    "label": "常规回购权",
+                    "required": True,
+                }
+            ]
+        },
+    }
+    extracted_facts = {
+        "field_values": [
+            {
+                "key": "ordinary_redemption",
+                "label": "常规回购权",
+                "status": "not_found",
+                "value": "未见明确约定。",
+            }
+        ]
+    }
+
+    coverage = build_schema_coverage(item, extracted_facts)
+
+    assert coverage["status"] == "complete"
+    assert coverage["required_handled"] == 1
+    assert coverage["required_absent_ok"] == 1
+    assert not schema_coverage_review_notes(coverage)
+
+
 def test_docx_export_skips_empty_conditional_items_only() -> None:
     record = {
         "items": [
@@ -535,6 +567,33 @@ def test_docx_export_skips_empty_conditional_items_only() -> None:
     rows = export_items(record)
 
     assert [row["label"] for row in rows] == ["本次交易安排"]
+
+
+def test_docx_export_skips_empty_absence_check_items() -> None:
+    record = {
+        "items": [
+            {
+                "taxonomy_id": "sha.other",
+                "group": "SHA",
+                "label": "其他",
+                "draft_content": "",
+                "status": "drafted",
+                "output_policy": {"category": "mandatory_check_absence_output"},
+            },
+            {
+                "taxonomy_id": "sha.redemption",
+                "group": "SHA",
+                "label": "特殊回购权",
+                "draft_content": "触发事项：按协议约定。",
+                "status": "drafted",
+                "output_policy": {"category": "mandatory_check_default_output"},
+            },
+        ]
+    }
+
+    rows = export_items(record)
+
+    assert [row["label"] for row in rows] == ["特殊回购权"]
 
 
 def test_spa_other_workpaper_tone_is_cleaned() -> None:
@@ -1901,6 +1960,10 @@ if __name__ == "__main__":
     test_complete_hard_review_status_stays_needs_review()
     test_drafted_hard_review_status_upgrades_to_needs_review()
     test_not_configured_schema_does_not_force_needs_review()
+    test_residual_rights_fallback_prevents_empty_sha_other_content()
+    test_sha_other_absence_policy_counts_missing_rights_as_handled()
+    test_docx_export_skips_empty_conditional_items_only()
+    test_docx_export_skips_empty_absence_check_items()
     test_spa_other_workpaper_tone_is_cleaned()
     test_post_closing_covenants_guard_compacts_overlong_summary()
     test_style_polish_payload_includes_fields_and_review_context()

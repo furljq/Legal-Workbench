@@ -19,7 +19,11 @@ from source_refs import clean_clause_ref
 EAST_ASIA_FONT = "宋体"
 TITLE_FONT = "黑体"
 GROUP_ORDER = {"SPA": 0, "SHA": 1}
-SKIP_EMPTY_OUTPUT_CATEGORIES = {"conditional_output", "optional_conditional_output"}
+SKIP_EMPTY_OUTPUT_CATEGORIES = {
+    "conditional_output",
+    "mandatory_check_absence_output",
+    "optional_conditional_output",
+}
 PARENTHETICAL_MARKER_RE = re.compile(r"\s*([（(][一二三四五六七八九十\d]+[）)])")
 BRACKETED_NOTE_RE = re.compile(r"【[^】]{1,1200}】")
 NOTE_LINE_RE = re.compile(r"\s*(【[^】]*注[：:][^】]*】)")

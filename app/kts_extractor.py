@@ -188,7 +188,7 @@ OUTPUT_POLICY_BY_ITEM = {
         "instruction": "仅在存在最惠国、Side Letter、新项目优先投资权、优先征询权或类似特殊投资人权利时输出。",
     },
     "sha.other": {
-        "category": "conditional_output",
+        "category": "mandatory_check_absence_output",
         "instruction": "只在常规回购、领售、最惠国、创始人全职或不竞争义务等常见事项未见明确约定时输出缺失结论；已找到的事项应由对应专门条款承接。",
     },
 }
