@@ -759,6 +759,28 @@ def test_docx_export_keeps_absence_check_content() -> None:
     ]
 
 
+def test_docx_export_keeps_pending_check_marker_unnumbered() -> None:
+    record = {
+        "items": [
+            {
+                "taxonomy_id": "spa.closing",
+                "group": "SPA",
+                "label": "交割及工商变更安排",
+                "draft_content": "付款期限：先决条件满足后10个工作日内付款。【待核：工商变更作为付款前条件的交易顺序可操作性。】",
+                "status": "needs_review",
+                "output_policy": {"category": "mandatory_check_default_output"},
+            }
+        ]
+    }
+
+    rows = export_items(record)
+
+    assert rows[0]["content_lines"] == [
+        "1. 付款期限：先决条件满足后10个工作日内付款。",
+        "【待核：工商变更作为付款前条件的交易顺序可操作性。】",
+    ]
+
+
 def test_spa_other_workpaper_tone_is_cleaned() -> None:
     extraction = {
         "status": "needs_review",
@@ -2832,6 +2854,7 @@ if __name__ == "__main__":
     test_docx_export_skips_empty_conditional_items_only()
     test_docx_export_skips_empty_absence_check_items()
     test_docx_export_keeps_absence_check_content()
+    test_docx_export_keeps_pending_check_marker_unnumbered()
     test_spa_other_workpaper_tone_is_cleaned()
     test_post_closing_covenants_guard_compacts_overlong_summary()
     test_style_polish_payload_includes_fields_and_review_context()

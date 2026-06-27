@@ -26,7 +26,7 @@ SKIP_EMPTY_OUTPUT_CATEGORIES = {
 }
 PARENTHETICAL_MARKER_RE = re.compile(r"\s*([（(][一二三四五六七八九十\d]+[）)])")
 BRACKETED_NOTE_RE = re.compile(r"【[^】]{1,1200}】")
-NOTE_LINE_RE = re.compile(r"\s*(【[^】]*注[：:][^】]*】)")
+NOTE_LINE_RE = re.compile(r"\s*(【[^】]*(?:注|待核|待确认)[：:][^】]*】)")
 PRENUMBERED_LINE_RE = re.compile(r"^(\d+[.、]\s*|（[一二三四五六七八九十\d]+）|\([0-9]+\))")
 SUB_NUMBERED_LINE_RE = re.compile(r"^(\d+\.\d+)")
 SOURCE_REF_MAX_LENGTH = 96
@@ -62,7 +62,11 @@ def separate_note_lines(text: str) -> str:
 
 def is_note_line(line: str) -> bool:
     text = line.strip()
-    return text.startswith("【") and text.endswith("】") and "注" in text
+    return (
+        text.startswith("【")
+        and text.endswith("】")
+        and any(marker in text for marker in ("注", "待核", "待确认"))
+    )
 
 
 def split_readable_lines(value: object) -> list[str]:
