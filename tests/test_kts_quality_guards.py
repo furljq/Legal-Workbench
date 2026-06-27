@@ -1062,6 +1062,64 @@ def test_post_closing_covenants_guard_backfills_specific_commitments_from_candid
     assert extraction["extracted_facts"]["missing_or_unclear"] == []
 
 
+def test_post_closing_covenants_guard_backfills_use_of_proceeds_from_candidates() -> None:
+    extraction = {
+        "status": "needs_review",
+        "draft_content": (
+            "团队协议：公司需与创始股东签署顾问/劳动合同及保密、知识产权归属和竞业文件。\n"
+            "【注：候选证据未见本次增资款用途限制。】"
+        ),
+        "extracted_facts": {
+            "field_values": [
+                {
+                    "key": "use_of_proceeds",
+                    "label": "增资款用途限制",
+                    "status": "not_found",
+                    "value": "",
+                    "note": "候选证据未体现本次增资款用途限制。",
+                }
+            ],
+            "missing_or_unclear": ["未见本次增资款用途限制。"],
+            "lawyer_notes": ["未见增资款用途限制，建议确认。"],
+        },
+        "review_notes": ["以下关键字段未见明确约定或未被模型提取：增资款用途限制。"],
+        "lawyer_notes": ["未见增资款用途限制，建议确认。"],
+        "missing_or_unclear": ["未见本次增资款用途限制。"],
+    }
+    candidates = [
+        {
+            "candidate_id": "spa.post_closing_covenants-C01",
+            "text": (
+                "4.1增资款的使用。公司应将增资价款用于业务拓展、研发、生产、资本性支出及拟从事的主营业务，"
+                "不得用于偿还公司或者股东债务等其他用途（但经股东会全票通过一致同意的除外），"
+                "未经投资方同意，增资款不得用于对外投资、委托贷款和证券期货交易。"
+            ),
+        }
+    ]
+
+    apply_deterministic_quality_guards(
+        {"taxonomy_id": "spa.post_closing_covenants"},
+        extraction,
+        candidates,
+    )
+
+    draft = extraction["draft_content"]
+    assert "资金用途：限业务拓展、研发、生产、资本支出及主营业务" in draft
+    assert "偿债需股东会全票同意" in draft
+    assert "对外投资/委托贷款/证券期货需投资方同意" in draft
+    use_field = extraction["extracted_facts"]["field_values"][0]
+    assert use_field["status"] == "found"
+    assert "证券期货交易" in use_field["value"]
+    combined_notes = "\n".join(
+        extraction.get("review_notes", [])
+        + extraction.get("lawyer_notes", [])
+        + extraction.get("missing_or_unclear", [])
+        + extraction["extracted_facts"].get("missing_or_unclear", [])
+        + extraction["extracted_facts"].get("lawyer_notes", [])
+    )
+    assert "未见" not in combined_notes
+
+
 def test_style_polish_payload_includes_fields_and_review_context() -> None:
     item = {
         "taxonomy_id": "spa.representations_warranties",
@@ -1670,7 +1728,20 @@ def test_anti_dilution_guard_fills_complete_exception_list() -> None:
             "例外事项：员工激励或股权薪酬计划，经股东会通过的利润转增注册资本、资本公积转增股本等不适用。\n"
             "【注：第3.5.4第(3)项作为反稀释例外的口径可结合协议版本确认。】"
         ),
-        "extracted_facts": {"field_values": []},
+        "extracted_facts": {
+            "field_values": [
+                {
+                    "key": "exceptions",
+                    "label": "例外情形",
+                    "status": "found",
+                    "value": "员工激励和利润转增不适用；另有一项关于清算剩余财产按出资比例分配的表述列于例外项下。",
+                    "note": "第三项内容与反稀释例外的逻辑不完全一致，建议核对原文版本或编号。",
+                }
+            ],
+            "unclear_points": ["反稀释例外中的清算分配表述是否为误植或引用错位。"],
+            "missing_or_unclear": ["3.5.4第(3)项是否确为反稀释例外存在不清。"],
+            "lawyer_notes": ["3.5.4第(3)项关于清算剩余财产分配，表述上不像反稀释例外事项，建议核对材料版本或条款编号。"],
+        },
         "review_notes": ["建议律师重点复核第3.5.4第(3)项是否应列入反稀释例外。"],
         "lawyer_notes": ["3.5.4第(3)项关于清算剩余财产分配，表述上不像反稀释例外事项，建议核对材料版本或条款编号。"],
     }
@@ -1697,6 +1768,14 @@ def test_anti_dilution_guard_fills_complete_exception_list() -> None:
     assert "第3.5.4第(3)项作为反稀释例外" not in extraction["draft_content"]
     assert not extraction["review_notes"]
     assert not extraction["lawyer_notes"]
+    facts = extraction["extracted_facts"]
+    exceptions = facts["field_values"][0]
+    assert exceptions["status"] == "found"
+    assert "合格上市发行证券或类似证券发行" in exceptions["value"]
+    assert "清算剩余财产" not in exceptions["value"]
+    assert not facts["unclear_points"]
+    assert not facts["missing_or_unclear"]
+    assert not facts["lawyer_notes"]
 
 
 def test_post_polish_guards_remove_soft_hard_markers() -> None:
@@ -2272,6 +2351,7 @@ def test_shareholder_reserved_guard_removes_client_veto_practicality_blocker() -
         "lawyer_notes": [
             "保护性事项采用双层机制：部分事项由特定主体[[公司或组织_AI]或组织_AP]同意，部分事项由三分之二表决权加多数[[公司或组织_AI]或组织_AK]同意；KTS中不宜概括为全体投资人一致同意。",
             "如本方无法单独构成多数[[公司或组织_AI]或组织_AK]或无法阻却超过三分之二优先股同意，其对1.1.8事项的veto实际可行性需进一步确认。",
+            "需律师结合未脱敏文件确认匿名占位符对应的投资人类别及是否影响客户否决权判断。",
         ],
     }
     candidates = [
@@ -2304,6 +2384,7 @@ def test_shareholder_reserved_guard_removes_client_veto_practicality_blocker() -
     assert not extraction["review_notes"]
     assert not extraction["missing_or_unclear"]
     assert all("本方" not in note and "veto" not in note for note in extraction["lawyer_notes"])
+    assert all("占位符" not in note and "未脱敏" not in note for note in extraction["lawyer_notes"])
 
     facts = extraction["extracted_facts"]
     for key in ("summary_points", "unclear_points", "lawyer_notes", "missing_or_unclear"):
@@ -2624,6 +2705,26 @@ def test_post_polish_guard_rewrites_founder_stale_review_tone() -> None:
     assert not item["missing_or_unclear"]
 
 
+def test_founder_obligations_placeholder_review_note_is_nonblocking() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.founder_obligations",
+            "draft_content": (
+                "持续任职：服务期内，创始股东未经投资人同意不得主动离职。\n"
+                "竞业期限：任职期间及离任后24个月。"
+            ),
+            "review_notes": ["建议律师确认服务期定义、核心人员名单附件及竞业限制主体占位符对应的具体主体。"],
+            "lawyer_notes": ["竞业限制主体占位符对应的具体主体需结合协议定义理解。"],
+            "missing_or_unclear": [],
+        }
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    assert items[0]["review_notes"] == []
+    assert items[0]["lawyer_notes"] == []
+
+
 def test_post_polish_splits_founder_service_long_line() -> None:
     items = [
         {
@@ -2727,6 +2828,11 @@ def test_post_polish_splits_closing_payment_delivery_and_registration_lines() ->
             ),
             "review_notes": ["需律师重点复核工商变更登记作为付款先决条件的交易顺序。"],
         },
+        {
+            "taxonomy_id": "spa.closing",
+            "draft_content": "工商变更：本次增资工商变更、外商投资信息报告及外汇登记被列为付款先决条件。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -2752,6 +2858,7 @@ def test_post_polish_splits_closing_payment_delivery_and_registration_lines() ->
     assert "付款前条件：本次增资工商变更、外商投资信息报告及外汇登记被列为付款先决条件。" in a_current
     assert "营业执照：公司需提供换发营业执照复印件。" in a_current
     assert items[1]["review_notes"] == ["需律师重点复核工商变更登记作为付款先决条件的交易顺序。"]
+    assert items[2]["draft_content"] == "付款前条件：本次增资工商变更、外商投资信息报告及外汇登记被列为付款先决条件。"
 
 
 def test_post_polish_deduplicates_missing_notes_already_in_review_notes() -> None:
@@ -3456,6 +3563,13 @@ def test_post_polish_compacts_anti_dilution_formula_and_compensation_lines() -> 
             "draft_content": "调整计算：按投资总额、调整后每单位认购价格及低价增资后总注册资本计算。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.anti_dilution",
+            "draft_content": (
+                "例外事项：员工激励或股权薪酬计划，经股东会通过的利润转增注册资本、资本公积转增股本等不适用。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3481,6 +3595,10 @@ def test_post_polish_compacts_anti_dilution_formula_and_compensation_lines() -> 
     assert "替代安排：" not in weighted_average
 
     assert items[2]["draft_content"] == "调整计算：按投资总额、调整后每单位认购价格及低价增资后总注册资本确定持股比例。"
+    partial_exceptions = items[3]["draft_content"]
+    assert partial_exceptions == "例外事项：员工激励/股权薪酬、利润或资本公积转增不适用。"
+    assert "股份制改制" not in partial_exceptions
+    assert "合格上市" not in partial_exceptions
 
 
 def test_post_polish_compacts_compliance_kts_language() -> None:
@@ -3927,6 +4045,7 @@ if __name__ == "__main__":
     test_post_closing_covenants_guard_compacts_overlong_summary()
     test_post_closing_covenants_guard_replaces_stale_case_compact()
     test_post_closing_covenants_guard_backfills_specific_commitments_from_candidates()
+    test_post_closing_covenants_guard_backfills_use_of_proceeds_from_candidates()
     test_style_polish_payload_includes_fields_and_review_context()
     test_style_polish_validation_allows_removing_workpaper_note()
     test_candidate_context_centers_on_source_quote()
@@ -3954,6 +4073,7 @@ if __name__ == "__main__":
     test_post_polish_splits_liquidation_events_order_and_amounts()
     test_founder_obligations_guard_completes_service_and_non_compete_summary()
     test_post_polish_guard_rewrites_founder_stale_review_tone()
+    test_founder_obligations_placeholder_review_note_is_nonblocking()
     test_post_polish_splits_founder_service_long_line()
     test_post_polish_removes_nonblocking_workpaper_review_notes()
     test_post_polish_splits_closing_payment_delivery_and_registration_lines()

@@ -51,7 +51,7 @@
     "spa.post_closing_covenants": {
       "drafting_guidance": "按承诺类型归纳，保留特殊期限、主体和里程碑；不要只写概括句。",
       "fields": [
-        {"key": "use_of_proceeds", "label": "增资款用途限制", "required": true, "aliases": ["资金用途", "增资款不得"]},
+        {"key": "use_of_proceeds", "label": "增资款用途限制", "required": true, "absence_ok": true, "aliases": ["资金用途", "增资款不得"]},
         {"key": "capital_contribution", "label": "历史/现有股东实缴承诺", "required": true, "absence_ok": true, "aliases": ["实缴", "认缴出资"]},
         {"key": "non_compete_and_priority", "label": "竞业限制/业务唯一性", "required": false, "aliases": ["竞业", "竞争", "唯一实体", "优先级"]},
         {"key": "service_and_team", "label": "顾问/保密/IP/团队安排", "required": false, "aliases": ["顾问合同", "保密协议", "知识产权归属", "团队"]},

@@ -2514,10 +2514,7 @@ def clean_anti_dilution_review_tone(extraction: dict[str, Any]) -> None:
             and any(marker in note for marker in ("核对", "复核", "误植"))
         )
     ]
-    extraction["lawyer_notes"] = remove_stale_anti_dilution_exception_notes(extraction.get("lawyer_notes", []))
-    extraction["missing_or_unclear"] = remove_stale_anti_dilution_exception_notes(
-        extraction.get("missing_or_unclear", [])
-    )
+    clean_anti_dilution_exception_state(extraction)
 
 
 def has_anti_dilution_conversion_ipo_exception(candidates: list[dict[str, Any]]) -> bool:
@@ -2530,6 +2527,18 @@ def has_anti_dilution_conversion_ipo_exception(candidates: list[dict[str, Any]])
     )
 
 
+ANTI_DILUTION_COMPLETE_EXCEPTION_LINE = (
+    "例外事项：员工激励或股权薪酬计划、经股东会通过的利润转增注册资本或资本公积转增股本、"
+    "股份制改制转换、合格上市发行及类似证券发行等不适用。"
+)
+
+ANTI_DILUTION_COMPLETE_EXCEPTION_VALUE = (
+    "反稀释权不适用于为实施员工激励计划或涉及股权薪酬计划而新增注册资本、发行期权或基于期权新增注册资本；"
+    "经股东会通过的利润转增注册资本、资本公积转增股本等新增注册资本；"
+    "经股东会批准公司改制为股份有限公司后的股份、红利或分拆转换发行股份、合格上市发行证券或类似证券发行。"
+)
+
+
 def remove_stale_anti_dilution_exception_notes(notes: Any) -> list[str]:
     normalized = normalize_string_list(notes)
     return [
@@ -2538,11 +2547,72 @@ def remove_stale_anti_dilution_exception_notes(notes: Any) -> list[str]:
         if not (
             (
                 "3.5.4" in note
-                and any(term in note for term in ("反稀释例外", "清算剩余财产分配", "文本误植"))
+                and any(term in note for term in ("反稀释例外", "清算分配", "清算剩余财产分配", "文本误植", "引用错位"))
             )
             or ("清算剩余财产分配" in note and "反稀释" in note)
+            or ("清算分配" in note and "反稀释例外" in note)
         )
     ]
+
+
+def clean_anti_dilution_exception_state(extraction: dict[str, Any]) -> None:
+    containers: list[dict[str, Any]] = [extraction]
+    extracted_facts = extraction.get("extracted_facts")
+    if isinstance(extracted_facts, dict):
+        containers.append(extracted_facts)
+    for container in containers:
+        for key in ("review_notes", "lawyer_notes", "missing_or_unclear", "unclear_points"):
+            if key in container:
+                container[key] = remove_stale_anti_dilution_exception_notes(container.get(key, []))
+
+
+def anti_dilution_exception_candidate_ids(candidates: list[dict[str, Any]]) -> list[str]:
+    candidate_ids: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        text = str(candidate.get("text") or "")
+        if "3.5.4" not in text and "反稀释权人不享有" not in text:
+            continue
+        candidate_id = str(candidate.get("candidate_id") or "").strip()
+        if candidate_id and candidate_id not in candidate_ids:
+            candidate_ids.append(candidate_id)
+    return candidate_ids
+
+
+def sync_anti_dilution_complete_exception_field(
+    extraction: dict[str, Any],
+    candidates: list[dict[str, Any]],
+) -> None:
+    extracted_facts = extraction.get("extracted_facts")
+    if not isinstance(extracted_facts, dict):
+        return
+    field_values = extracted_facts.setdefault("field_values", [])
+    if not isinstance(field_values, list):
+        field_values = []
+        extracted_facts["field_values"] = field_values
+
+    target: dict[str, Any] | None = None
+    for field in field_values:
+        if not isinstance(field, dict):
+            continue
+        if str(field.get("key") or "") == "exceptions" or str(field.get("label") or "") == "例外情形":
+            target = field
+            break
+    if target is None:
+        target = {"key": "exceptions", "label": "例外情形"}
+        field_values.append(target)
+
+    target.update(
+        {
+            "key": "exceptions",
+            "label": "例外情形",
+            "status": "found",
+            "value": ANTI_DILUTION_COMPLETE_EXCEPTION_VALUE,
+            "note": "第3.5.4条列明三类不适用反稀释权的例外。",
+            "source_candidate_ids": anti_dilution_exception_candidate_ids(candidates),
+        }
+    )
 
 
 def guard_anti_dilution_exceptions(
@@ -2552,13 +2622,9 @@ def guard_anti_dilution_exceptions(
     if not has_anti_dilution_conversion_ipo_exception(candidates):
         return
 
-    exception_line = (
-        "例外事项：员工激励或股权薪酬计划、经股东会通过的利润转增注册资本或资本公积转增股本、"
-        "股份制改制转换、合格上市发行及类似证券发行等不适用。"
-    )
     draft_content = replace_or_insert_kts_line(
         str(extraction.get("draft_content") or ""),
-        exception_line,
+        ANTI_DILUTION_COMPLETE_EXCEPTION_LINE,
         ("例外事项", "适用例外"),
         3,
     )
@@ -2568,11 +2634,8 @@ def guard_anti_dilution_exceptions(
         draft_content,
     )
     extraction["draft_content"] = "\n".join(line.rstrip() for line in draft_content.splitlines() if line.strip())
-    extraction["review_notes"] = remove_stale_anti_dilution_exception_notes(extraction.get("review_notes", []))
-    extraction["lawyer_notes"] = remove_stale_anti_dilution_exception_notes(extraction.get("lawyer_notes", []))
-    extraction["missing_or_unclear"] = remove_stale_anti_dilution_exception_notes(
-        extraction.get("missing_or_unclear", [])
-    )
+    sync_anti_dilution_complete_exception_field(extraction, candidates)
+    clean_anti_dilution_exception_state(extraction)
 
 
 def clean_rofr_tag_workpaper_tone(extraction: dict[str, Any]) -> None:
@@ -2891,7 +2954,7 @@ def post_closing_summary_point(
 def compact_post_closing_use_of_proceeds(value: str) -> str:
     if "业务拓展、研发、生产、资本" in value:
         body = "限业务拓展、研发、生产、资本支出及主营业务"
-        if "偿还公司或股东债务" in value:
+        if "偿还公司或股东债务" in value or "偿还公司或者股东债务" in value:
             body += "；偿债需股东会全票同意"
         if "对外投资" in value or "委托贷款" in value or "证券期货" in value:
             body += "，对外投资/委托贷款/证券期货需投资方同意"
@@ -3056,6 +3119,16 @@ def guard_post_closing_covenants_evidence(
     if not isinstance(extracted_facts, dict):
         return False
     fixed = False
+    if post_closing_contains_milestone_evidence(candidates, ("增资款的使用", "业务拓展", "证券期货交易")):
+        set_extracted_field(
+            extracted_facts,
+            "use_of_proceeds",
+            "增资款用途限制",
+            "增资价款应用于业务拓展、研发、生产、资本性支出及拟从事的主营业务；不得用于偿还公司或者股东债务等其他用途，除非经股东会全票通过一致同意；未经投资方同意，不得用于对外投资、委托贷款和证券期货交易。",
+            candidate_ids_with_text_markers(candidates, ("增资款的使用", "证券期货交易")),
+            "系统根据增资款使用条款补足。",
+        )
+        fixed = True
     if post_closing_contains_milestone_evidence(candidates, ("知识产权转移", "第二次交割日")):
         set_extracted_field(
             extracted_facts,
@@ -3100,6 +3173,7 @@ def guard_post_closing_covenants_evidence(
 
 
 POST_CLOSING_FACT_NOTE_TERMS: dict[str, tuple[str, ...]] = {
+    "use_of_proceeds": ("增资款用途", "资金用途", "增资款"),
     "ip_transfer": ("IP转移", "知识产权转移"),
     "regulatory_milestones": ("业务许可", "备案", "卫星发射", "许可/备案"),
     "tax_compliance": ("税务", "税收申报", "缴税"),
@@ -3749,6 +3823,7 @@ def remove_stale_shareholder_reserved_notes(notes: Any) -> list[str]:
             and any(marker in note for marker in ("确认", "未直接", "需要律师确认", "未被模型提取", "缺失", "截断", "复核"))
         )
         and not is_shareholder_reserved_client_veto_note(note)
+        and not is_shareholder_reserved_placeholder_note(note)
     ]
 
 
@@ -3782,6 +3857,13 @@ def is_shareholder_reserved_client_veto_note(note: str) -> bool:
     return any(term in text for term in ("veto", "否决", "阻却")) and any(
         marker in text for marker in ("持股", "身份", "可行性", "能力", "多数", "确认")
     )
+
+
+def is_shareholder_reserved_placeholder_note(note: str) -> bool:
+    text = str(note or "")
+    if not any(marker in text for marker in ("匿名占位符", "占位符", "未脱敏")):
+        return False
+    return any(term in text for term in ("投资人", "优先股", "客户否决权", "身份", "主体"))
 
 
 def shareholder_reserved_threshold_value(
@@ -5407,6 +5489,8 @@ def remove_stale_founder_obligations_notes(notes: Any) -> list[str]:
             continue
         if any(term in note for term in ("无法确认承诺对象", "具体义务", "完整例外", "零散保密/IP", "独立保密/IP归属协议条款")):
             continue
+        if "占位符" in note and any(term in note for term in ("竞业限制主体", "核心人员", "服务期", "协议定义")):
+            continue
         filtered.append(note)
     return filtered
 
@@ -6796,6 +6880,10 @@ def normalize_closing_payment_subpoints(item: dict[str, Any]) -> None:
             continue
         if stripped.startswith("工商变更：本次增资工商变更") and "被列为付款先决条件" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
+            if "，公司并需" not in body:
+                lines.append("付款前条件：" + body.rstrip("。") + "。")
+                changed = True
+                continue
             condition, license_copy = body.split("，公司并需", 1)
             lines.append("付款前条件：" + condition.rstrip("。") + "。")
             lines.append("营业执照：公司需" + license_copy.rstrip("。") + "。")
@@ -7226,6 +7314,27 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
         item["draft_content"] = "\n".join(line for line in deduped if line)
 
 
+def compact_anti_dilution_exception_line(line: str) -> str:
+    if "：" not in line:
+        return line
+    body = line.split("：", 1)[1].rstrip("。")
+    parts: list[str] = []
+    if any(term in body for term in ("员工激励", "股权薪酬", "期权")):
+        parts.append("员工激励/股权薪酬")
+    if any(term in body for term in ("利润转增", "资本公积")):
+        parts.append("利润或资本公积转增")
+    has_conversion_or_ipo = (
+        any(term in body for term in ("股份制改制", "改制为股份", "股份有限公司"))
+        or "合格上市" in body
+        or ("类似" in body and "证券发行" in body)
+    )
+    if has_conversion_or_ipo:
+        parts.append("股份制改制、合格上市发行及类似证券发行")
+    if not parts:
+        return line
+    return "例外事项：" + "、".join(parts) + "不适用。"
+
+
 def normalize_anti_dilution_subpoints(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
@@ -7294,7 +7403,7 @@ def normalize_anti_dilution_subpoints(item: dict[str, Any]) -> None:
             changed = True
             continue
         if stripped.startswith("例外事项：员工激励或股权薪酬计划"):
-            lines.append("例外事项：员工激励/股权薪酬、利润或资本公积转增、股份制改制、合格上市发行及类似证券发行不适用。")
+            lines.append(compact_anti_dilution_exception_line(stripped))
             changed = True
             continue
         lines.append(stripped)
