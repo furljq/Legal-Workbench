@@ -2239,6 +2239,49 @@ def test_post_polish_liquidation_review_focuses_cross_reference_issue() -> None:
     assert item["draft_content"].count("【待核：") == 1
 
 
+def test_post_polish_splits_liquidation_events_order_and_amounts() -> None:
+    items = [
+        {
+            "taxonomy_id": "sha.liquidation_preference",
+            "draft_content": (
+                "清算事件：包括法定清算/解散/关闭、控制权变更致原股东持股或表决权低于50%、全部或实质全部资产出售，以及全部/实质全部知识产权许可或出售。\n"
+                "清算顺位：投资人股东优先于其他股东；投资人之间后轮优先于前轮，依次为甲方投资人、第二轮投资人、第一轮投资人；同轮不足按实缴比例分配。\n"
+                "优先清算额：已批准并宣告但未支付红利+各投资人已实际支付投资价款100%+按8%年单利自实际支付投资款日起计至足额收到日的收益。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.liquidation_preference",
+            "draft_content": (
+                "清算顺位：依法清偿法定优先款项及债务后，剩余财产先向本轮优先清算权人支付本轮优先清算额，再向天使轮优先清算权人支付天使轮优先清算额。\n"
+                "优先清算额：优先清算额为增资款加已宣布未付股息，不足时同顺位按应得金额比例分配。\n"
+                "剩余分配：优先清算权人取得全部优先额后，仍与全体股东按届时股权比例分享剩余财产；员工激励股仅计入已实际取得且无未届满限制期部分。"
+            ),
+            "review_notes": ["需律师核对第10.2/10.3条对“第11.1条”的交叉引用是否为编号误植。"],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    current = items[0]["draft_content"]
+    assert "法定清算事件：法定清算/解散/关闭。" in current
+    assert "视同清算事件：控制权变更致原股东持股或表决权低于50%，或全部/实质全部资产出售。" in current
+    assert "知识产权处置：全部/实质全部知识产权许可或出售。" in current
+    assert "清算顺位：投资人股东优先于其他股东。" in current
+    assert "轮次顺位：投资人之间后轮优先于前轮，依次为甲方投资人、第二轮投资人、第一轮投资人。" in current
+    assert "同轮分配：同轮不足按实缴比例分配。" in current
+    assert "优先清算额：已批准未付红利 + 各投资人实际支付投资价款100% + 8%年单利收益。" in current
+
+    a_current = items[1]["draft_content"]
+    assert "清偿前提：依法清偿法定优先款项及债务后。" in a_current
+    assert "清算顺位：剩余财产先向本轮优先清算权人支付本轮优先清算额，再向天使轮优先清算权人支付天使轮优先清算额。" in a_current
+    assert "优先清算额：增资款加已宣布未付股息。" in a_current
+    assert "不足分配：同顺位不足时按应得金额比例分配。" in a_current
+    assert "员工激励股口径：仅计入已实际取得且无未届满限制期部分。" in a_current
+    assert items[1]["review_notes"] == ["需律师核对第10.2/10.3条对“第11.1条”的交叉引用是否为编号误植。"]
+
+
 def test_founder_obligations_guard_completes_service_and_non_compete_summary() -> None:
     extraction = {
         "status": "needs_review",
@@ -3492,6 +3535,7 @@ if __name__ == "__main__":
     test_liquidation_preference_guard_fills_events_and_new_project()
     test_liquidation_preference_guard_cleans_stale_lawyer_notes()
     test_post_polish_liquidation_review_focuses_cross_reference_issue()
+    test_post_polish_splits_liquidation_events_order_and_amounts()
     test_founder_obligations_guard_completes_service_and_non_compete_summary()
     test_post_polish_guard_rewrites_founder_stale_review_tone()
     test_post_polish_splits_founder_service_long_line()

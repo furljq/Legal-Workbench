@@ -6401,6 +6401,12 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
     has_redistribution = any(line.startswith("法定分配偏离：") for line in source_lines)
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith("清算事件：包括法定清算/解散/关闭"):
+            lines.append("法定清算事件：法定清算/解散/关闭。")
+            lines.append("视同清算事件：控制权变更致原股东持股或表决权低于50%，或全部/实质全部资产出售。")
+            lines.append("知识产权处置：全部/实质全部知识产权许可或出售。")
+            changed = True
+            continue
         if stripped.startswith("清算事件：") and "；视为清算事件包括" in stripped:
             body = stripped.split("：", 1)[1]
             statutory, deemed = body.split("；视为清算事件包括", 1)
@@ -6413,11 +6419,48 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
                 lines.append("豁免机制：参与该事件的优先清算权人一致同意可豁免。")
             changed = True
             continue
+        if stripped.startswith("清算顺位：") and "；投资人之间后轮优先于前轮" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            first, rest = body.split("；投资人之间", 1)
+            lines.append("清算顺位：" + first.rstrip("。") + "。")
+            if "；同轮不足" in rest:
+                rounds, same_round = rest.split("；同轮不足", 1)
+                lines.append("轮次顺位：投资人之间" + rounds.rstrip("。") + "。")
+                lines.append("同轮分配：同轮不足" + same_round.rstrip("。") + "。")
+            else:
+                lines.append("轮次顺位：投资人之间" + rest.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("清算顺位：依法清偿") and "，剩余财产" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            priority, order = body.split("，剩余财产", 1)
+            lines.append("清偿前提：" + priority.rstrip("。") + "。")
+            lines.append("清算顺位：剩余财产" + order.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("清算顺位及金额：") and "；优先清算额为" in stripped:
             body = stripped.split("：", 1)[1]
             order, amount = body.split("；优先清算额为", 1)
             lines.append("清算顺位：" + order.rstrip("。") + "。")
             lines.append("优先清算额：优先清算额为" + amount.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("优先清算额：已批准并宣告") and "+" in stripped:
+            lines.append("优先清算额：已批准未付红利 + 各投资人实际支付投资价款100% + 8%年单利收益。")
+            changed = True
+            continue
+        if stripped.startswith("优先清算额：优先清算额为") and "，不足时同顺位" in stripped:
+            body = stripped.split("：", 1)[1].removeprefix("优先清算额为").rstrip("。")
+            amount, shortfall = body.split("，不足时同顺位", 1)
+            lines.append("优先清算额：" + amount.rstrip("。") + "。")
+            lines.append("不足分配：同顺位不足时" + shortfall.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("剩余分配：") and "；员工激励股仅计入" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            residual, incentive = body.split("；员工激励股仅计入", 1)
+            lines.append("剩余分配：" + residual.rstrip("。") + "。")
+            lines.append("员工激励股口径：仅计入" + incentive.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("剩余及特殊安排：") and "；如清算所得" in stripped:
