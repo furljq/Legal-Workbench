@@ -17,6 +17,7 @@ from kts_extractor import (  # noqa: E402
     ensure_required_draft_content,
     item_for_style_polish,
     normalize_final_status,
+    output_policy_for_item,
     refresh_final_statuses,
     schema_coverage_review_notes,
     validate_polished_content,
@@ -184,6 +185,41 @@ def test_absence_ok_required_field_counts_as_handled() -> None:
     assert coverage["required_handled"] == 2
     assert coverage["required_absent_ok"] == 1
     assert not notes
+
+
+def test_mergeable_core_output_policy_is_explicit_and_not_skipped() -> None:
+    transaction_policy = output_policy_for_item({"taxonomy_id": "spa.transaction_arrangement"})
+    shareholder_policy = output_policy_for_item({"taxonomy_id": "sha.shareholder_reserved_matters"})
+
+    assert transaction_policy["category"] == "mandatory_check_mergeable_output"
+    assert "签署方" in transaction_policy["instruction"]
+    assert shareholder_policy["category"] == "mandatory_check_mergeable_output"
+    assert "投资人权利适用门槛" in shareholder_policy["instruction"]
+
+    rows = export_items(
+        {
+            "items": [
+                {
+                    "taxonomy_id": "spa.transaction_arrangement",
+                    "group": "SPA",
+                    "label": "本次交易安排",
+                    "draft_content": "",
+                    "status": "drafted",
+                    "output_policy": transaction_policy,
+                },
+                {
+                    "taxonomy_id": "spa.compliance",
+                    "group": "SPA",
+                    "label": "道德合规特别约定",
+                    "draft_content": "",
+                    "status": "drafted",
+                    "output_policy": {"category": "conditional_output"},
+                },
+            ]
+        }
+    )
+
+    assert [row["label"] for row in rows] == ["本次交易安排"]
 
 
 def test_representations_guard_fills_transition_covenant() -> None:
@@ -1798,7 +1834,7 @@ def test_shareholder_reserved_guard_removes_client_veto_practicality_blocker() -
                 {"key": "approval_mechanism", "label": "通过机制", "required": True},
                 {"key": "unanimous_matters", "label": "特定/每轮投资人同意事项", "required": True},
                 {"key": "majority_matters", "label": "多数投资人同意事项", "required": True},
-                {"key": "investor_threshold_definition", "label": "投资人同意门槛/定义", "required": False},
+                {"key": "investor_threshold_definition", "label": "投资人权利适用门槛/定义", "required": False},
             ]
         },
     }
@@ -2722,6 +2758,7 @@ if __name__ == "__main__":
     test_redemption_compliance_trigger_guard()
     test_redemption_guard_does_not_duplicate_existing_trigger_line()
     test_absence_ok_required_field_counts_as_handled()
+    test_mergeable_core_output_policy_is_explicit_and_not_skipped()
     test_representations_guard_fills_transition_covenant()
     test_redemption_price_formula_guard_fills_both_formulas()
     test_dividend_guard_fills_special_approval_threshold()

@@ -144,6 +144,10 @@ DEFAULT_OUTPUT_POLICY = {
 OPTIONAL_OUTPUT_CATEGORIES = {"optional_conditional_output"}
 
 OUTPUT_POLICY_BY_ITEM = {
+    "spa.transaction_arrangement": {
+        "category": "mandatory_check_mergeable_output",
+        "instruction": "必须检查本次交易安排以及签署方/交易文件；签署方、交易文件、Cap Table和ESOP来源可并入本事项，不要另起模板空行。",
+    },
     "spa.expenses": {
         "category": "mandatory_check_conditional_output",
         "instruction": "必须检查费用和税费，但只突出投资人费用承担、特殊税费或缺失提示；普通各自承担不要铺开。",
@@ -167,6 +171,10 @@ OUTPUT_POLICY_BY_ITEM = {
     "sha.rofr_tag": {
         "category": "mandatory_check_default_output",
         "instruction": "必须与普通转股限制分开写；只保留ROFR、二次购买、共售比例和控制权变更共售等高价值点。",
+    },
+    "sha.shareholder_reserved_matters": {
+        "category": "mandatory_check_mergeable_output",
+        "instruction": "必须检查股东会保护性事项以及投资人权利适用门槛；门槛定义可并入通过机制或相关权利要点，不要另起“权利适用门槛”空行。",
     },
     "sha.drag_along": {
         "category": "optional_conditional_output",
@@ -1415,7 +1423,7 @@ def polish_kts_draft_contents(
                         "不得新增事实、主体、金额、比例、期限、条件、例外或风险判断。",
                         "必须参考field_values确认每个事项的关键事实，不要只机械改写draft_content。",
                         "不得删除影响法律或商业判断的金额、比例、期限、主体、触发条件、门槛、例外和明确否定结论。",
-                        "遵守每个事项的output_policy：条件输出项压缩低价值内容；缺失检查项只保留明确未见事项和必要提示。",
+                        "遵守每个事项的output_policy：必查可合并输出项可把签署方、权利门槛等低层级核心检查并入现有要点，不要展开成模板清单；条件输出项压缩低价值内容；缺失检查项只保留明确未见事项和必要提示。",
                         "目标长度：普通事项120-220字，复杂事项尽量不超过300字；超过4行时应合并相近要点或删除低价值程序细节。",
                         "可以删除重复表述、定义性铺陈、通知程序、模板套话和明显低价值原文细节。",
                         "可以把长句拆成更自然的短句，也可以把若干低层级字段合并成一个KTS要点。",
@@ -3422,7 +3430,7 @@ def clean_shareholder_reserved_client_veto_tone(
         if key != "investor_veto_practicality" and "本方veto" not in label:
             continue
         field["key"] = "investor_threshold_definition"
-        field["label"] = "投资人同意门槛/定义"
+        field["label"] = "投资人权利适用门槛/定义"
         field["status"] = "found" if threshold_value else "not_applicable"
         field["value"] = threshold_value or "未见需单列的投资人同意门槛定义。"
         field["note"] = "系统按投资人门槛作中性摘要。"
@@ -6485,7 +6493,7 @@ def scan_and_extract_with_ai(
                         "如果找到相关内容，按content_schema字段抽取事实并起草draft_content。",
                         "如果确实未见相关约定，status设为unclear，draft_content留空，review_notes写明未见约定。",
                         "不得编造未在source_shards中出现的交易条件。",
-                        "遵守kts_item.output_policy：默认输出项必须提炼高价值要点；条件输出项只有在证据有实质内容时输出；缺失检查项不得把已找到的事项写成未见。",
+                        "遵守kts_item.output_policy：默认输出项必须提炼高价值要点；必查可合并输出项必须检查字段完整性，但可并入当前事项或相邻权利要点，不要为模板清单另起空行；条件输出项只有在证据有实质内容时输出；缺失检查项不得把已找到的事项写成未见。",
                         "draft_content普通事项目标120-240字，复杂事项尽量不超过320字；超过5行时合并相近要点，不展开通知和程序细节。",
                         "文风应接近律师交易文件主要条款摘要：简洁、准确、法言法语；常规表述应压缩为KTS概括词，例如“排他期承诺”“费用承担”“Long Stop Date”。",
                     ],
@@ -6573,7 +6581,7 @@ def extract_facts_with_ai(
                         "字段status只能为found、not_found、unclear、not_applicable；证据明确时用found，证据没有体现时用not_found，证据不足或冲突时用unclear。",
                         "字段value应写该字段的提炼结果，不要粘贴整段原文；source_candidate_ids填写支持该字段的candidate_id。",
                         "必须遵守content_schema.drafting_guidance的事项边界；即使evidence窗口中出现其他KTS事项的事实，也不得写入当前事项的draft_content或字段value。",
-                        "必须遵守kts_item.output_policy：默认输出项必须提炼高价值要点；条件输出项只写实质条款；缺失检查项只列明确未见事项。",
+                        "必须遵守kts_item.output_policy：默认输出项必须提炼高价值要点；必查可合并输出项必须检查字段完整性，但可并入当前事项或相邻权利要点，不要为模板清单另起空行；条件输出项只写实质条款；缺失检查项只列明确未见事项。",
                         "费用、税费、违约追责费用、违约赔偿、解除救济等内容，只有在当前KTS事项明确要求时才可纳入；否则应留给对应事项。",
                         "draft_content是给律师和客户看的KTS内容列，不是字段抽取表。应优先输出2-6个高价值要点；每个要点格式为“要点：摘要”，要点名可来自字段标签，但应合并相关字段。",
                         "普通事项目标总长120-240字，复杂事项尽量不超过320字；超过5行时应合并相近要点，并删除低价值通知、定义、程序和重复细节。",

@@ -4,13 +4,13 @@
   "default_drafting_guidance": "按律师交易文件主要条款摘要文风输出：结论先行，正文只写高价值要点，不机械逐字段铺开；一般控制在3-5个要点、120-240字，复杂事项尽量不超过320字；保留影响交易判断的金额、比例、期限、主体、触发条件、门槛和例外；常规程序、定义和模板套话应压缩概括；如有需确认或偏离惯常之处，在摘要末尾以【注：...】提示。",
   "items": {
     "spa.transaction_arrangement": {
-      "drafting_guidance": "先概括交易安排，再列签署方、股权结构或ESOP来源；如Cap Table或投资方明细不完整，应明确写为待确认。",
+      "drafting_guidance": "先概括交易安排，再列签署方、交易文件、股权结构或ESOP来源；本事项同时承接核心模板中的“签署方及交易文件”检查，不另起空白签署方事项；如Cap Table或投资方明细不完整，应明确写为待确认。",
       "fields": [
         {"key": "valuation", "label": "投前/投后估值", "required": true, "aliases": ["投前估值", "投后估值", "估值"]},
         {"key": "financing_amount", "label": "整体融资额", "required": true, "aliases": ["融资额", "本轮融资", "整体融资"]},
         {"key": "investors_and_amounts", "label": "投资方及投资金额", "required": true, "aliases": ["投资方", "增资方", "认购价款", "投资款"]},
         {"key": "capital_change", "label": "注册资本变化", "required": false, "aliases": ["注册资本", "新增注册资本"]},
-        {"key": "signing_parties", "label": "签署方", "required": true, "aliases": ["签署方", "协议各方", "创始股东"]},
+        {"key": "signing_parties", "label": "签署方及交易文件", "required": true, "aliases": ["签署方", "协议各方", "创始股东", "交易文件", "增资协议", "股东协议", "章程", "Side Letter", "MRL"]},
         {"key": "cap_table", "label": "现有股东结构/Cap Table", "required": true, "aliases": ["股权结构", "股东构成", "Cap Table"]},
         {"key": "esop_source", "label": "ESOP来源", "required": false, "aliases": ["ESOP", "员工持股平台", "员工激励股权"]}
       ],
@@ -135,12 +135,12 @@
       "lawyer_note_prompts": ["如投资人董事席位不确定，应提示该veto机制能否实际行使。"]
     },
     "sha.shareholder_reserved_matters": {
-      "drafting_guidance": "必须区分特定投资人/每轮投资人/多数投资人等不同同意机制，并按机制列保护性事项；不要把“全体投资人一致”当成唯一标准；如未额外提供客户身份或持股，仅中性概括表决门槛，不把客户单独否决能力作为待核事项。",
+      "drafting_guidance": "必须区分特定投资人/每轮投资人/多数投资人等不同同意机制，并按机制列保护性事项；同时承接核心模板中的“投资人权利适用门槛”检查，可并入通过机制或相关权利要点；不要把“全体投资人一致”当成唯一标准；如未额外提供客户身份或持股，仅中性概括表决门槛，不把客户单独否决能力作为待核事项。",
       "fields": [
         {"key": "approval_mechanism", "label": "通过机制", "required": true, "aliases": ["全体投资人", "每一轮次投资人", "多数投资人", "三分之二"]},
         {"key": "unanimous_matters", "label": "特定/每轮投资人同意事项", "required": true, "aliases": ["全体", "每一轮次", "特定投资人", "修改章程", "增减注册资本", "分红"]},
         {"key": "majority_matters", "label": "多数投资人同意事项", "required": true, "aliases": ["多数", "合并", "分立", "上市方案", "ESOP"]},
-        {"key": "investor_threshold_definition", "label": "投资人同意门槛/定义", "required": false, "aliases": ["多数优先股股东", "三分之二", "优先股"]}
+        {"key": "investor_threshold_definition", "label": "投资人权利适用门槛/定义", "required": false, "aliases": ["多数优先股股东", "三分之二", "优先股", "持股门槛", "适用门槛", "权利终止", "部分投资人优先权利"]}
       ],
       "lawyer_note_prompts": ["如材料列明不同投资人类别或同意门槛，应中性概括其定义和适用事项。"]
     },
