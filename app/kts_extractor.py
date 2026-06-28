@@ -3752,14 +3752,18 @@ def normalize_transfer_restriction_subpoints(item: dict[str, Any]) -> None:
             continue
         if stripped.startswith("受限主体：合格上市前，") and "作为转股方" in stripped and "受限" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
-            period, rest = body.split("，", 1)
-            subject, action = rest.split("作为转股方，", 1)
-            action_text = action.removesuffix("受限").rstrip("。")
-            lines.append("限制期间：" + period.rstrip("。") + "。")
-            lines.append("受限主体：" + subject.rstrip("。") + "。")
-            lines.append("限制事项：" + action_text + "受限。")
-            changed = True
-            continue
+            parts = re.split(r"[，,]", body, maxsplit=1)
+            if len(parts) == 2:
+                period, rest = parts
+                actor_action = re.split(r"作为转股方[，,、\s]*", rest, maxsplit=1)
+                if len(actor_action) == 2 and actor_action[0].strip() and actor_action[1].strip():
+                    subject, action = actor_action
+                    action_text = action.removesuffix("受限").rstrip("。")
+                    lines.append("限制期间：" + period.rstrip("。") + "。")
+                    lines.append("受限主体：" + subject.rstrip("。") + "。")
+                    lines.append("限制事项：" + action_text + "受限。")
+                    changed = True
+                    continue
         if stripped.startswith("适用前提：") and "上述转让" in stripped:
             lines.append("适用前提：受限转让仍须遵守增资协议及相关转股程序。")
             changed = True

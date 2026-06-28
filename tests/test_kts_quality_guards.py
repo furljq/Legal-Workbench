@@ -4522,6 +4522,11 @@ def test_post_polish_compacts_transfer_restriction_internal_references() -> None
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.transfer_restriction",
+            "draft_content": "受限主体：合格上市前，乙方四、乙方五、乙方六或丁方作为转股方转让其直接或间接持有的公司股权受限。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4543,6 +4548,9 @@ def test_post_polish_compacts_transfer_restriction_internal_references() -> None
     assert "限制事项：转让其直接或间接持有的公司股权受限。" in items[4]["draft_content"]
     assert "受限交易：拟向第三方转让或接受第三方购买要约。" in items[4]["draft_content"]
     assert "同意门槛：须经全体投资人同意。" in items[4]["draft_content"]
+    assert "限制期间：合格上市前。" in items[6]["draft_content"]
+    assert "受限主体：乙方四、乙方五、乙方六或丁方。" in items[6]["draft_content"]
+    assert "限制事项：转让其直接或间接持有的公司股权受限。" in items[6]["draft_content"]
     assert "适用前提：遵守投资协议及第3.2条。" in items[4]["draft_content"]
     assert items[5]["draft_content"] == (
         "受限交易：拟向第三方转让或接受第三方购买要约。\n"
