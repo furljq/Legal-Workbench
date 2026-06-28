@@ -4092,7 +4092,17 @@ def test_post_polish_compacts_compliance_kts_language() -> None:
                 "违约后果：[公司或组织_AO]违反第6.1.5条的，[公司或组织_AJ]可终止投资合作关系、单方解除协议，并要求[公司或组织_AO]履行回购义务及由公司支付已付增资价款10%的违约金。"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "spa.compliance",
+            "draft_content": "廉洁承诺：禁止项目公司方向投资方相关人员提供或许诺现金、礼品或其他有形/无形利益；除约定投资合作及经同意合作外，双方不得存在代持、利益输送、资金往来等安排。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.compliance",
+            "draft_content": "代持/实益归属：[人名_B]所持子公司股权应确认为公司实益拥有，[人名_B]不享有实际权益，未经一致同意不得处置；公司享有单方无偿取得权。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4104,6 +4114,11 @@ def test_post_polish_compacts_compliance_kts_language() -> None:
     )
     assert "现金等价物" not in items[0]["draft_content"]
     assert "第6.1.5条" not in items[0]["draft_content"]
+    assert "廉洁承诺：项目公司方不得向投资方相关人员提供或承诺提供现金、礼品或其他不当利益；合理小额公务招待及广告礼品除外。" in items[1]["draft_content"]
+    assert "利益安排：除约定投资合作及经同意合作外，双方不得存在代持、利益输送、资金往来等安排。" in items[1]["draft_content"]
+    assert "实益归属：[人名_B]所持子公司股权应确认为公司实益拥有。" in items[2]["draft_content"]
+    assert "权益限制：[人名_B]不享有实际权益，未经一致同意不得处置。" in items[2]["draft_content"]
+    assert "无偿取得权：公司享有单方无偿取得权。" in items[2]["draft_content"]
 
 
 def test_post_polish_compacts_termination_kts_language() -> None:
@@ -4116,7 +4131,15 @@ def test_post_polish_compacts_termination_kts_language() -> None:
                 "工商变更未完成：若[公司或组织_AM]无法按协议约定时限办理完毕本次增资相关工商变更登记手续，[公司或组织_BH]有权单方面解除协议。"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "spa.termination",
+            "draft_content": (
+                "严重违约解除：交割日前，如相关方声明保证严重失实、重大遗漏，或严重违反承诺、义务或责任且自违反日起15个工作日内未有效补救，投资方可提前至少5个工作日书面通知解除。\n"
+                "不可抗力终止：不可抗力发生后各方协商是否解除；60日内未协商一致的，任何一方可终止协议。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4128,6 +4151,34 @@ def test_post_polish_compacts_termination_kts_language() -> None:
     )
     assert "本协议" not in items[0]["draft_content"]
     assert "若[公司或组织_AM]" not in items[0]["draft_content"]
+    assert "严重违约触发：交割日前，相关方声明保证严重失实、重大遗漏，或严重违反承诺、义务或责任。" in items[1]["draft_content"]
+    assert "补救期限：自违反日起15个工作日内未有效补救。" in items[1]["draft_content"]
+    assert "解除通知：投资方可提前至少5个工作日书面通知解除。" in items[1]["draft_content"]
+    assert "不可抗力协商：不可抗力发生后各方协商是否解除。" in items[1]["draft_content"]
+    assert "不可抗力终止：60日内未协商一致的，任何一方可终止协议。" in items[1]["draft_content"]
+
+
+def test_post_polish_splits_expense_kts_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.expenses",
+            "draft_content": (
+                "税费及登记费：各方各自承担签署和履行协议产生的税费；公司承担工商变更登记费用。\n"
+                "违约追责费用：违约方赔偿守约方因追责支出的差旅费、中介费、诉讼费、保全费等；该等约定不构成投资方交易费用承担安排。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+
+    draft = items[0]["draft_content"]
+    assert "税费承担：各方各自承担签署和履行协议产生的税费。" in draft
+    assert "登记费用：公司承担工商变更登记费用。" in draft
+    assert "追责费用：违约方赔偿守约方因追责支出的差旅费、中介费、诉讼费、保全费等。" in draft
+    assert "费用性质：该等约定不构成投资方交易费用承担安排。" in draft
+    assert "税费及登记费：" not in draft
+    assert "违约追责费用：" not in draft
 
 
 def test_post_polish_compacts_preemptive_right_kts_language() -> None:
@@ -4253,6 +4304,11 @@ def test_post_polish_compacts_transfer_restriction_internal_references() -> None
             "draft_content": "同意门槛：上述转让或处分须经[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.transfer_restriction",
+            "draft_content": "转让限制：未经[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意，不得直接或间接转让、处置、质押或处分公司及/或控股子公司股权；违规转让无效。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4262,6 +4318,9 @@ def test_post_polish_compacts_transfer_restriction_internal_references() -> None
         "适用前提：受限转让仍须遵守增资协议及相关转股程序。"
     )
     assert items[1]["draft_content"] == "同意门槛：受限转让或处分须经[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。"
+    assert "同意门槛：未经[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意。" in items[2]["draft_content"]
+    assert "限制事项：不得直接或间接转让、处置、质押或处分公司及/或控股子公司股权。" in items[2]["draft_content"]
+    assert "违规后果：违规转让无效。" in items[2]["draft_content"]
     assert "乙方四" not in items[0]["draft_content"]
     assert "上述转让" not in items[0]["draft_content"] + items[1]["draft_content"]
 
@@ -4361,7 +4420,16 @@ def test_post_polish_splits_liability_subjects_events_and_exceptions() -> None:
                 "责任上限：[[公司或组织_AF]或组织_AB]责任总额以其届时直接或间接持有股权处置所得价值为限；恶意、欺诈或故意重大违约不受限。"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "spa.liability",
+            "draft_content": (
+                "一般违约赔偿：违约方应赔偿因违反本协议或其他交易文件给守约方造成的损失及费用开支；解除协议不免除违约责任及损失赔偿责任。\n"
+                "责任独立及连带：各增资人仅为自身行为负责，不为其他增资人承担连带保证或连带赔偿责任；各[公司或组织_AO]在协议项下责任和义务为共同且连带。\n"
+                "责任上限：相关现有股东/主体责任以其届时实际持股处置所得价值为上限；恶意、欺诈或故意重大违约不适用该限制。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4376,6 +4444,14 @@ def test_post_polish_splits_liability_subjects_events_and_exceptions() -> None:
     assert "上限例外：恶意、欺诈或故意重大违约不受限。" in draft
     assert "特殊赔偿：[公司或组织_AO]" not in draft
     assert "责任上限：" in draft
+
+    draft = items[1]["draft_content"]
+    assert "违约赔偿：违约方应赔偿因违反本协议或其他交易文件给守约方造成的损失及费用开支。" in draft
+    assert "解除不免责：解除协议不免除违约责任及损失赔偿责任。" in draft
+    assert "责任独立性：各增资人仅为自身行为负责，不为其他增资人承担连带保证或连带赔偿责任。" in draft
+    assert "连带责任：各[公司或组织_AO]在协议项下责任和义务为共同且连带。" in draft
+    assert "责任上限：相关现有股东/主体责任以其届时实际持股处置所得价值为上限。" in draft
+    assert "上限例外：恶意、欺诈或故意重大违约不适用该限制。" in draft
 
 
 def test_post_polish_splits_representations_subpoints() -> None:
@@ -4628,6 +4704,7 @@ if __name__ == "__main__":
     test_post_polish_compacts_anti_dilution_formula_and_compensation_lines()
     test_post_polish_compacts_compliance_kts_language()
     test_post_polish_compacts_termination_kts_language()
+    test_post_polish_splits_expense_kts_lines()
     test_post_polish_compacts_preemptive_right_kts_language()
     test_post_polish_compacts_rofr_tag_formula_language()
     test_post_polish_splits_rofr_purchase_and_secondary_rights()

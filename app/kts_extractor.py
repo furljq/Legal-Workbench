@@ -3706,6 +3706,18 @@ def normalize_transfer_restriction_subpoints(item: dict[str, Any]) -> None:
             lines.append(stripped.replace("同意门槛：上述转让或处分", "同意门槛：受限转让或处分", 1))
             changed = True
             continue
+        if stripped.startswith("转让限制：未经") and "；违规转让无效" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            restriction, invalidity = body.split("；", 1)
+            if "，不得" in restriction:
+                consent, restricted_actions = restriction.split("，不得", 1)
+                lines.append("同意门槛：未经" + consent.removeprefix("未经").rstrip("。") + "。")
+                lines.append("限制事项：不得" + restricted_actions.rstrip("。") + "。")
+            else:
+                lines.append("转让限制：" + restriction.rstrip("。") + "。")
+            lines.append("违规后果：" + invalidity.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("受限主体及期间：") and "，任何" in stripped and "，未经同意不得" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             period, rest = body.split("，任何", 1)
@@ -7410,9 +7422,28 @@ def normalize_compliance_subpoints(item: dict[str, Any]) -> None:
             changed = True
             continue
         if stripped.startswith(("禁止行为：", "廉洁承诺：")):
+            if "；除约定投资合作" in stripped:
+                first, interest = stripped.split("；除约定投资合作", 1)
+                compacted = compact_compliance_prohibition(first.rstrip("。") + "。")
+                lines.append(compacted)
+                lines.append("利益安排：除约定投资合作" + interest.rstrip("。") + "。")
+                changed = True
+                continue
             compacted = compact_compliance_prohibition(stripped)
             lines.append(compacted)
             changed = changed or compacted != stripped
+            continue
+        if stripped.startswith("代持/实益归属：") and "；公司享有" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            ownership, acquisition = body.split("；", 1)
+            if "，" in ownership:
+                owner, restriction = ownership.split("，", 1)
+                lines.append("实益归属：" + owner.rstrip("。") + "。")
+                lines.append("权益限制：" + restriction.rstrip("。") + "。")
+            else:
+                lines.append("实益归属：" + ownership.rstrip("。") + "。")
+            lines.append("无偿取得权：" + acquisition.rstrip("。") + "。")
+            changed = True
             continue
         if stripped.startswith("利益安排：") and all(
             marker in stripped for marker in ("不得存在", "代持", "利益输送", "资金往来")
@@ -7433,7 +7464,7 @@ def normalize_compliance_subpoints(item: dict[str, Any]) -> None:
 
 def compact_compliance_prohibition(line: str) -> str:
     label, body = line.split("：", 1) if "：" in line else ("廉洁承诺", line)
-    if any(marker in body for marker in ("现金等价物", "礼品及其他利益", "提供或承诺提供")):
+    if any(marker in body for marker in ("现金等价物", "礼品及其他利益", "提供或承诺提供", "提供或许诺", "有形/无形利益")):
         return "廉洁承诺：项目公司方不得向投资方相关人员提供或承诺提供现金、礼品或其他不当利益；合理小额公务招待及广告礼品除外。"
     if any(marker in body for marker in ("腐败", "贿赂", "行贿", "商业贿赂")):
         return "廉洁承诺：公司方及相关人员不得参与腐败、贿赂、行贿或商业贿赂，亦不得以财物或其他利益影响政府或商业决策。"
@@ -7448,6 +7479,19 @@ def normalize_termination_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith("严重违约解除：") and "15个工作日内未有效补救" in stripped and "提前至少5个工作日" in stripped:
+            lines.append("严重违约触发：交割日前，相关方声明保证严重失实、重大遗漏，或严重违反承诺、义务或责任。")
+            lines.append("补救期限：自违反日起15个工作日内未有效补救。")
+            lines.append("解除通知：投资方可提前至少5个工作日书面通知解除。")
+            changed = True
+            continue
+        if stripped.startswith("不可抗力终止：") and "；60日内未协商一致" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            negotiation, termination = body.split("；", 1)
+            lines.append("不可抗力协商：" + negotiation.rstrip("。") + "。")
+            lines.append("不可抗力终止：" + termination.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("违约解除：") and "根本违约致使协议目的无法实现" in stripped and "30日" in stripped:
             lines.append("违约解除：根本违约致协议目的无法实现时可依法解除；一般违约经通知后30日未有效补救的，守约方可解除。")
             changed = True
@@ -7592,10 +7636,22 @@ def normalize_liability_subpoints(item: dict[str, Any]) -> None:
             lines.append("违约赔偿：" + body.rstrip("。") + "。")
             changed = True
             continue
+        if label in {"一般违约赔偿", "违约赔偿"} and "；解除" in body:
+            indemnity, termination = body.split("；", 1)
+            lines.append("违约赔偿：" + indemnity.rstrip("。") + "。")
+            lines.append("解除不免责：" + termination.rstrip("。") + "。")
+            changed = True
+            continue
         if label == "违约赔偿" and "；守约方解除协议不免除" in body:
             indemnity, termination = body.split("；守约方解除协议不免除", 1)
             lines.append("违约赔偿：" + indemnity.rstrip("。") + "。")
             lines.append("解除不免责：守约方解除协议不免除" + termination.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "责任独立及连带" and "；" in body:
+            independent, joint = body.split("；", 1)
+            lines.append("责任独立性：" + independent.rstrip("。") + "。")
+            lines.append("连带责任：" + joint.rstrip("。") + "。")
             changed = True
             continue
         if label == "违约赔偿" and "就违反协议约定向" in body and "使其免受损害" in body:
@@ -7658,6 +7714,39 @@ def normalize_liability_subpoints(item: dict[str, Any]) -> None:
             cap, exception = body.split("；", 1)
             lines.append("责任上限：" + cap.rstrip("。") + "。")
             lines.append("上限例外：" + exception.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "责任上限" and "；" in body and "不适用该限制" in body:
+            cap, exception = body.split("；", 1)
+            lines.append("责任上限：" + cap.rstrip("。") + "。")
+            lines.append("上限例外：" + exception.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
+def normalize_expenses_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for line in draft_content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("税费及登记费：") and "；公司承担" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            taxes, registration = body.split("；公司承担", 1)
+            lines.append("税费承担：" + taxes.rstrip("。") + "。")
+            lines.append("登记费用：公司承担" + registration.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("违约追责费用：") and "；该等约定不构成" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            recovery, nature = body.split("；", 1)
+            lines.append("追责费用：" + recovery.rstrip("。") + "。")
+            lines.append("费用性质：" + nature.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -8325,6 +8414,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_termination_subpoints(item)
         elif item_id == "spa.compliance":
             normalize_compliance_subpoints(item)
+        elif item_id == "spa.expenses":
+            normalize_expenses_subpoints(item)
         elif item_id == "spa.representations_warranties":
             normalize_representations_subpoints(item)
         elif item_id == "spa.liability":
