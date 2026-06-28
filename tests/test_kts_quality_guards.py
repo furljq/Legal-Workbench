@@ -367,12 +367,18 @@ def test_post_polish_compacts_dividend_approval_references() -> None:
             "draft_content": "批准机制：公司税后利润在依法弥补亏损、提取公积金后，须按协议第8条批准方可分配；批准或修改利润分配方案、弥补亏损方案及宣布、支付股息红利列入批准事项。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.dividend",
+            "draft_content": "批准机制：公司原则上不得分红；任何利润分配须经股东会批准并取得特定投资人同意。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
 
     assert items[0]["draft_content"] == "批准机制：公司原则上不得分红；任何利润分配须经股东会批准并取得特定投资人同意。"
     assert items[1]["draft_content"] == "批准机制：利润分配、弥补亏损及股息红利宣布/支付均须按保护性事项机制批准。"
+    assert items[2]["draft_content"] == "分红限制：公司原则上不得分红。\n分红批准：任何利润分配须经股东会批准并取得特定投资人同意。"
     assert "1.1.7" not in items[0]["draft_content"]
     assert "第8条" not in items[1]["draft_content"]
 
@@ -3416,6 +3422,11 @@ def test_post_polish_splits_closing_conditions_dense_lines() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.closing_conditions",
+            "draft_content": "内部批准：公司须完成本次增资内部审批并出具董事会、股东会决议；未参与本轮增资的现有股东须放弃优先认缴权。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3443,6 +3454,10 @@ def test_post_polish_splits_closing_conditions_dense_lines() -> None:
     assert "投资方批准：投资方投委会或其他决策机构批准交易。" in a_current_export
     assert "外部登记：公司还需完成工商变更、外商投资信息报告及外汇登记。" in a_current_export
     assert "审批及登记：" not in a_current_export
+
+    current_export = items[3]["draft_content"]
+    assert "内部批准：公司须完成本次增资内部审批并出具董事会、股东会决议。" in current_export
+    assert "优先认缴弃权：未参与本轮增资的现有股东须放弃优先认缴权。" in current_export
 
 
 def test_post_polish_splits_registration_rights_kts_lines() -> None:
@@ -3530,6 +3545,20 @@ def test_post_polish_splits_information_audit_two_part_reports() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.information_audit",
+            "draft_content": (
+                "检查权：投资方可在不影响正常经营、提前5个工作日书面通知后，现场了解业务、财务和管理情况，检查及复制账簿、凭证、会议记录等资料，但不包括涉密项目。\n"
+                "审计/中介辅助：未见单独独立审计权；投资方行使知情权时可由负有保密义务的会计师、律师等中介辅助。\n"
+                "费用及保密：知情权费用由投资方与公司协商承担；取得信息须遵守保密义务。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.information_audit",
+            "draft_content": "检查权：信息权人可在正常工作时间且不影响经营的前提下，查阅复制章程、会议记录和财务会计报告，并查看核对公司及子公司的资产、财务账簿和其他经营记录。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3552,6 +3581,21 @@ def test_post_polish_splits_information_audit_two_part_reports() -> None:
     assert "季度报告：季度结束后45日内提供未经审计季度合并财报。" in draft
     assert "预算计划：年度开始前30日提交下一年度预算及业务计划供审核批准。" in draft
     assert "信息权：" not in draft
+
+    draft = items[2]["draft_content"]
+    assert "检查程序：投资方应提前5个工作日书面通知，且不得影响公司正常经营。" in draft
+    assert "现场了解：业务、财务和管理情况。" in draft
+    assert "检查资料：检查及复制账簿、凭证、会议记录等资料。" in draft
+    assert "涉密例外：不包括涉密项目。" in draft
+    assert "独立审计权：未见单独独立审计权。" in draft
+    assert "中介辅助：投资方行使知情权时可由负有保密义务的会计师、律师等中介辅助。" in draft
+    assert "费用承担：知情权费用由投资方与公司协商承担。" in draft
+    assert "保密义务：取得信息须遵守保密义务。" in draft
+
+    draft = items[3]["draft_content"]
+    assert "检查程序：信息权人可在正常工作时间且不影响经营的前提下。" in draft
+    assert "基础查阅：查阅复制章程、会议记录和财务会计报告。" in draft
+    assert "资产/账簿核对：查看核对公司及子公司的资产、财务账簿和其他经营记录。" in draft
 
 
 def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
@@ -4460,6 +4504,10 @@ def test_post_polish_splits_representations_subpoints() -> None:
             "taxonomy_id": "spa.representations_warranties",
             "draft_content": (
                 "签约及出资合法性：各方具备签署、履行交易文件的法律能力及授权；投资方增资款足额且来源合法，相关主体不存在代持、委托持股或禁止持股。\n"
+                "签约及出资合法性：各方具备签署、履行交易文件的法律能力及授权；投资方增资款足额且来源合法，相关主体不存在代持、委托持股或禁止持股。\n"
+                "出资合法性：投资方增资款足额且来源合法，相关主体不存在代持、委托持股或禁止持股。\n"
+                "签约授权：各方具备签署、履行交易文件的法律能力及授权，签署及履行不违反对其有约束力的法律文件或构成不履行。\n"
+                "资料真实准确：公司方提供资料在重大方面真实、准确、完整，不存在未披露重大事项或限制本次增资的其他交易安排。\n"
                 "过渡期限制：过渡期内公司应按过往惯例正常经营；未经投资方事先书面同意，不得修改章程、增减注册资本、控制权变更、合并、分立、重组、清算、解散、终止等。\n"
                 "重大事项通知：交割前，公司和创始人应就陈述保证严重失实、不完整、不准确、实质违约事件及重大不利影响或重要进展及时书面通知投资方。"
             ),
@@ -4473,6 +4521,16 @@ def test_post_polish_splits_representations_subpoints() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.representations_warranties",
+            "draft_content": "资料及持股合法性：公司方提供资料在重大方面真实、准确、完整，不存在未披露重大事项；相关主体不存在代持、委托持股或禁止持股情形。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.representations_warranties",
+            "draft_content": "投资方保证：各投资方分别且不连带保证合法设立、具备签署履行授权，增资资金为自有或募集的合法资金；缴清增资款后取得新增股权完整所有权。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4480,11 +4538,18 @@ def test_post_polish_splits_representations_subpoints() -> None:
 
     current = items[0]["draft_content"]
     assert "签约授权：各方具备签署、履行交易文件的法律能力及授权。" in current
-    assert "出资合法性：投资方增资款足额且来源合法，相关主体不存在代持、委托持股或禁止持股。" in current
+    assert "出资合法性：投资方增资款足额且来源合法。" in current
+    assert "持股合法性：相关主体不存在代持、委托持股或禁止持股情形。" in current
     assert "过渡期经营：过渡期内公司应按过往惯例正常经营。" in current
     assert "过渡期限制：未经投资方事先书面同意，不得修改章程、增减注册资本、控制权变更、合并、分立、重组、清算、解散、终止等。" in current
     assert "通知义务：交割前，公司和创始人应及时书面通知投资方。" in current
     assert "通知事项：陈述保证严重失实、不完整、不准确、实质违约事件及重大不利影响或重要进展。" in current
+    assert current.count("签约授权：") == 1
+    assert current.count("出资合法性：") == 1
+    assert current.count("持股合法性：") == 1
+    assert current.count("资料真实准确：") == 1
+    assert "签约合规：签署及履行不违反对其有约束力的法律文件或构成不履行。" in current
+    assert "交易限制披露：不存在未披露限制本次增资的其他交易安排。" in current
 
     a_current = items[1]["draft_content"]
     assert "公司方陈述：公司及现有相关方就附件I事项向投资方共同连带作出陈述保证。" in a_current
@@ -4493,6 +4558,15 @@ def test_post_polish_splits_representations_subpoints() -> None:
     assert "股权取得：支付完毕增资款后取得本次增资股权的完整所有权并享有相应股东权利。" in a_current
     assert "签约及出资合法性：" not in current
     assert "陈述保证主体：" not in a_current
+
+    current_export = items[2]["draft_content"]
+    assert "资料真实准确：公司方提供资料在重大方面真实、准确、完整，不存在未披露重大事项。" in current_export
+    assert "持股合法性：相关主体不存在代持、委托持股或禁止持股情形。" in current_export
+
+    a_export = items[3]["draft_content"]
+    assert "投资方资格授权：各投资方分别且不连带保证合法设立、具备签署履行授权。" in a_export
+    assert "资金来源：增资资金为自有或募集的合法资金。" in a_export
+    assert "股权取得：缴清增资款后取得新增股权完整所有权。" in a_export
 
 
 def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:

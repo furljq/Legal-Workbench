@@ -4927,6 +4927,7 @@ def normalize_information_audit_subpoints(item: dict[str, Any]) -> None:
     for line in draft_content.splitlines():
         stripped = line.strip()
         label, parts = split_semicolon_body(stripped)
+        body = stripped.split("：", 1)[1] if "：" in stripped else ""
         if (
             label == "信息权"
             and "年度结束后90日" in stripped
@@ -4963,11 +4964,45 @@ def normalize_information_audit_subpoints(item: dict[str, Any]) -> None:
             lines.append("顾问协助：可由" + advisors.rstrip("。") + "。")
             changed = True
             continue
+        if label == "检查权" and "，现场了解" in stripped and "，检查及复制" in stripped:
+            procedure, rest = stripped.split("，现场了解", 1)
+            scope, records = rest.split("，检查及复制", 1)
+            procedure_body = normalize_information_audit_inspection_procedure(procedure.split("：", 1)[1])
+            lines.append("检查程序：" + procedure_body + "。")
+            lines.append("现场了解：业务、财务和管理情况。")
+            if "，但不包括" in records:
+                record_scope, exclusion = records.split("，但不包括", 1)
+                lines.append("检查资料：检查及复制" + record_scope.rstrip("。") + "。")
+                lines.append("涉密例外：不包括" + exclusion.rstrip("。") + "。")
+            else:
+                lines.append("检查资料：检查及复制" + records.rstrip("。") + "。")
+            changed = True
+            continue
         if label == "检查权" and "，并可在正常工作时间" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             records, inspection = body.split("，并可在", 1)
             lines.append("基础查阅：" + records.rstrip("。") + "。")
             lines.append("现场检查：可在" + inspection.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "检查权" and "正常工作时间" in body and "查阅复制" in body and "并查看核对" in body:
+            procedure, rest = body.split("，", 1)
+            records, assets = rest.split("，并查看核对", 1)
+            lines.append("检查程序：" + procedure.rstrip("。") + "。")
+            lines.append("基础查阅：" + records.rstrip("。") + "。")
+            lines.append("资产/账簿核对：查看核对" + assets.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "审计/中介辅助" and "；投资方行使知情权时" in body:
+            audit, advisors = body.split("；投资方行使知情权时", 1)
+            lines.append("独立审计权：" + audit.rstrip("。") + "。")
+            lines.append("中介辅助：投资方行使知情权时" + advisors.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "费用及保密" and "；取得信息须" in body:
+            fee, confidentiality = body.split("；取得信息须", 1)
+            lines.append("费用承担：" + fee.rstrip("。") + "。")
+            lines.append("保密义务：取得信息须" + confidentiality.rstrip("。") + "。")
             changed = True
             continue
         if label == "独立审计权" and len(parts) >= 2 and "，一年不超过一次" in parts[0]:
@@ -5303,7 +5338,36 @@ def normalize_representations_subpoints(item: dict[str, Any]) -> None:
         if label == "签约及出资合法性" and "；" in body:
             authority, capital = body.split("；", 1)
             lines.append("签约授权：" + authority.rstrip("。") + "。")
-            lines.append("出资合法性：" + capital.rstrip("。") + "。")
+            if "，相关主体" in capital:
+                funding, holding = capital.split("，相关主体", 1)
+                lines.append("出资合法性：" + funding.rstrip("。") + "。")
+                holding_text = "相关主体" + holding.rstrip("。")
+                if holding_text.endswith("禁止持股"):
+                    holding_text += "情形"
+                lines.append("持股合法性：" + holding_text + "。")
+            else:
+                lines.append("出资合法性：" + capital.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "签约授权" and "，签署及履行不违反" in body:
+            authority, compliance = body.split("，签署及履行", 1)
+            lines.append("签约授权：" + authority.rstrip("。") + "。")
+            lines.append("签约合规：签署及履行" + compliance.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "出资合法性" and "，相关主体" in body:
+            funding, holding = body.split("，相关主体", 1)
+            lines.append("出资合法性：" + funding.rstrip("。") + "。")
+            holding_text = "相关主体" + holding.rstrip("。")
+            if holding_text.endswith("禁止持股"):
+                holding_text += "情形"
+            lines.append("持股合法性：" + holding_text + "。")
+            changed = True
+            continue
+        if label == "资料真实准确" and "或限制本次增资的其他交易安排" in body:
+            disclosure = body.replace("或限制本次增资的其他交易安排", "").rstrip("。")
+            lines.append("资料真实准确：" + disclosure + "。")
+            lines.append("交易限制披露：不存在未披露限制本次增资的其他交易安排。")
             changed = True
             continue
         if label == "过渡期限制" and "；未经" in body:
@@ -5319,6 +5383,20 @@ def normalize_representations_subpoints(item: dict[str, Any]) -> None:
                 lines.append("通知事项：" + match.group("events").rstrip("。") + "。")
                 changed = True
                 continue
+        if label == "资料及持股合法性" and "；相关主体" in body:
+            disclosure, holding = body.split("；相关主体", 1)
+            lines.append("资料真实准确：" + disclosure.rstrip("。") + "。")
+            lines.append("持股合法性：相关主体" + holding.rstrip("。") + "。")
+            changed = True
+            continue
+        if label == "投资方保证" and "，增资资金" in body and "；缴清增资款后" in body:
+            qualification, rest = body.split("，增资资金", 1)
+            funding, ownership = rest.split("；缴清增资款后", 1)
+            lines.append("投资方资格授权：" + qualification.rstrip("。") + "。")
+            lines.append("资金来源：增资资金" + funding.rstrip("。") + "。")
+            lines.append("股权取得：缴清增资款后" + ownership.rstrip("。") + "。")
+            changed = True
+            continue
         if label == "陈述保证主体" and "；投资方" in body:
             company, investor = body.split("；投资方", 1)
             lines.append("公司方陈述：" + company.rstrip("。") + "。")
@@ -6519,6 +6597,12 @@ def normalize_closing_conditions_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith("内部批准：") and "；未参与本轮增资的现有股东须放弃优先认缴权" in stripped:
+            approval, waiver = stripped.split("；", 1)
+            lines.append(approval.rstrip("。") + "。")
+            lines.append("优先认缴弃权：" + waiver.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("内部审批：") and "；未参与本轮增资的现有股东应放弃优先认缴权" in stripped:
             approval, waiver = stripped.split("；", 1)
             lines.append(approval.rstrip("。") + "。")
@@ -8184,6 +8268,13 @@ def normalize_dividend_subpoints(item: dict[str, Any]) -> None:
             lines.append("批准机制：公司原则上不得分红；任何利润分配须经股东会批准并取得特定投资人同意。")
             changed = True
             continue
+        if stripped.startswith("批准机制：公司原则上不得分红；任何利润分配须经"):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            restriction, approval = body.split("；", 1)
+            lines.append("分红限制：" + restriction.rstrip("。") + "。")
+            lines.append("分红批准：" + approval.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("批准机制：") and "第8条" in stripped and "列入批准事项" in stripped:
             lines.append("批准机制：利润分配、弥补亏损及股息红利宣布/支付均须按保护性事项机制批准。")
             changed = True
@@ -8266,6 +8357,22 @@ def split_inline_review_notes(item: dict[str, Any]) -> None:
         lines.append(line)
     if changed:
         item["draft_content"] = "\n".join(lines)
+
+
+def dedupe_exact_draft_lines(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        if line in seen:
+            continue
+        seen.add(line)
+        deduped.append(line)
+    if deduped != lines:
+        item["draft_content"] = "\n".join(deduped)
 
 
 def refresh_final_statuses(items: list[dict[str, Any]]) -> None:
@@ -8465,6 +8572,7 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
         elif item_id == "sha.other":
             normalize_sha_other_absence_content(item)
         split_inline_review_notes(item)
+        dedupe_exact_draft_lines(item)
         item["review_notes"] = remove_nonblocking_workpaper_review_notes(item.get("review_notes", []))
         item["lawyer_notes"] = remove_nonblocking_workpaper_review_notes(item.get("lawyer_notes", []))
         item["missing_or_unclear"] = remove_nonblocking_workpaper_review_notes(item.get("missing_or_unclear", []))
