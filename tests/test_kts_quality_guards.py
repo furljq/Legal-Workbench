@@ -386,7 +386,15 @@ def test_post_polish_splits_dividend_priority_and_esop_allocation() -> None:
                 "分配比例：未全部既得的预留激励股权/期权对应利润由全体股东按届时股权比例分享，并按已既得期权加已发放激励股权累计计算持股比例。"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "sha.dividend",
+            "draft_content": (
+                "分红批准：公司税后利润依法弥补亏损并提取公积金后，须按第8条批准；利润分配方案、弥补亏损方案及股息、红利宣布和支付均属需批准事项。\n"
+                "投资方优先：公司及相关股东应确保投资方优先于其他股东取得按约定方式计算的较高金额作为优先分红额；如法律限制影响实现，应以法律允许方式最大范围实现，包括由获益股东让与相应分配利益。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -398,6 +406,14 @@ def test_post_polish_splits_dividend_priority_and_esop_allocation() -> None:
     assert "激励股分配：未全部既得的预留激励股权/期权对应利润由全体股东按届时股权比例分享。" in draft
     assert "持股计算口径：按已既得期权加已发放激励股权累计计算持股比例。" in draft
     assert "投资方优先取得：" not in draft
+
+    draft = items[1]["draft_content"]
+    assert "分红前提：公司税后利润依法弥补亏损并提取公积金后，须按第8条批准。" in draft
+    assert "批准事项：利润分配方案、弥补亏损方案及股息、红利宣布和支付均属需批准事项。" in draft
+    assert "优先分红：公司及相关股东应确保投资方优先于其他股东取得按约定方式计算的较高优先分红额。" in draft
+    assert "法律限制补偿：如法律限制影响实现，应以法律允许方式最大范围实现，包括由获益股东让与相应分配利益。" in draft
+    assert "分红批准：" not in draft
+    assert "投资方优先：" not in draft
 
 
 def test_information_audit_guard_fills_inspection_right() -> None:
@@ -3030,7 +3046,17 @@ def test_post_polish_splits_esop_condition_and_usage_lines() -> None:
                 "特殊授予审批：向创始人/特定主体发放，向任一员工单次或累计发放超过公司届时总注册资本0.5%，或通过高管持股平台向任何人员发放股权或权益，均需审批。"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "sha.esop",
+            "draft_content": (
+                "里程碑(1)：首发试验星发射成功、在轨总算力达25POPS，且以不低于投前人民币30亿元估值完成新一轮融资。\n"
+                "里程碑(2)：两颗卫星发射成功并在轨稳定工作、在轨总算力达100POPS以上，且以不低于投前人民币60亿元估值完成新一轮融资。\n"
+                "增发比例及价格：每项里程碑触发后，员工持股平台合计新增持有公司10%股权；增资价格原则上按对应时点经审计净资产对应的每单位注册资本价格确定。\n"
+                "审批要求：计划批准、修改、终止，年度发放总比例，向创始人发放激励权益，向任一员工单次或累计发放超过公司届时总注册资本0.5%的激励权益，或通过高管持股平台向任何人员发放股权/权益均需审批。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3046,6 +3072,20 @@ def test_post_polish_splits_esop_condition_and_usage_lines() -> None:
     assert "特殊授予对象：向创始人/特定主体发放，或通过高管持股平台向任何人员发放股权/权益，均需审批。" in draft
     assert "特殊授予门槛：向任一员工单次或累计发放超过公司届时总注册资本0.5%时，需审批。" in draft
     assert "且以不低于投前人民币" not in draft
+
+    draft = items[1]["draft_content"]
+    assert "首发试验星条件：首发试验星发射成功、在轨总算力达25POPS。" in draft
+    assert "首发试验星融资要求：新一轮融资投前估值不低于人民币30亿元。" in draft
+    assert "两星及算力条件：两颗卫星发射成功并在轨稳定工作、在轨总算力达100POPS以上。" in draft
+    assert "两星及算力融资要求：新一轮融资投前估值不低于人民币60亿元。" in draft
+    assert "增发比例：每项里程碑触发后，员工持股平台合计新增持有公司10%股权。" in draft
+    assert "增资价格：原则上按对应时点经审计净资产对应的每单位注册资本价格确定。" in draft
+    assert "计划审批：计划批准、修改、终止及年度发放总比例均需审批。" in draft
+    assert "创始人授予审批：向创始人发放激励权益需审批。" in draft
+    assert "员工授予门槛：向任一员工单次或累计发放超过公司届时总注册资本0.5%的激励权益需审批。" in draft
+    assert "高管平台授予：通过高管持股平台向任何人员发放股权/权益需审批。" in draft
+    assert "里程碑(1)：" not in draft
+    assert "审批要求：计划批准" not in draft
     assert "用途限制：" not in draft
     assert "特殊授予审批：" not in draft
 
@@ -3289,7 +3329,14 @@ def test_post_polish_splits_information_audit_two_part_reports() -> None:
                 "费用原则上由信息权人承担，发现财务造假或重大审计差异时由公司承担。"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "sha.information_audit",
+            "draft_content": (
+                "信息权：公司应在年度结束后90日内提供经认可会计师事务所审计的年度合并财报，季度结束后45日内提供未经审计季度合并财报，并在年度开始前30日提交下一年度预算及业务计划供审核批准。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3306,6 +3353,12 @@ def test_post_polish_splits_information_audit_two_part_reports() -> None:
     assert "信息权：" not in draft
     assert "检查权：" not in draft
     assert "独立审计权：" not in draft
+
+    draft = items[1]["draft_content"]
+    assert "年度报告：年度结束后90日内提供经认可会计师事务所审计的年度合并财报。" in draft
+    assert "季度报告：季度结束后45日内提供未经审计季度合并财报。" in draft
+    assert "预算计划：年度开始前30日提交下一年度预算及业务计划供审核批准。" in draft
+    assert "信息权：" not in draft
 
 
 def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
@@ -3485,6 +3538,23 @@ def test_post_polish_compacts_mfn_and_new_project_special_rights() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.mfn_special_rights",
+            "draft_content": (
+                "新项目特殊权益：清算事件中投资人所得不超过清算优先款的，自清算事件起10年内，如相关股东直接或间接从事新项目且投资人拟投资，清算优先款与已得款项差额视为其对新项目投资。\n"
+                "取得方式及范围：相关方应按投资人认可的新项目估值，通过零对价股权转让或增发，使投资人取得等值股权或其他权益；新项目包括相关股东或其关联方主导的、独立于公司的新商业行为。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.mfn_special_rights",
+            "draft_content": (
+                "最惠国待遇：任一投资人可在特定现有股东或符合价格条件的后续融资股东享有更优股权相关权利、权益或待遇时，主张自动同等享有，并由各方配合重签、修改或补充协议。\n"
+                "适用例外：排除特定主体及本轮领投方基于投资比例享有的董事席位及表决权、战略方和产业方优先业务合作权、后轮更高估值投资人就经济型权益享有的优先顺位。\n"
+                "特殊权利实现：投资人或其股权享有协议项下特殊权利；如因法律限制无法充分实现，各方应采用法律允许方式最大化实现。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3510,6 +3580,25 @@ def test_post_polish_compacts_mfn_and_new_project_special_rights() -> None:
     ) in mfn
     assert "以不高于其适用原始认购价格认缴新增注册资本" not in mfn
     assert "最惠国待遇不适用于" not in mfn
+
+    current_style = items[2]["draft_content"]
+    assert "触发条件：清算事件中投资人所得不超过清算优先款。" in current_style
+    assert "投资期限：自清算事件起10年内。" in current_style
+    assert "新项目条件：相关股东直接或间接从事新项目且投资人拟投资。" in current_style
+    assert "投资金额：清算优先款与已得款项差额视为投资人对新项目的投资。" in current_style
+    assert "取得权益：相关方应按投资人认可的新项目估值，通过零对价股权转让或增发，使投资人取得等值股权或其他权益。" in current_style
+    assert "新项目范围：新项目包括相关股东或其关联方主导的、独立于公司的新商业行为。" in current_style
+    assert "新项目特殊权益：" not in current_style
+
+    a_style = items[3]["draft_content"]
+    assert "适用主体：任一投资人可主张最惠国待遇。" in a_style
+    assert "触发情形：特定现有股东或符合价格条件的后续融资股东享有更优股权相关权利、权益或待遇。" in a_style
+    assert "配合义务：各方配合重签、修改或补充协议。" in a_style
+    assert "业务合作例外：战略方和产业方优先业务合作权。" in a_style
+    assert "后轮经济权益例外：后轮更高估值投资人就经济型权益享有的优先顺位。" in a_style
+    assert "特殊权利范围：投资人或其股权享有协议项下特殊权利。" in a_style
+    assert "法律限制处理：如因法律限制无法充分实现，各方应采用法律允许方式最大化实现。" in a_style
+    assert "最惠国待遇：" not in a_style
 
 
 def test_post_polish_splits_remaining_dense_kts_subpoints() -> None:
@@ -3717,6 +3806,24 @@ def test_post_polish_compacts_anti_dilution_formula_and_compensation_lines() -> 
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.anti_dilution",
+            "draft_content": (
+                "触发与调整：本次交易完成后，在满足第1.1.5条及第1.2.4条前提下，公司低于任一反稀释权人每单位认购价格增资扩股时，按投资总额及调整后价格重算其持股比例。\n"
+                "实现方式：反稀释权人可选择公司以人民币1元名义价/最低法定对价发行股权，或由相关股东以相同口径转让股权；公司及相关股东对调整承担连带责任，调整完成前公司不得实施低价增资或增发相关证券。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.anti_dilution",
+            "draft_content": "适用对象及价格：反稀释权人为[[公司或组织_AE]或组织_X]、[[公司或组织_AE]或组织_AA]，原始认购价格分别为人民币2,200元、3,300元或等值美元。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.anti_dilution",
+            "draft_content": "调整及补偿：按调整后价格重算应获注册资本，公司以无偿或象征性价格增发；无法实施时，可由相关主体无偿或象征性价格转让股权，或由公司现金补偿并由反稀释权人用于增资。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3746,6 +3853,28 @@ def test_post_polish_compacts_anti_dilution_formula_and_compensation_lines() -> 
     assert partial_exceptions == "例外事项：员工激励/股权薪酬、利润或资本公积转增不适用。"
     assert "股份制改制" not in partial_exceptions
     assert "合格上市" not in partial_exceptions
+
+    current_style = items[4]["draft_content"]
+    assert "触发前提：本次交易完成后，满足第1.1.5条及第1.2.4条。" in current_style
+    assert "触发情形：公司低于任一反稀释权人每单位认购价格增资扩股。" in current_style
+    assert "调整计算：按投资总额及调整后价格重算其持股比例。" in current_style
+    assert "补足方式：反稀释权人可选择公司以人民币1元名义价/最低法定对价发行股权，或相关股东以相同口径转让股权。" in current_style
+    assert "责任承担：公司及相关股东对调整承担连带责任。" in current_style
+    assert "实施限制：调整完成前公司不得实施低价增资或增发相关证券。" in current_style
+    assert "触发与调整：" not in current_style
+    assert "实现方式：" not in current_style
+
+    a_style = items[5]["draft_content"]
+    assert "反稀释权人：反稀释权人为[[公司或组织_AE]或组织_X]、[[公司或组织_AE]或组织_AA]。" in a_style
+    assert "原始认购价格：原始认购价格分别为人民币2,200元、3,300元或等值美元。" in a_style
+    assert "适用对象及价格：" not in a_style
+
+    a_compensation = items[6]["draft_content"]
+    assert "调整结果：按调整后价格重算应获注册资本。" in a_compensation
+    assert "公司增发补足：公司以无偿/象征性价格增发。" in a_compensation
+    assert "替代股权补偿：可由相关主体无偿/象征性价格转让股权。" in a_compensation
+    assert "替代现金补偿：公司现金补偿并由反稀释权人用于增资。" in a_compensation
+    assert "调整及补偿：" not in a_compensation
 
 
 def test_post_polish_compacts_compliance_kts_language() -> None:

@@ -2703,6 +2703,18 @@ def normalize_esop_milestone_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith(("里程碑(1)：", "里程碑(2)：")) and "且以不低于投前人民币" in stripped:
+            label, body = stripped.split("：", 1)
+            short_label = "首发试验星" if "(1)" in label else "两星及算力"
+            condition, financing = re.split(r"，?且以", body.rstrip("。"), 1)
+            valuation_match = re.search(r"不低于投前人民币([^，,。]+?)估值完成新一轮融资", "以" + financing)
+            lines.append(short_label + "条件：" + condition.rstrip("，,。") + "。")
+            if valuation_match:
+                lines.append(short_label + "融资要求：新一轮融资投前估值不低于人民币" + valuation_match.group(1) + "。")
+            else:
+                lines.append(short_label + "融资要求：以" + financing.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith(("首发试验星条件：", "两星及算力条件：")) and stripped.endswith("后。"):
             stripped = stripped[:-2] + "。"
             changed = True
@@ -2773,6 +2785,24 @@ def normalize_esop_milestone_subpoints(item: dict[str, Any]) -> None:
             lines.append("合规要求：符合公司法及章程" + compliance.rstrip("。") + "。")
             if note:
                 lines.append(note)
+            changed = True
+            continue
+        if stripped.startswith("增发比例及价格：") and "；增资价格" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            ratio, price = body.split("；", 1)
+            lines.append("增发比例：" + ratio.rstrip("。") + "。")
+            lines.append("增资价格：" + price.removeprefix("增资价格").rstrip("。") + "。")
+            changed = True
+            continue
+        if (
+            stripped.startswith("审批要求：计划批准、修改、终止")
+            and "向任一员工单次或累计发放超过" in stripped
+            and "高管持股平台" in stripped
+        ):
+            lines.append("计划审批：计划批准、修改、终止及年度发放总比例均需审批。")
+            lines.append("创始人授予审批：向创始人发放激励权益需审批。")
+            lines.append("员工授予门槛：向任一员工单次或累计发放超过公司届时总注册资本0.5%的激励权益需审批。")
+            lines.append("高管平台授予：通过高管持股平台向任何人员发放股权/权益需审批。")
             changed = True
             continue
         lines.append(stripped)
@@ -4738,6 +4768,17 @@ def normalize_information_audit_subpoints(item: dict[str, Any]) -> None:
     for line in draft_content.splitlines():
         stripped = line.strip()
         label, parts = split_semicolon_body(stripped)
+        if (
+            label == "信息权"
+            and "年度结束后90日" in stripped
+            and "季度结束后45日" in stripped
+            and "年度开始前30日" in stripped
+        ):
+            lines.append("年度报告：年度结束后90日内提供经认可会计师事务所审计的年度合并财报。")
+            lines.append("季度报告：季度结束后45日内提供未经审计季度合并财报。")
+            lines.append("预算计划：年度开始前30日提交下一年度预算及业务计划供审核批准。")
+            changed = True
+            continue
         if label == "信息权" and len(parts) >= 3:
             annual = parts[0].removeprefix("公司应于").rstrip("。")
             lines.append("年度报告：" + annual + "。")
@@ -5749,6 +5790,26 @@ def normalize_mfn_special_rights_subpoints(item: dict[str, Any]) -> None:
     for line in draft_content.splitlines():
         stripped = line.strip()
         if (
+            stripped.startswith("新项目特殊权益：")
+            and "清算事件" in stripped
+            and "10年" in stripped
+            and "差额" in stripped
+        ):
+            lines.append("触发条件：清算事件中投资人所得不超过清算优先款。")
+            lines.append("投资期限：自清算事件起10年内。")
+            if "新项目且投资人拟投资" in stripped:
+                lines.append("新项目条件：相关股东直接或间接从事新项目且投资人拟投资。")
+            lines.append("投资金额：清算优先款与已得款项差额视为投资人对新项目的投资。")
+            changed = True
+            continue
+        if stripped.startswith("取得方式及范围：") and "；新项目包括" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            equity, scope = body.split("；新项目包括", 1)
+            lines.append("取得权益：" + equity.rstrip("。") + "。")
+            lines.append("新项目范围：新项目包括" + scope.rstrip("。") + "。")
+            changed = True
+            continue
+        if (
             stripped.startswith("新项目投资安排：")
             and "清算事件" in stripped
             and "10年" in stripped
@@ -5782,15 +5843,29 @@ def normalize_mfn_special_rights_subpoints(item: dict[str, Any]) -> None:
             continue
         if (
             stripped.startswith("最惠国待遇：")
-            and "如发现" in stripped
-            and "可主张自动同等享有" in stripped
-            and len(stripped) > 95
+            and ("如发现" in stripped or "享有更优" in stripped)
+            and ("可主张自动同等享有" in stripped or "主张自动同等享有" in stripped)
         ):
             body = stripped.split("：", 1)[1]
-            prefix, trigger = body.split("如发现", 1)
-            trigger = re.sub(r"，?可主张自动同等享有。?$", "", trigger).rstrip("。")
-            lines.append("适用主体：" + prefix.rstrip("，,。 ") + "可主张最惠国待遇。")
-            lines.append("触发情形：如发现" + trigger.rstrip("。") + "。")
+            if "如发现" in body:
+                prefix, trigger = body.split("如发现", 1)
+                trigger = re.sub(r"，?可主张自动同等享有。?$", "", trigger).rstrip("。")
+                lines.append("适用主体：" + prefix.rstrip("，,。 ") + "可主张最惠国待遇。")
+                lines.append("触发情形：如发现" + trigger.rstrip("。") + "。")
+            else:
+                split_marker = "时，主张自动同等享有"
+                if split_marker not in body:
+                    split_marker = "时，可主张自动同等享有"
+                trigger, cooperation = body.split(split_marker, 1)
+                subject = "任一投资人" if "任一投资人" in trigger else "相关投资人"
+                trigger = trigger.removeprefix("任一投资人可在").rstrip("，,。")
+                lines.append("适用主体：" + subject + "可主张最惠国待遇。")
+                if "享有更优" in trigger:
+                    lines.append("触发情形：" + trigger.rstrip("。") + "。")
+                else:
+                    lines.append("触发情形：" + trigger.rstrip("。") + "享有更优股权相关权利、权益或待遇。")
+                if "各方配合" in cooperation:
+                    lines.append("配合义务：各方配合重签、修改或补充协议。")
             changed = True
             continue
         if (
@@ -5827,6 +5902,23 @@ def normalize_mfn_special_rights_subpoints(item: dict[str, Any]) -> None:
                 lines.append("席位例外：" + seat.rstrip("。") + "。")
             lines.append("业务合作例外：战略方和产业方" + cooperation.rstrip("。") + "。")
             lines.append("后轮经济权益例外：后轮" + later_round.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("适用例外：") and "战略方和产业方" in stripped and "后轮" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            seat, rest = body.split("、战略方和产业方", 1)
+            cooperation, later_round = rest.split("、后轮", 1)
+            if not append_mfn_seat_exception_lines(lines, seat):
+                lines.append("席位例外：" + seat.rstrip("。") + "。")
+            lines.append("业务合作例外：战略方和产业方" + cooperation.rstrip("。") + "。")
+            lines.append("后轮经济权益例外：后轮" + later_round.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("特殊权利实现：") and "；如因法律限制" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            right, fallback = body.split("；", 1)
+            lines.append("特殊权利范围：" + right.rstrip("。") + "。")
+            lines.append("法律限制处理：" + fallback.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -7524,6 +7616,36 @@ def normalize_anti_dilution_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith("触发与调整：") and "前提下" in stripped and "时，按" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            condition, rest = body.split("前提下，", 1)
+            trigger, calculation = rest.split("时，", 1)
+            condition = condition.replace("在满足", "满足")
+            lines.append("触发前提：" + condition.rstrip("。") + "。")
+            lines.append("触发情形：" + trigger.rstrip("。") + "。")
+            lines.append("调整计算：" + calculation.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("实现方式：") and "；公司及相关股东" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            method, responsibility = body.split("；", 1)
+            method = method.replace("，或由相关股东", "，或相关股东")
+            lines.append("补足方式：" + method.rstrip("。") + "。")
+            if "，调整完成前" in responsibility:
+                liability, restriction = responsibility.split("，调整完成前", 1)
+                lines.append("责任承担：" + liability.rstrip("。") + "。")
+                lines.append("实施限制：调整完成前" + restriction.rstrip("。") + "。")
+            else:
+                lines.append("责任承担：" + responsibility.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("适用对象及价格：") and "，原始认购价格" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            holders, prices = body.split("，原始认购价格", 1)
+            lines.append("反稀释权人：" + holders.rstrip("。") + "。")
+            lines.append("原始认购价格：原始认购价格" + prices.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("触发及方式：") and "，反稀释权人可要求" in stripped:
             body = stripped.split("：", 1)[1]
             trigger, method = body.split("，反稀释权人可要求", 1)
@@ -7572,6 +7694,20 @@ def normalize_anti_dilution_subpoints(item: dict[str, Any]) -> None:
             compensation = compensation.replace("经反稀释权人事先书面同意的", "反稀释权人同意的")
             lines.append("调整结果：" + result.rstrip("。") + "。")
             lines.append("补足方式：" + compensation.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("调整及补偿：") and "，公司以" in stripped and "；无法实施时" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            result, rest = body.split("，公司以", 1)
+            company_compensation, fallback = rest.split("；无法实施时，", 1)
+            lines.append("调整结果：" + result.rstrip("。") + "。")
+            lines.append("公司增发补足：公司以" + company_compensation.rstrip("。").replace("无偿或象征性价格", "无偿/象征性价格") + "。")
+            if "，或由公司" in fallback:
+                equity, cash = fallback.split("，或由公司", 1)
+                lines.append("替代股权补偿：" + equity.rstrip("。").replace("无偿或象征性价格", "无偿/象征性价格") + "。")
+                lines.append("替代现金补偿：公司" + cash.rstrip("。") + "。")
+            else:
+                lines.append("替代补偿：无法实施时，" + fallback.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("替代安排：") and "，或由公司现金补偿" in stripped:
@@ -7680,6 +7816,13 @@ def normalize_dividend_subpoints(item: dict[str, Any]) -> None:
             lines.append("批准机制：利润分配、弥补亏损及股息红利宣布/支付均须按保护性事项机制批准。")
             changed = True
             continue
+        if stripped.startswith("分红批准：") and "；利润分配方案" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            condition, approval_items = body.split("；", 1)
+            lines.append("分红前提：" + condition.rstrip("。") + "。")
+            lines.append("批准事项：" + approval_items.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("投资方优先：") and "；如因法律限制" in stripped:
             body = stripped.split("：", 1)[1]
             priority, fallback = body.split("；如因法律限制", 1)
@@ -7687,6 +7830,14 @@ def normalize_dividend_subpoints(item: dict[str, Any]) -> None:
             split_priority = split_dividend_priority_line(priority_line)
             lines.extend(split_priority or [priority_line])
             lines.append("法律限制补偿：如因法律限制" + fallback.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("投资方优先：") and "；如法律限制" in stripped:
+            body = stripped.split("：", 1)[1]
+            priority, fallback = body.split("；如法律限制", 1)
+            priority = priority.replace("取得按约定方式计算的较高金额作为优先分红额", "取得按约定方式计算的较高优先分红额")
+            lines.append("优先分红：" + priority.rstrip("。") + "。")
+            lines.append("法律限制补偿：如法律限制" + fallback.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("投资方优先取得：") and "全额取得" in stripped and "前，其他股东不得" in stripped:
