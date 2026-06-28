@@ -3361,7 +3361,7 @@ def test_post_polish_compacts_spa_other_dispute_and_notice_language() -> None:
 
     current_other = items[3]["draft_content"]
     assert "保密范围：协议条款、协议存在及未公开信息保密。" in current_other
-    assert "允许披露：法定、监管披露及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外。" in current_other
+    assert "允许披露情形：法定、监管披露及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外。" in current_other
     assert "接收方义务：接收方应承担不低于本协议标准的保密义务。" in current_other
     assert "程序文件效力：工商登记文件仅供程序使用。" in current_other
     assert "交易文件优先：交易文件与前轮增资协议、公司章程或其他组织性文件不一致的，以本协议为准。" in current_other
@@ -3643,6 +3643,19 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.board_reserved_matters",
+            "draft_content": "经营及人事：高管任免及薪酬、年度预算/决算及业务计划、员工股权/期权计划及授予、审计机构、会计政策、关联交易和预算外重大支出亦列为董事会保护性事项。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.board_reserved_matters",
+            "draft_content": (
+                "贷款及担保：贷款、垫付或财务支持单笔超50万元或12个月累计超100万元需同意；正常业务经营过程中的预付款除外，对任何债务提供担保亦需同意。\n"
+                "资产处置：除需股东会批准事项外，资产、业务、股份或权益处置或设定权利负担达到上述门槛，或超出经批准预算和经营计划的，需同意。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3679,6 +3692,17 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
     assert "两星及算力条件：" in items[3]["draft_content"]
     assert "两星及算力增发额度：" in items[3]["draft_content"]
     assert "后。" not in items[3]["draft_content"]
+    assert "高管事项：高管任免及薪酬。" in items[4]["draft_content"]
+    assert "经营计划事项：年度预算/决算及业务计划。" in items[4]["draft_content"]
+    assert "员工激励事项：员工股权/期权计划及授予。" in items[4]["draft_content"]
+    assert "审计/会计事项：审计机构、会计政策。" in items[4]["draft_content"]
+    assert "关联交易/预算外支出：关联交易和预算外重大支出列为董事会保护性事项。" in items[4]["draft_content"]
+    assert "财务支持事项：贷款、垫付或财务支持。" in items[5]["draft_content"]
+    assert "财务支持门槛：单笔超50万元或12个月累计超100万元需同意。" in items[5]["draft_content"]
+    assert "业务预付款例外：正常业务经营过程中的预付款除外。" in items[5]["draft_content"]
+    assert "担保事项：对任何债务提供担保亦需同意。" in items[5]["draft_content"]
+    assert "资产处置范围：除需股东会批准事项外，资产、业务、股份或权益处置或设定权利负担。" in items[5]["draft_content"]
+    assert "资产处置门槛：达到上述门槛，或超出经批准预算和经营计划。" in items[5]["draft_content"]
 
 
 def test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto() -> None:
@@ -3712,6 +3736,14 @@ def test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto()
                 "股东会有效召开还要求不低于二分之一表决权股东出席且包括多数优先股股东出席。\n"
                 "门槛定义：多数优先股股东为持有超过三分之二优先股的股东；优先股指特定投资人持有的公司股权。\n"
                 "投资人门槛：股东会保护性事项分为两套机制：部分事项需包括特定主体同意；另一类重大事项需三分之二以上表决权且包括多数优先股股东同意。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.shareholder_reserved_matters",
+            "draft_content": (
+                "特定主体同意事项：修改章程、增减注册资本、清算解散终止、对可能导致解散/歇业/破产/清算事件作出决议、主营业务实质改变或终止、分红/利润分配。\n"
+                "多数优先股股东事项：重组及控制权变更、重大资产处置、设立/处置子公司或合资企业、上市方案、董事规则、ESOP、优先股股东权利修改及员工持股平台累计或单次超过总股本10%的转让。"
             ),
             "review_notes": [],
         },
@@ -3750,6 +3782,16 @@ def test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto()
     assert "门槛定义：多数优先股股东为持有超过三分之二优先股的股东；优先股指特定投资人持有的公司股权。" in b_style
     assert "通过机制：" not in b_style
     assert "投资人门槛：" not in b_style
+
+    current_dense = items[3]["draft_content"]
+    assert "章程/资本事项：修改章程、增减注册资本。" in current_dense
+    assert "清算事项：清算解散终止，或对可能导致解散/歇业/破产/清算事件作出决议。" in current_dense
+    assert "主营业务事项：主营业务实质改变或终止。" in current_dense
+    assert "分红事项：分红/利润分配。" in current_dense
+    assert "交易/资产事项：重组及控制权变更、重大资产处置、设立/处置子公司或合资企业。" in current_dense
+    assert "上市/治理事项：上市方案、董事规则、ESOP。" in current_dense
+    assert "优先股权利/平台转让：优先股股东权利修改及员工持股平台累计或单次超过总股本10%的转让。" in current_dense
+    assert "多数优先股股东事项：" not in current_dense
 
 
 def test_post_polish_compacts_mfn_and_new_project_special_rights() -> None:
@@ -3880,6 +3922,11 @@ def test_post_polish_splits_remaining_dense_kts_subpoints() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.other",
+            "draft_content": "允许披露：法定、监管披露及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3917,6 +3964,9 @@ def test_post_polish_splits_remaining_dense_kts_subpoints() -> None:
     assert "履职义务：不得消极怠工、严重失职或恶意损害公司利益。" in founder
     assert "外部任职限制：全职加入前后均不得在公司/集团外任职、投资或提供服务。" in founder
     assert "研究机构例外：经投资人同意的研究机构任职除外，但不得实质影响其对公司职责和经营管理。" in founder
+
+    spa_other_current = items[6]["draft_content"]
+    assert spa_other_current == "允许披露情形：法定、监管披露及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外。"
 
 
 def test_post_polish_splits_remaining_long_substantive_lines() -> None:
@@ -4147,6 +4197,11 @@ def test_post_polish_compacts_compliance_kts_language() -> None:
             "draft_content": "代持/实益归属：[人名_B]所持子公司股权应确认为公司实益拥有，[人名_B]不享有实际权益，未经一致同意不得处置；公司享有单方无偿取得权。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.compliance",
+            "draft_content": "廉洁合规：公司相关主体及其董事、管理人员、雇员代表公司行事时，不得参与腐败、贿赂、行贿，包括商业贿赂及为影响政府决策向政府部门或官员提供财物或其他利益。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4163,6 +4218,7 @@ def test_post_polish_compacts_compliance_kts_language() -> None:
     assert "实益归属：[人名_B]所持子公司股权应确认为公司实益拥有。" in items[2]["draft_content"]
     assert "权益限制：[人名_B]不享有实际权益，未经一致同意不得处置。" in items[2]["draft_content"]
     assert "无偿取得权：公司享有单方无偿取得权。" in items[2]["draft_content"]
+    assert items[3]["draft_content"] == "廉洁承诺：公司方及相关人员不得参与腐败、贿赂、行贿或商业贿赂，亦不得以财物或其他利益影响政府或商业决策。"
 
 
 def test_post_polish_compacts_termination_kts_language() -> None:
@@ -4244,6 +4300,33 @@ def test_post_polish_compacts_preemptive_right_kts_language() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.preemptive_right",
+            "draft_content": "优先认购范围：公司新增注册资本、发行新股或后续融资时，[[公司或组织_AE]或组织_K]及/或其合格关联方享有优先认购权，附件I所列主体除外。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.preemptive_right",
+            "draft_content": (
+                "优先认购范围：公司新增注册资本、发行新股或后续融资时，[[公司或组织_AE]或组织_K]及/或其合格关联方享有优先认购权，附件I所列主体除外。\n"
+                "认购权：相关投资人可按持股比例优先认购新增注册资本/新发股权，认购条件与第三方实质相同。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.preemptive_right",
+            "draft_content": "优先认购权：公司未来增资、发行新股或后续融资时，投资人可按其持股比例优先认购新增注册资本或新发股权，认购价格、条款和条件应与其他认购方实质相同。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.preemptive_right",
+            "draft_content": (
+                "适用融资：公司未来增资、发行新股或后续融资。\n"
+                "认购权：相关投资人可按持股比例优先认购新增注册资本/新发股权，认购条件与第三方实质相同。\n"
+                "认购条件：认购价格、条款和条件应与其他认购方实质相同。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4256,6 +4339,23 @@ def test_post_polish_compacts_preemptive_right_kts_language() -> None:
         "认购比例：权利人及/或合格关联方可按届时持股比例优先认购新增注册资本。\n"
         "二次认购：首次未足额认购时，已足额行权的权利人可按比例继续认购剩余额度。\n"
         "例外事项：员工股权/期权激励、反稀释保护及利润或资本公积转增等不适用。"
+    )
+    assert items[2]["draft_content"] == (
+        "适用融资：公司新增注册资本、发行新股或后续融资。\n"
+        "权利人：[[公司或组织_AE]或组织_K]及/或其合格关联方享有优先认购权。\n"
+        "例外主体：附件I所列主体除外。"
+    )
+    assert "认购比例/条件：按持股比例优先认购新增注册资本/新发股权，认购条件与第三方实质相同。" in items[3]["draft_content"]
+    assert "认购权：相关投资人" not in items[3]["draft_content"]
+    assert items[4]["draft_content"] == (
+        "适用融资：公司未来增资、发行新股或后续融资。\n"
+        "认购比例：投资人按持股比例优先认购新增注册资本或新发股权。\n"
+        "认购条件：认购价格、条款和条件应与其他认购方实质相同。"
+    )
+    assert items[5]["draft_content"] == (
+        "适用融资：公司未来增资、发行新股或后续融资。\n"
+        "认购比例：投资人按持股比例优先认购新增注册资本/新发股权。\n"
+        "认购条件：认购价格、条款和条件应与其他认购方实质相同。"
     )
     assert "拟新增注册资本总额乘以" not in items[1]["draft_content"]
 
@@ -4353,6 +4453,11 @@ def test_post_polish_compacts_transfer_restriction_internal_references() -> None
             "draft_content": "转让限制：未经[[公司或组织_AE]或组织_G]和[商标品牌_G]事先书面同意，不得直接或间接转让、处置、质押或处分公司及/或控股子公司股权；违规转让无效。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.transfer_restriction",
+            "draft_content": "允许例外：员工激励、反稀释保护、第9条回购、经[[公司或组织_AE]或组织_K]事先书面同意的转让，以及婚姻变动或继承等特定间接处分安排可例外处理。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4366,6 +4471,9 @@ def test_post_polish_compacts_transfer_restriction_internal_references() -> None
     assert "限制事项：不得直接或间接转让、处置、质押或处分公司及/或控股子公司股权。" in items[2]["draft_content"]
     assert "违规后果：违规转让无效。" in items[2]["draft_content"]
     assert "乙方四" not in items[0]["draft_content"]
+    assert "激励/反稀释例外：员工激励、反稀释保护不受限制。" in items[3]["draft_content"]
+    assert "回购/同意转让例外：第9条回购、经[[公司或组织_AE]或组织_K]事先书面同意的转让可例外处理。" in items[3]["draft_content"]
+    assert "间接处分例外：婚姻变动或继承等特定间接处分安排可例外处理。" in items[3]["draft_content"]
     assert "上述转让" not in items[0]["draft_content"] + items[1]["draft_content"]
 
 
@@ -4474,6 +4582,11 @@ def test_post_polish_splits_liability_subjects_events_and_exceptions() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.liability",
+            "draft_content": "特殊赔偿：[公司或组织_AO]及[公司或组织_BF]陈述保证重大不实、不完整或严重违约，致使[公司或组织_AJ]遭受损失的，应向该投资方赔偿并使其不受损害。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4496,6 +4609,11 @@ def test_post_polish_splits_liability_subjects_events_and_exceptions() -> None:
     assert "连带责任：各[公司或组织_AO]在协议项下责任和义务为共同且连带。" in draft
     assert "责任上限：相关现有股东/主体责任以其届时实际持股处置所得价值为上限。" in draft
     assert "上限例外：恶意、欺诈或故意重大违约不适用该限制。" in draft
+
+    draft = items[2]["draft_content"]
+    assert "特殊赔偿主体：[公司或组织_AO]及[公司或组织_BF]。" in draft
+    assert "特殊赔偿事项：陈述保证重大不实、不完整或严重违约。" in draft
+    assert "赔偿后果：致使[公司或组织_AJ]遭受损失的，应向该投资方赔偿并使其不受损害。" in draft
 
 
 def test_post_polish_splits_representations_subpoints() -> None:
@@ -4529,6 +4647,19 @@ def test_post_polish_splits_representations_subpoints() -> None:
         {
             "taxonomy_id": "spa.representations_warranties",
             "draft_content": "投资方保证：各投资方分别且不连带保证合法设立、具备签署履行授权，增资资金为自有或募集的合法资金；缴清增资款后取得新增股权完整所有权。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.representations_warranties",
+            "draft_content": "声明保证范围：公司及现有股东就附件I事项向投资方作出连带共同声明保证，签署日至交割日均应真实、准确、完整且不具误导性，并受披露函披露事项限制。",
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.representations_warranties",
+            "draft_content": (
+                "资料披露：公司及现有股东保证已真实、完整、准确披露投资方要求的必要资料及可能实质影响投资方签署、履行协议或完成增资意愿的信息。\n"
+                "重大事项通知：交割前，公司和创始人应通知可能导致陈述保证严重失实、不完整、不准确或重大违约的事项，以及签署日后的重大进展或重大不利影响。"
+            ),
             "review_notes": [],
         },
     ]
@@ -4567,6 +4698,18 @@ def test_post_polish_splits_representations_subpoints() -> None:
     assert "投资方资格授权：各投资方分别且不连带保证合法设立、具备签署履行授权。" in a_export
     assert "资金来源：增资资金为自有或募集的合法资金。" in a_export
     assert "股权取得：缴清增资款后取得新增股权完整所有权。" in a_export
+
+    a_scope = items[4]["draft_content"]
+    assert "声明保证主体：公司及现有股东就附件I事项向投资方作出连带共同声明保证。" in a_scope
+    assert "持续保证期间：签署日至交割日均应真实、准确、完整且不具误导性。" in a_scope
+    assert "披露函限制：受披露函披露事项限制。" in a_scope
+
+    disclosure = items[5]["draft_content"]
+    assert "资料披露：公司及现有股东保证已真实、完整、准确披露投资方要求的必要资料。" in disclosure
+    assert "重大信息披露：已披露可能实质影响投资方签署、履行协议或完成增资意愿的信息。" in disclosure
+    assert "通知义务：交割前，公司和创始人应通知投资方。" in disclosure
+    assert "通知事项：可能导致陈述保证严重失实、不完整、不准确或重大违约的事项。" in disclosure
+    assert "重大进展/不利影响：签署日后的重大进展或重大不利影响。" in disclosure
 
 
 def test_post_polish_keeps_export_lines_readable_for_dense_kts_items() -> None:

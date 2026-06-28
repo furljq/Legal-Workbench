@@ -2926,6 +2926,11 @@ def normalize_spa_other_confidentiality_subpoints(item: dict[str, Any]) -> None:
             lines.append("接收方义务：披露方应" + obligation.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("允许披露：法定、监管披露及向"):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            lines.append("允许披露情形：" + body.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("争议解决：") and "15日" in stripped and "仲裁" in stripped:
             if "友好协商" in stripped:
                 lines.append("争议解决：争议先友好协商；15日内未解决的，提交约定仲裁机构仲裁，非争议事项继续履行。")
@@ -3610,6 +3615,7 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
     for line in draft_content.splitlines():
         stripped = line.strip()
         label, parts = split_semicolon_body(stripped)
+        body = stripped.split("：", 1)[1] if "：" in stripped else ""
         if label == "通过机制" and len(parts) >= 2:
             general = parts[0].replace("一般经", "经")
             lines.append("一般通过：" + general.rstrip("。") + "。")
@@ -3638,6 +3644,19 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
                 lines.append("业务预付款例外：" + "；".join(parts[1:]).rstrip("。") + "。")
             changed = True
             continue
+        if label == "贷款及担保" and "预付款除外" in stripped and "担保亦需同意" in stripped:
+            financial, rest = body.split("；", 1)
+            exception, guarantee = rest.split("，对任何债务提供担保", 1)
+            if "单笔超" in financial:
+                support, threshold = financial.split("单笔超", 1)
+                lines.append("财务支持事项：" + support.rstrip("，,。") + "。")
+                lines.append("财务支持门槛：单笔超" + threshold.rstrip("。") + "。")
+            else:
+                lines.append("财务支持事项：" + financial.rstrip("。") + "。")
+            lines.append("业务预付款例外：" + exception.rstrip("。") + "。")
+            lines.append("担保事项：对任何债务提供担保" + guarantee.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("贷款/财务支持：") and append_board_financial_support_lines(
             lines,
             stripped.split("：", 1)[1],
@@ -3657,6 +3676,14 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
             lines,
             stripped.split("：", 1)[1],
         ):
+            changed = True
+            continue
+        if stripped.startswith("经营及人事：") and "年度预算/决算及业务计划" in stripped and "关联交易和预算外重大支出" in stripped:
+            lines.append("高管事项：高管任免及薪酬。")
+            lines.append("经营计划事项：年度预算/决算及业务计划。")
+            lines.append("员工激励事项：员工股权/期权计划及授予。")
+            lines.append("审计/会计事项：审计机构、会计政策。")
+            lines.append("关联交易/预算外支出：关联交易和预算外重大支出列为董事会保护性事项。")
             changed = True
             continue
         if stripped.startswith("财务/资产事项：") and append_board_finance_asset_lines(
@@ -3679,6 +3706,17 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
             lines.append("资产处置范围：除需股东会批准的交易外，资产、业务、股份或权益处置及设置权利负担。")
             lines.append("资产处置门槛：" + threshold_line.rstrip("。") + "。")
             lines.append("审批要求：达到上述门槛时需投资人董事同意。")
+            changed = True
+            continue
+        if (
+            stripped.startswith("资产处置：")
+            and "资产、业务、股份或权益处置或设定权利负担" in stripped
+            and "需同意" in stripped
+            and "达到上述门槛" in stripped
+        ):
+            lines.append("资产处置范围：除需股东会批准事项外，资产、业务、股份或权益处置或设定权利负担。")
+            lines.append("资产处置门槛：达到上述门槛，或超出经批准预算和经营计划。")
+            lines.append("审批要求：达到门槛时需同意。")
             changed = True
             continue
         lines.append(stripped)
@@ -3732,6 +3770,18 @@ def normalize_transfer_restriction_subpoints(item: dict[str, Any]) -> None:
             permitted, succession = body.split("；婚姻关系变动或继承", 1)
             lines.append("允许例外：" + permitted.rstrip("。") + "。")
             lines.append("间接转让例外：婚姻关系变动或继承" + succession.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("允许例外：") and "员工激励" in stripped and "婚姻变动或继承" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            permitted, succession = body.split("，以及婚姻变动或继承", 1)
+            if "、第9条回购" in permitted:
+                incentive, repurchase = permitted.split("、第9条回购", 1)
+                lines.append("激励/反稀释例外：" + incentive.rstrip("、，,。") + "不受限制。")
+                lines.append("回购/同意转让例外：第9条回购" + repurchase.rstrip("、，,。") + "可例外处理。")
+            else:
+                lines.append("允许例外：" + permitted.rstrip("。") + "。")
+            lines.append("间接处分例外：婚姻变动或继承" + succession.rstrip("。") + "。")
             changed = True
             continue
         if (
@@ -4348,6 +4398,19 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
             lines.append("多数投资人同意机制：" + stripped.split("：", 1)[1].rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("特定主体同意事项：") and "、清算解散终止" in stripped and "、分红/利润分配" in stripped:
+            lines.append("章程/资本事项：修改章程、增减注册资本。")
+            lines.append("清算事项：清算解散终止，或对可能导致解散/歇业/破产/清算事件作出决议。")
+            lines.append("主营业务事项：主营业务实质改变或终止。")
+            lines.append("分红事项：分红/利润分配。")
+            changed = True
+            continue
+        if stripped.startswith("多数优先股股东事项：") and "设立/处置子公司或合资企业" in stripped and "员工持股平台" in stripped:
+            lines.append("交易/资产事项：重组及控制权变更、重大资产处置、设立/处置子公司或合资企业。")
+            lines.append("上市/治理事项：上市方案、董事规则、ESOP。")
+            lines.append("优先股权利/平台转让：优先股股东权利修改及员工持股平台累计或单次超过总股本10%的转让。")
+            changed = True
+            continue
         if stripped.startswith("多数投资人事项：") and "、上市方案" in stripped and len(stripped) > 95:
             body = stripped.split("：", 1)[1]
             before, after = body.split("、上市方案", 1)
@@ -4447,6 +4510,13 @@ def normalize_shareholder_reserved_subpoints(item: dict[str, Any]) -> None:
         "特别否决范围",
         "特别否决权人",
         "特别否决终止",
+        "章程/资本事项",
+        "清算事项",
+        "主营业务事项",
+        "分红事项",
+        "交易/资产事项",
+        "上市/治理事项",
+        "优先股权利/平台转让",
     }
     for line in lines:
         if line in seen_lines:
@@ -5364,10 +5434,24 @@ def normalize_representations_subpoints(item: dict[str, Any]) -> None:
             lines.append("持股合法性：" + holding_text + "。")
             changed = True
             continue
+        if label == "声明保证范围" and "，签署日至交割日均应" in body and "，并受披露函" in body:
+            scope, rest = body.split("，签署日至交割日均应", 1)
+            quality, disclosure = rest.split("，并受", 1)
+            lines.append("声明保证主体：" + scope.rstrip("。") + "。")
+            lines.append("持续保证期间：签署日至交割日均应" + quality.rstrip("。") + "。")
+            lines.append("披露函限制：受" + disclosure.rstrip("。") + "。")
+            changed = True
+            continue
         if label == "资料真实准确" and "或限制本次增资的其他交易安排" in body:
             disclosure = body.replace("或限制本次增资的其他交易安排", "").rstrip("。")
             lines.append("资料真实准确：" + disclosure + "。")
             lines.append("交易限制披露：不存在未披露限制本次增资的其他交易安排。")
+            changed = True
+            continue
+        if label == "资料披露" and "必要资料及可能实质影响" in body:
+            disclosure, material = body.split("及可能实质影响", 1)
+            lines.append("资料披露：" + disclosure.rstrip("。") + "。")
+            lines.append("重大信息披露：已披露可能实质影响" + material.rstrip("。") + "。")
             changed = True
             continue
         if label == "过渡期限制" and "；未经" in body:
@@ -5383,6 +5467,14 @@ def normalize_representations_subpoints(item: dict[str, Any]) -> None:
                 lines.append("通知事项：" + match.group("events").rstrip("。") + "。")
                 changed = True
                 continue
+        if label == "重大事项通知" and "应通知可能导致" in body and "，以及" in body:
+            who, rest = body.split("应通知", 1)
+            events, progress = rest.split("，以及", 1)
+            lines.append("通知义务：" + who.rstrip("。") + "应通知投资方。")
+            lines.append("通知事项：" + events.rstrip("。") + "。")
+            lines.append("重大进展/不利影响：" + progress.rstrip("。") + "。")
+            changed = True
+            continue
         if label == "资料及持股合法性" and "；相关主体" in body:
             disclosure, holding = body.split("；相关主体", 1)
             lines.append("资料真实准确：" + disclosure.rstrip("。") + "。")
@@ -7505,6 +7597,10 @@ def normalize_compliance_subpoints(item: dict[str, Any]) -> None:
             lines.append("合规要求：应遵守" + rules.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("廉洁合规：") and any(marker in stripped for marker in ("腐败", "贿赂", "行贿", "商业贿赂")):
+            lines.append(compact_compliance_prohibition("廉洁承诺：" + stripped.split("：", 1)[1].rstrip("。") + "。"))
+            changed = True
+            continue
         if stripped.startswith(("禁止行为：", "廉洁承诺：")):
             if "；除约定投资合作" in stripped:
                 first, interest = stripped.split("；除约定投资合作", 1)
@@ -7597,11 +7693,36 @@ def normalize_preemptive_right_subpoints(item: dict[str, Any]) -> None:
     draft_content = str(item.get("draft_content") or "")
     if not draft_content:
         return
+    has_specific_holder = any(
+        line.strip().startswith("权利人：")
+        for line in draft_content.splitlines()
+    )
+    has_applicable_financing = any(
+        line.strip().startswith("适用融资：")
+        for line in draft_content.splitlines()
+    )
+    has_condition_line = any(
+        line.strip().startswith("认购条件：")
+        for line in draft_content.splitlines()
+    )
     lines: list[str] = []
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
         label, body = stripped.split("：", 1) if "：" in stripped else ("", "")
+        if label == "认购权" and has_specific_holder and "认购条件与第三方实质相同" in body:
+            lines.append("认购比例/条件：按持股比例优先认购新增注册资本/新发股权，认购条件与第三方实质相同。")
+            changed = True
+            continue
+        if label == "认购权" and has_applicable_financing and "认购条件与第三方实质相同" in body:
+            lines.append("认购比例：投资人按持股比例优先认购新增注册资本/新发股权。")
+            if not has_condition_line:
+                lines.append("认购条件：认购条件与第三方实质相同。")
+            changed = True
+            continue
+        if label == "认购比例" and has_applicable_financing and body.startswith("投资人按持股比例"):
+            lines.append(stripped)
+            continue
         if label in {"认购权", "认购比例"} and (
             "优先认购" in body or ("认购新增注册资本" in body and "优先权" in body)
         ):
@@ -7611,8 +7732,25 @@ def normalize_preemptive_right_subpoints(item: dict[str, Any]) -> None:
                 lines.append("认购权：相关投资人可按持股比例优先认购新增注册资本/新发股权，认购条件与第三方实质相同。")
             changed = True
             continue
+        if label == "优先认购权" and "公司未来增资、发行新股或后续融资时" in body and "认购价格、条款和条件" in body:
+            financing, rest = body.split("时，", 1)
+            _holder, terms = rest.split("，认购价格、条款和条件", 1)
+            lines.append("适用融资：" + financing.rstrip("。") + "。")
+            lines.append("认购比例：投资人按持股比例优先认购新增注册资本或新发股权。")
+            lines.append("认购条件：认购价格、条款和条件" + terms.rstrip("。") + "。")
+            changed = True
+            continue
         if label == "二次认购" and any(marker in body for marker in ("未足额认购", "剩余新增注册资本", "售罄")):
             lines.append("二次认购：首次未足额认购时，已足额行权的权利人可按比例继续认购剩余额度。")
+            changed = True
+            continue
+        if label == "优先认购范围" and "享有优先认购权" in body and "附件I所列主体除外" in body:
+            financing, rest = body.split("时，", 1)
+            holder, _exception = rest.split("，附件I所列主体除外", 1)
+            lines.append("适用融资：" + financing.rstrip("。") + "。")
+            lines.append("权利人：" + holder.rstrip("。") + "。")
+            lines.append("例外主体：附件I所列主体除外。")
+            has_specific_holder = True
             changed = True
             continue
         if label in {"例外", "例外情形", "例外事项"} and any(marker in body for marker in ("员工", "股权", "股票分拆", "转增")):
@@ -7794,6 +7932,14 @@ def normalize_liability_subpoints(item: dict[str, Any]) -> None:
                 )
                 changed = True
                 continue
+        if label == "特殊赔偿" and "陈述保证" in body and "，致使" in body and "赔偿" in body:
+            subject, rest = body.split("陈述保证", 1)
+            event, consequence = rest.split("，致使", 1)
+            lines.append("特殊赔偿主体：" + subject.rstrip("。") + "。")
+            lines.append("特殊赔偿事项：陈述保证" + event.rstrip("。") + "。")
+            lines.append("赔偿后果：致使" + consequence.rstrip("。") + "。")
+            changed = True
+            continue
         if label == "责任上限" and "；" in body and "不受限" in body:
             cap, exception = body.split("；", 1)
             lines.append("责任上限：" + cap.rstrip("。") + "。")
