@@ -3692,6 +3692,20 @@ def normalize_board_reserved_subpoints(item: dict[str, Any]) -> None:
         ):
             changed = True
             continue
+        if stripped.startswith("贷款及投资：") and "以及向集团外第三方提供任何贷款" in stripped and "需投资人董事同意" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            investment, third_party = body.split("，以及向集团外第三方提供任何贷款", 1)
+            lines.append("贷款/投资门槛：" + investment.rstrip("，,。") + "。")
+            lines.append("第三方贷款：向集团外第三方提供任何贷款" + third_party.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("资产处置：") and "单笔超200万元或年度累计超500万元需投资人董事同意" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            scope, threshold = body.rsplit("，", 1)
+            lines.append("资产处置范围：" + scope.rstrip("。") + "。")
+            lines.append("资产处置门槛：" + threshold.rstrip("。") + "。")
+            changed = True
+            continue
         if (
             stripped.startswith("资产处置：")
             and "资产、业务、股份或权益处置及设置权利负担" in stripped
@@ -3736,12 +3750,39 @@ def normalize_transfer_restriction_subpoints(item: dict[str, Any]) -> None:
             lines.append("受限转让：合格上市前，特定现有股东/创始方或持股平台向第三方转让公司股权或接受购买要约，须经全体投资人同意。")
             changed = True
             continue
+        if stripped.startswith("受限主体：合格上市前，") and "作为转股方" in stripped and "受限" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            period, rest = body.split("，", 1)
+            subject, action = rest.split("作为转股方，", 1)
+            action_text = action.removesuffix("受限").rstrip("。")
+            lines.append("限制期间：" + period.rstrip("。") + "。")
+            lines.append("受限主体：" + subject.rstrip("。") + "。")
+            lines.append("限制事项：" + action_text + "受限。")
+            changed = True
+            continue
         if stripped.startswith("适用前提：") and "上述转让" in stripped:
             lines.append("适用前提：受限转让仍须遵守增资协议及相关转股程序。")
             changed = True
             continue
         if stripped.startswith("同意门槛：上述转让或处分"):
             lines.append(stripped.replace("同意门槛：上述转让或处分", "同意门槛：受限转让或处分", 1))
+            changed = True
+            continue
+        if stripped.startswith("同意门槛：拟向第三方转让或接受第三方购买要约的，须经全体投资人同意，并遵守"):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            action, rest = body.split("，须经", 1)
+            consent, prerequisite = rest.split("，并遵守", 1)
+            lines.append("受限交易：" + action.removesuffix("的").rstrip("。") + "。")
+            lines.append("同意门槛：须经" + consent.rstrip("。") + "。")
+            lines.append("适用前提：遵守" + prerequisite.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("限制事项：拟向第三方转让或接受第三方购买要约的"):
+            lines.append("受限交易：拟向第三方转让或接受第三方购买要约。")
+            changed = True
+            continue
+        if stripped.startswith("适用前提：并遵守"):
+            lines.append(stripped.replace("适用前提：并遵守", "适用前提：遵守", 1))
             changed = True
             continue
         if stripped.startswith("转让限制：未经") and "；违规转让无效" in stripped:
@@ -5676,6 +5717,15 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
         if line.startswith(("触发事项：", "回购触发事项：")):
             line = "回购事项：" + line.split("：", 1)[1]
             changed = True
+        if line.startswith("回购事项：") and "（包括" in line and "）时，投资方可要求回购" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            trigger, rest = body.split("（包括", 1)
+            scope, _tail = rest.split("）时，投资方可要求回购", 1)
+            lines.append("回购事项：" + trigger.rstrip("。") + "。")
+            lines.append("触发范围：包括" + scope.rstrip("。") + "。")
+            lines.append("行权后果：投资方可要求回购。")
+            changed = True
+            continue
         elif line.startswith("义务人及价格："):
             body = line.split("：", 1)[1]
             split_match = re.search(r"；\s*价格(?P<price>按.+)", body)
@@ -5799,6 +5849,19 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
         lines.append(line)
     lines, deduped = dedupe_redemption_trigger_lines(lines)
     changed = changed or deduped
+    final_lines: list[str] = []
+    for line in lines:
+        if line.startswith("回购事项：") and "（包括" in line and "）时，投资方可要求回购" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            trigger, rest = body.split("（包括", 1)
+            scope, _tail = rest.split("）时，投资方可要求回购", 1)
+            final_lines.append("回购事项：" + trigger.rstrip("。") + "。")
+            final_lines.append("触发范围：包括" + scope.rstrip("。") + "。")
+            final_lines.append("行权后果：投资方可要求回购。")
+            changed = True
+            continue
+        final_lines.append(line)
+    lines = final_lines
     if changed:
         item["draft_content"] = "\n".join(line for line in lines if line)
 
@@ -6026,6 +6089,13 @@ def normalize_founder_obligation_subpoints(draft_content: str) -> str:
             lines.append("履职义务：不得" + conduct.rstrip("。") + "。")
             changed = True
             continue
+        if line.startswith("持续服务：") and "不得主动离职" in line and "，并不得消极怠工" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            service, conduct = body.split("，并不得", 1)
+            lines.append("持续服务：" + service.rstrip("。") + "。")
+            lines.append("履职义务：不得" + conduct.rstrip("。") + "。")
+            changed = True
+            continue
         if line.startswith("外部任职限制：") and "；经投资人同意的研究机构任职除外" in line:
             body = line.split("：", 1)[1].rstrip("。")
             restriction, exception = body.split("；", 1)
@@ -6071,6 +6141,18 @@ def normalize_founder_obligation_subpoints(draft_content: str) -> str:
             if len(parts) >= 2:
                 lines.append("竞争业务限制：" + parts[1].rstrip("。") + "。")
             lines.append("不招揽：不得招揽" + solicitation.rstrip("。") + "。")
+            changed = True
+            continue
+        if line.startswith("限制范围：") and "以及引诱公司员工、顾问或客户转移关系" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            conduct, solicitation = body.split("，以及引诱", 1)
+            if "、投资或经营竞争业务" in conduct:
+                entity, business = conduct.split("、投资或经营竞争业务", 1)
+                lines.append("竞争实体限制：" + entity.rstrip("。") + "。")
+                lines.append("竞争业务限制：投资或经营竞争业务" + business.rstrip("。") + "。")
+            else:
+                lines.append("竞争限制：" + conduct.rstrip("。") + "。")
+            lines.append("不招揽：不得引诱" + solicitation.rstrip("。") + "。")
             changed = True
             continue
         lines.append(line)
@@ -6739,6 +6821,13 @@ def normalize_closing_conditions_subpoints(item: dict[str, Any]) -> None:
             lines.append("合规要求：" + compliance.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("授权及合规：") and "须取得" in stripped and "且不得违反" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            authorization, compliance = body.split("，且", 1)
+            lines.append("授权要求：" + authorization.rstrip("。") + "。")
+            lines.append("合规要求：" + compliance.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("登记及合规：") and "；陈述保证及承诺" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             registration, compliance = body.split("；", 1)
@@ -7084,6 +7173,16 @@ def normalize_sha_other_absence_content(item: dict[str, Any]) -> None:
         return
     lines = [line.strip() for line in draft_content.splitlines() if line.strip()]
     if len(lines) != 1:
+        return
+    if "无常规回购权、领售权、最惠国待遇、创始人全职付出的明确约定" in lines[0] and "不竞争义务已由" in lines[0]:
+        absence, delegated = lines[0].split("；", 1)
+        absence = absence.replace("股东协议无", "未见", 1)
+        item["draft_content"] = "\n".join(
+            [
+                "缺失权利：" + absence.rstrip("。") + "。",
+                "已承接事项：" + delegated.rstrip("。") + "。",
+            ]
+        )
         return
     match = SHA_OTHER_NOTE_RE.match(lines[0])
     if not match:

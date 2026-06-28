@@ -708,7 +708,13 @@ def test_post_polish_converts_sha_other_note_only_absence_to_kts_lines() -> None
             "draft_content": "【注：股东协议未见常规回购权、领售权、最惠国待遇的明确约定；创始股东持续任职及不竞争义务已由“创始人及核心人员义务”事项承接。】",
             "review_notes": [],
             "lawyer_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "sha.other",
+            "draft_content": "股东协议无常规回购权、领售权、最惠国待遇、创始人全职付出的明确约定；不竞争义务已由创始人及核心人员义务事项承接。",
+            "review_notes": [],
+            "lawyer_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -716,6 +722,10 @@ def test_post_polish_converts_sha_other_note_only_absence_to_kts_lines() -> None
     assert items[0]["draft_content"] == (
         "缺失事项：股东协议未见常规回购权、领售权、最惠国待遇的明确约定。\n"
         "已承接事项：创始股东持续任职及不竞争义务已由“创始人及核心人员义务”事项承接。"
+    )
+    assert items[1]["draft_content"] == (
+        "缺失权利：未见常规回购权、领售权、最惠国待遇、创始人全职付出的明确约定。\n"
+        "已承接事项：不竞争义务已由创始人及核心人员义务事项承接。"
     )
 
 
@@ -1989,12 +1999,14 @@ def test_post_polish_deduplicates_redemption_trigger_lines() -> None:
     apply_post_polish_quality_guards(items)
 
     lines = items[0]["draft_content"].splitlines()
-    trigger_lines = [line for line in lines if line.startswith("回购事项：")]
+    trigger_lines = [line for line in lines if line.startswith(("回购事项：", "触发范围：", "行权后果："))]
     assert trigger_lines == [
-        "回购事项：违反廉洁/反腐败/业务行为道德合规及利益安排承诺（包括不当利益、代持、利益输送、资金往来等）时，投资方可要求回购。"
+        "回购事项：违反廉洁/反腐败/业务行为道德合规及利益安排承诺。",
+        "触发范围：包括不当利益、代持、利益输送、资金往来等。",
+        "行权后果：投资方可要求回购。",
     ]
     assert not items[0]["review_notes"]
-    assert items[1]["draft_content"].splitlines()[0] == trigger_lines[0]
+    assert items[1]["draft_content"].splitlines()[:3] == trigger_lines
 
 
 def test_post_polish_splits_redemption_exercise_and_payment_deadlines() -> None:
@@ -3427,6 +3439,11 @@ def test_post_polish_splits_closing_conditions_dense_lines() -> None:
             "draft_content": "内部批准：公司须完成本次增资内部审批并出具董事会、股东会决议；未参与本轮增资的现有股东须放弃优先认缴权。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.closing_conditions",
+            "draft_content": "授权及合规：相关方须取得签署、履行交易文件所需授权和批准，且不得违反法律法规、第三方协议或承诺。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3458,6 +3475,10 @@ def test_post_polish_splits_closing_conditions_dense_lines() -> None:
     current_export = items[3]["draft_content"]
     assert "内部批准：公司须完成本次增资内部审批并出具董事会、股东会决议。" in current_export
     assert "优先认缴弃权：未参与本轮增资的现有股东须放弃优先认缴权。" in current_export
+
+    current_auth = items[4]["draft_content"]
+    assert "授权要求：相关方须取得签署、履行交易文件所需授权和批准。" in current_auth
+    assert "合规要求：不得违反法律法规、第三方协议或承诺。" in current_auth
 
 
 def test_post_polish_splits_registration_rights_kts_lines() -> None:
@@ -3656,6 +3677,14 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.board_reserved_matters",
+            "draft_content": (
+                "贷款及投资：单笔超100万元或年度累计超500万元的借款、对外投资，以及向集团外第三方提供任何贷款，均需投资人董事同意。\n"
+                "资产处置：转让、处置资产、业务或权利，或在其上设定担保等权利负担，单笔超200万元或年度累计超500万元需投资人董事同意。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3703,6 +3732,10 @@ def test_post_polish_splits_reserved_matters_and_mfn_lines() -> None:
     assert "担保事项：对任何债务提供担保亦需同意。" in items[5]["draft_content"]
     assert "资产处置范围：除需股东会批准事项外，资产、业务、股份或权益处置或设定权利负担。" in items[5]["draft_content"]
     assert "资产处置门槛：达到上述门槛，或超出经批准预算和经营计划。" in items[5]["draft_content"]
+    assert "贷款/投资门槛：单笔超100万元或年度累计超500万元的借款、对外投资。" in items[6]["draft_content"]
+    assert "第三方贷款：向集团外第三方提供任何贷款，均需投资人董事同意。" in items[6]["draft_content"]
+    assert "资产处置范围：转让、处置资产、业务或权利，或在其上设定担保等权利负担。" in items[6]["draft_content"]
+    assert "资产处置门槛：单笔超200万元或年度累计超500万元需投资人董事同意。" in items[6]["draft_content"]
 
 
 def test_post_polish_compacts_shareholder_reserved_mechanisms_and_special_veto() -> None:
@@ -3927,6 +3960,14 @@ def test_post_polish_splits_remaining_dense_kts_subpoints() -> None:
             "draft_content": "允许披露：法定、监管披露及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.founder_obligations",
+            "draft_content": (
+                "持续服务：服务期内，创始股东未经事先书面同意不得主动离职或终止劳动/顾问关系，并不得消极怠工、严重失职或恶意损害公司利益。\n"
+                "限制范围：包括在竞争实体任职或提供支持、投资或经营竞争业务，以及引诱公司员工、顾问或客户转移关系。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3967,6 +4008,13 @@ def test_post_polish_splits_remaining_dense_kts_subpoints() -> None:
 
     spa_other_current = items[6]["draft_content"]
     assert spa_other_current == "允许披露情形：法定、监管披露及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外。"
+
+    founder_current = items[7]["draft_content"]
+    assert "持续服务：服务期内，创始股东未经事先书面同意不得主动离职或终止劳动/顾问关系。" in founder_current
+    assert "履职义务：不得消极怠工、严重失职或恶意损害公司利益。" in founder_current
+    assert "竞争实体限制：包括在竞争实体任职或提供支持。" in founder_current
+    assert "竞争业务限制：投资或经营竞争业务。" in founder_current
+    assert "不招揽：不得引诱公司员工、顾问或客户转移关系。" in founder_current
 
 
 def test_post_polish_splits_remaining_long_substantive_lines() -> None:
@@ -4458,6 +4506,22 @@ def test_post_polish_compacts_transfer_restriction_internal_references() -> None
             "draft_content": "允许例外：员工激励、反稀释保护、第9条回购、经[[公司或组织_AE]或组织_K]事先书面同意的转让，以及婚姻变动或继承等特定间接处分安排可例外处理。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.transfer_restriction",
+            "draft_content": (
+                "受限主体：合格上市前，乙方四、乙方五、乙方六或丁方作为转股方，转让其直接或间接持有的公司股权受限。\n"
+                "同意门槛：拟向第三方转让或接受第三方购买要约的，须经全体投资人同意，并遵守投资协议及第3.2条。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "sha.transfer_restriction",
+            "draft_content": (
+                "限制事项：拟向第三方转让或接受第三方购买要约的。\n"
+                "适用前提：并遵守投资协议及第3.2条。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -4474,6 +4538,16 @@ def test_post_polish_compacts_transfer_restriction_internal_references() -> None
     assert "激励/反稀释例外：员工激励、反稀释保护不受限制。" in items[3]["draft_content"]
     assert "回购/同意转让例外：第9条回购、经[[公司或组织_AE]或组织_K]事先书面同意的转让可例外处理。" in items[3]["draft_content"]
     assert "间接处分例外：婚姻变动或继承等特定间接处分安排可例外处理。" in items[3]["draft_content"]
+    assert "限制期间：合格上市前。" in items[4]["draft_content"]
+    assert "受限主体：乙方四、乙方五、乙方六或丁方。" in items[4]["draft_content"]
+    assert "限制事项：转让其直接或间接持有的公司股权受限。" in items[4]["draft_content"]
+    assert "受限交易：拟向第三方转让或接受第三方购买要约。" in items[4]["draft_content"]
+    assert "同意门槛：须经全体投资人同意。" in items[4]["draft_content"]
+    assert "适用前提：遵守投资协议及第3.2条。" in items[4]["draft_content"]
+    assert items[5]["draft_content"] == (
+        "受限交易：拟向第三方转让或接受第三方购买要约。\n"
+        "适用前提：遵守投资协议及第3.2条。"
+    )
     assert "上述转让" not in items[0]["draft_content"] + items[1]["draft_content"]
 
 
