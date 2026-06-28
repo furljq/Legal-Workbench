@@ -2000,7 +2000,12 @@ def test_post_polish_splits_redemption_exercise_and_payment_deadlines() -> None:
                 "回购义务人收到回购通知后1个月内签署相关协议，并于60日内全额支付回购价款。"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "sha.redemption",
+            "draft_content": "行使及逾期：收到回购通知后1个月内签署文件、60日内付款；逾期按回购价款每日万分之三支付违约金并继续履行。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -2009,6 +2014,9 @@ def test_post_polish_splits_redemption_exercise_and_payment_deadlines() -> None:
     assert "签约期限：回购义务人收到回购通知后1个月内签署相关协议。" in items[0]["draft_content"]
     assert "付款期限：回购义务人收到回购通知后60日内全额支付回购价款。" in items[0]["draft_content"]
     assert "行权期限：" not in items[0]["draft_content"]
+    assert "签约期限：收到回购通知后1个月内签署文件。" in items[1]["draft_content"]
+    assert "付款期限：收到回购通知后60日内付款。" in items[1]["draft_content"]
+    assert "逾期责任：逾期按回购价款每日万分之三支付违约金并继续履行。" in items[1]["draft_content"]
 
 
 def test_post_polish_splits_redemption_price_formula_lines() -> None:
@@ -2020,7 +2028,12 @@ def test_post_polish_splits_redemption_price_formula_lines() -> None:
                 "价格及付款：回购价款按两项孰高确定：回购股权对应投资总额×(1+8%×投资年数)-已取得股息/分红，或最近一期经审计净资产×要求回购股权比例；回购通知后60日内全额支付。"
             ),
             "review_notes": [],
-        }
+        },
+        {
+            "taxonomy_id": "sha.redemption",
+            "draft_content": "价格及付款：回购价为投资成本按6%年单利计息并调整分红后的金额与届时公允价值孰高；收到通知后三个月内签署文件并足额付款。",
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -2033,6 +2046,10 @@ def test_post_polish_splits_redemption_price_formula_lines() -> None:
     assert "付款期限：回购通知后60日内全额支付。" in draft
     assert "回购价格：按“" not in draft
     assert "价格及付款：" not in draft
+
+    draft = items[1]["draft_content"]
+    assert "回购价格：投资成本按6%年单利计息并调整分红后的金额与届时公允价值孰高。" in draft
+    assert "付款期限：收到通知后三个月内签署文件并足额付款。" in draft
 
 
 def test_rofr_tag_guard_resolves_ap_ak_alias() -> None:
@@ -2732,6 +2749,15 @@ def test_post_polish_splits_liquidation_events_order_and_amounts() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.liquidation_preference",
+            "draft_content": (
+                "清算事件：涵盖解散、清算、破产；控制权变更且原股东交易后持股不足50%、50%或以上表决权转移、实质全部资产/业务处置及知识产权排他许可或出售等视为清算事件。\n"
+                "优先清算额：优先清算额为相应增资款加已宣布未付股息，同轮不足时按相对比例分配。\n"
+                "补足安排：如法律限制导致无法按约分配，可通过分红红利、超额分配方无偿赠予或其他合法方式补足优先清算权人应得金额。"
+            ),
+            "review_notes": ["需律师核对第10.2/10.3条对“第11.1条”的交叉引用是否为编号误植。"],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -2761,6 +2787,14 @@ def test_post_polish_splits_liquidation_events_order_and_amounts() -> None:
     assert "清算顺位：投资人优先于其他股东。" in duplicated
     assert "轮次顺位：投资人内部后轮优先于前轮，顺序为本轮、第二轮、第一轮。" in duplicated
     assert "同轮分配：同轮不足时按实缴比例分配。" in duplicated
+
+    a_remaining = items[3]["draft_content"]
+    assert "法定清算事件：解散、清算、破产。" in a_remaining
+    assert "视同清算事件：控制权变更且原股东交易后持股不足50%、50%或以上表决权转移、实质全部资产/业务处置及知识产权排他许可或出售等视为清算事件。" in a_remaining
+    assert "优先清算额：相应增资款加已宣布未付股息。" in a_remaining
+    assert "不足分配：同轮不足时按相对比例分配。" in a_remaining
+    assert "补足触发：如法律限制导致无法按约分配。" in a_remaining
+    assert "补足方式：可通过分红红利、超额分配方无偿赠予或其他合法方式补足优先清算权人应得金额。" in a_remaining
 
 
 def test_founder_obligations_guard_completes_service_and_non_compete_summary() -> None:

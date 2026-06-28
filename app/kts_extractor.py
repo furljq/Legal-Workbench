@@ -5536,12 +5536,32 @@ def normalize_redemption_subpoint_labels(item: dict[str, Any]) -> None:
                 continue
             line = "回购价格及付款期限：" + body
             changed = True
+        elif line.startswith("价格及付款：") and "；收到通知后" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            price, deadline = body.split("；收到通知后", 1)
+            price = price.removeprefix("回购价为").strip()
+            lines.append("回购价格：" + price.rstrip("。") + "。")
+            lines.append("付款期限：收到通知后" + deadline.rstrip("。") + "。")
+            changed = True
+            continue
         elif line.startswith("行使及付款："):
             line = "回购期限：" + line.split("：", 1)[1]
             changed = True
         elif line.startswith("行使期限及付款："):
             line = "回购期限：" + line.split("：", 1)[1]
             changed = True
+        elif line.startswith("行使及逾期：") and "；逾期按" in line:
+            body = line.split("：", 1)[1].rstrip("。")
+            exercise, overdue = body.split("；", 1)
+            if "、60日内付款" in exercise:
+                signing, payment = exercise.split("、60日内付款", 1)
+                lines.append("签约期限：" + signing.rstrip("。") + "。")
+                lines.append("付款期限：收到回购通知后60日内付款。")
+            else:
+                lines.append("行权期限：" + exercise.rstrip("。") + "。")
+            lines.append("逾期责任：" + overdue.rstrip("。") + "。")
+            changed = True
+            continue
         elif line.startswith("回购期限：") and "；回购义务人" in line:
             body = line.split("：", 1)[1].rstrip("。")
             exercise, payment = body.split("；", 1)
@@ -7719,6 +7739,14 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
             lines.append("知识产权处置：全部/实质全部知识产权许可或出售。")
             changed = True
             continue
+        if stripped.startswith("清算事件：涵盖") and "；控制权变更" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            statutory, deemed = body.split("；", 1)
+            statutory = statutory.removeprefix("涵盖").rstrip("。")
+            lines.append("法定清算事件：" + statutory + "。")
+            lines.append("视同清算事件：" + deemed.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("清算事件：") and "；视为清算事件包括" in stripped:
             body = stripped.split("：", 1)[1]
             statutory, deemed = body.split("；视为清算事件包括", 1)
@@ -7780,6 +7808,21 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
             lines.append("不足分配：同顺位不足时" + shortfall.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("优先清算额：优先清算额为") and "，同轮不足时" in stripped:
+            body = stripped.split("：", 1)[1].removeprefix("优先清算额为").rstrip("。")
+            amount, shortfall = body.split("，同轮不足时", 1)
+            lines.append("优先清算额：" + amount.rstrip("。") + "。")
+            lines.append("不足分配：同轮不足时" + shortfall.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("补足安排：如法律限制导致无法按约分配"):
+            body = stripped.split("：", 1)[1].rstrip("。")
+            if "，可通过" in body:
+                trigger, methods = body.split("，可通过", 1)
+                lines.append("补足触发：" + trigger.rstrip("。") + "。")
+                lines.append("补足方式：可通过" + methods.rstrip("。") + "。")
+                changed = True
+                continue
         if stripped.startswith("剩余分配：") and "；员工激励股仅计入" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             residual, incentive = body.split("；员工激励股仅计入", 1)
