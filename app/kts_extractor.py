@@ -2869,15 +2869,48 @@ def normalize_spa_other_confidentiality_subpoints(item: dict[str, Any]) -> None:
     for line in draft_content.splitlines():
         stripped = line.strip()
         label, parts = split_semicolon_body(stripped)
-        if label == "保密及披露" and len(parts) >= 2:
+        if label in {"保密及披露", "保密/披露", "保密及公开披露"} and len(parts) >= 2:
             lines.append("保密范围：" + parts[0].rstrip("。") + "。")
             disclosure_body = "；".join(parts[1:]).rstrip("。")
             if parts[1].startswith("公开披露"):
                 disclosure_label = "公开披露"
                 disclosure_body = disclosure_body.removeprefix("公开披露").lstrip(" ：:，,") or disclosure_body
+            elif parts[1].startswith("未经"):
+                disclosure_label = "公开披露"
             else:
                 disclosure_label = "允许披露"
-            lines.append(disclosure_label + "：" + disclosure_body + "。")
+            if "，接收方应" in disclosure_body:
+                permitted, obligation = disclosure_body.split("，接收方应", 1)
+                lines.append(disclosure_label + "：" + permitted.rstrip("。") + "。")
+                lines.append("接收方义务：接收方应" + obligation.rstrip("。") + "。")
+            else:
+                lines.append(disclosure_label + "：" + disclosure_body + "。")
+            changed = True
+            continue
+        if stripped.startswith("协议版本：") and "；交易文件与" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            filing, priority = body.split("；交易文件与", 1)
+            lines.append("程序文件效力：" + filing.rstrip("。") + "。")
+            lines.append("交易文件优先：交易文件与" + priority.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("通知送达：") and "；法院、仲裁机构或政府机关函件" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            notice, service = body.split("；", 1)
+            lines.append("通知方式：" + notice.rstrip("。") + "。")
+            lines.append("文书送达：" + service.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("送达及存续：") and "；约定地址及邮箱作为" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            change_notice, rest = body.split("；约定地址及邮箱作为", 1)
+            service, survival = rest, ""
+            if "。解除后" in rest:
+                service, survival = rest.split("。解除后", 1)
+            lines.append("通知变更：" + change_notice.rstrip("。") + "。")
+            lines.append("文书送达：约定地址及邮箱作为" + service.rstrip("。") + "。")
+            if survival:
+                lines.append("条款存续：解除后" + survival.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("公开披露：公开披露"):
@@ -3266,6 +3299,87 @@ def guard_post_closing_covenants_summary(
         extraction["lawyer_notes"] = remove_internal_candidate_notes(extraction.get("lawyer_notes", []))
 
 
+def normalize_post_closing_covenants_subpoints(item: dict[str, Any]) -> None:
+    draft_content = str(item.get("draft_content") or "")
+    if not draft_content:
+        return
+    lines: list[str] = []
+    changed = False
+    for raw_line in draft_content.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("资金用途：") and "；偿债需" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            purpose, restrictions = body.split("；", 1)
+            lines.append("资金用途：" + purpose.rstrip("。") + "。")
+            if "，对外投资" in restrictions:
+                debt, investment = restrictions.split("，", 1)
+                lines.append("偿债限制：" + debt.rstrip("。") + "。")
+                lines.append("投资限制：" + investment.rstrip("。") + "。")
+            else:
+                lines.append("资金使用限制：" + restrictions.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("实缴承诺：") and "；" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            parts = [part.strip("。；; ") for part in re.split(r"[；;]", body) if part.strip("。；; ")]
+            for part in parts:
+                if "第一轮融资" in part:
+                    lines.append("第一轮实缴：" + part.rstrip("。") + "。")
+                elif "2029年12月31日" in part:
+                    lines.append("后续实缴期限：" + part.rstrip("。") + "。")
+                elif "优先增资" in part:
+                    lines.append("优先增资实缴：" + part.rstrip("。") + "。")
+                else:
+                    lines.append("实缴承诺：" + part.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("竞业/业务唯一性：") and "；公司应作为" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            non_compete, priority = body.split("；", 1)
+            lines.append("竞业限制：" + non_compete.rstrip("。") + "。")
+            lines.append("业务唯一性：" + priority.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("IP转移：") and "；未完成的，" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            obligation, fallback = body.split("；未完成的，", 1)
+            lines.append("IP转移义务：" + obligation.rstrip("。") + "。")
+            lines.append("IP转移补救期限：未完成的，" + fallback.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("许可/备案：") and "，包括" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            deadline, scope = body.split("，包括", 1)
+            lines.append("许可/备案期限：" + deadline.rstrip("。") + "。")
+            lines.append("许可/备案范围：包括" + scope.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("团队协议：") and "；劳动文件应" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            documents, deadline = body.split("；劳动文件应", 1)
+            lines.append("团队协议文件：" + documents.rstrip("。") + "。")
+            lines.append("劳动文件期限：劳动文件应" + deadline.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("主体/工商里程碑：") and "；特定架构调整方案" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            cleanup, restructuring = body.split("；", 1)
+            lines.append("主体清理：" + cleanup.rstrip("。") + "。")
+            lines.append("架构调整：" + restructuring.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("知识产权归集：") and "；未经投资方书面同意" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            transfer, restriction = body.split("；", 1)
+            lines.append("知识产权归集：" + transfer.rstrip("。") + "。")
+            lines.append("知识产权处分限制：" + restriction.rstrip("。") + "。")
+            changed = True
+            continue
+        lines.append(stripped)
+    if changed:
+        item["draft_content"] = "\n".join(line for line in lines if line)
+
+
 def has_board_composition_core_evidence(candidates: list[dict[str, Any]]) -> bool:
     text = combined_candidate_text(candidates)
     return (
@@ -3300,10 +3414,15 @@ def remove_board_client_identity_draft_note(draft_content: str) -> str:
 
 def append_board_allocation_subpoints(lines: list[str], allocation: str) -> bool:
     allocation = allocation.strip().rstrip("。")
-    if "各推选一名董事，" in allocation and "推选两名董事" in allocation:
-        single_seat, double_seat = allocation.split("，", 1)
-        lines.append("一席委派方：" + single_seat.rstrip("。") + "。")
-        lines.append("两席委派方：" + double_seat.rstrip("。") + "。")
+    allocation = re.sub(r"各推选([一1])名(?!董事)", r"各推选\1名董事", allocation)
+    allocation = re.sub(r"推选([两二2])名(?!董事)", r"推选\1名董事", allocation)
+    match = re.match(
+        r"(?P<single>.+?各推选[一1]名董事)，(?P<double>.+?推选[两二2]名董事)$",
+        allocation,
+    )
+    if match:
+        lines.append("一席委派方：" + match.group("single").rstrip("。") + "。")
+        lines.append("两席委派方：" + match.group("double").rstrip("。") + "。")
         return True
     return False
 
@@ -3319,43 +3438,71 @@ def normalize_board_composition_subpoints(item: dict[str, Any]) -> None:
         if (
             line.startswith("董事会构成：")
             and "董事会由" in line
-            and "组成；" in line
+            and "组成" in line
             and "推选" in line
         ):
             body = line.split("：", 1)[1].strip().rstrip("。")
-            scale, allocation = body.split("；", 1)
+            definition = ""
+            if "；" in body:
+                main_body, trailing = body.split("；", 1)
+                if "推选" in main_body:
+                    body = main_body
+                    definition = trailing.strip().rstrip("。")
+            if "；" in body:
+                scale, allocation = body.split("；", 1)
+            elif "组成，" in body:
+                scale, allocation = body.split("组成，", 1)
+                scale += "组成"
+            else:
+                lines.append(line)
+                continue
             scale = re.sub(r"董事会由(.+?)董事组成", r"董事会设\1董事", scale)
             allocation = allocation.strip().rstrip("。")
             election_suffix = ""
             if "由股东会选举产生" in allocation:
-                allocation = allocation.replace("，由股东会选举产生", "").replace("；由股东会选举产生", "")
+                allocation = (
+                    allocation.replace("，并由股东会选举产生", "")
+                    .replace("，由股东会选举产生", "")
+                    .replace("；由股东会选举产生", "")
+                )
                 election_suffix = "，由股东会选举产生"
             lines.append("董事会规模：" + scale.rstrip("。") + election_suffix + "。")
             if not append_board_allocation_subpoints(lines, allocation):
                 lines.append("席位分配：" + allocation.rstrip("。") + "。")
+            if definition:
+                if "合称" in definition and "董事" in definition:
+                    lines.append("投资人董事定义：" + definition.rstrip("。") + "。")
+                else:
+                    lines.append("董事定义：" + definition.rstrip("。") + "。")
             changed = True
             continue
         if line.startswith("席位分配：") and append_board_allocation_subpoints(lines, line.split("：", 1)[1]):
             changed = True
             continue
         if (
-            line.startswith("董事会构成：董事会")
+            line.startswith("董事会构成：")
             and "席" in line
-            and "委派4席并含董事长；" in line
+            and "委派4席" in line
             and "各委派1席" in line
         ):
             body = line.split("：", 1)[1].rstrip("。")
-            scale, allocation = body.split("，", 1)
-            four_seat, other_seats = allocation.split("；", 1)
+            first_part, other_seats = body.split("；", 1)
+            scale, four_seat = first_part.split("，", 1)
             lines.append("董事会规模：" + scale.rstrip("。") + "。")
             lines.append("四席委派方：" + four_seat.rstrip("。") + "。")
-            lines.append("其他席位：" + other_seats.rstrip("。") + "。")
+            if "，" in other_seats:
+                first_seat, remaining_seats = other_seats.split("，", 1)
+                lines.append("一席委派方：" + first_seat.rstrip("。") + "。")
+                lines.append("其他一席委派方：" + remaining_seats.rstrip("。") + "。")
+            else:
+                lines.append("其他席位：" + other_seats.rstrip("。") + "。")
             changed = True
             continue
-        if line.startswith("董事长：") and "；董事长不能履职时" in line:
+        if line.startswith("董事长：") and "；" in line and "不能履职时" in line:
             primary, fallback = line.split("；", 1)
             fallback = fallback.replace("董事长不能履职时，", "不能履职时，")
             fallback = fallback.replace("代行董事长职务", "代行")
+            fallback = fallback.replace("代行职务", "代行")
             lines.append(primary.rstrip("。") + "。")
             lines.append("董事长替代：" + fallback.rstrip("。") + "。")
             changed = True
@@ -7104,6 +7251,32 @@ def normalize_closing_payment_subpoints(item: dict[str, Any]) -> None:
             lines.append("交割日：足额付款日为" + closing.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("付款及交割：") and "；投资方应在收到后" in stripped and "，足额付款日为" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            notice, rest = body.split("；投资方应", 1)
+            payment, closing = rest.split("，足额付款日为", 1)
+            lines.append("付款通知：" + notice.rstrip("。") + "。")
+            lines.append("付款期限：投资方应" + payment.rstrip("。") + "。")
+            lines.append("交割日：足额付款日为" + closing.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("付款及交割日：") and "；足额付款即构成交割" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            payment_part, closing_part = body.split("；", 1)
+            if "，各投资方分别" in payment_part:
+                deadline, payment = payment_part.split("，各投资方分别", 1)
+                lines.append("付款期限：" + deadline.rstrip("。") + "。")
+                lines.append("付款方式：各投资方分别" + payment.rstrip("。") + "。")
+            else:
+                lines.append("付款期限：" + payment_part.rstrip("。") + "。")
+            if "，付款义务" in closing_part:
+                closing, liability = closing_part.split("，付款义务", 1)
+                lines.append("交割日：" + closing.rstrip("。") + "。")
+                lines.append("付款责任：付款义务" + liability.rstrip("。") + "。")
+            else:
+                lines.append("交割日：" + closing_part.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("付款期限：第四条先决条件满足") and "各投资方分别向" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             trigger_deadline, payment = body.split("，各投资方分别", 1)
@@ -7130,6 +7303,13 @@ def normalize_closing_payment_subpoints(item: dict[str, Any]) -> None:
             lines.append("后续交付：于" + later.rstrip("。") + "。")
             changed = True
             continue
+        if stripped.startswith("交割文件：") and "，并在交割后" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            closing_day, later = body.split("，并在", 1)
+            lines.append("交割日交付：" + closing_day.rstrip("。") + "。")
+            lines.append("后续交付：在" + later.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("交割日：") and "，各投资方付款义务及交割相互独立" in stripped:
             body = stripped.split("：", 1)[1].rstrip("。")
             closing, independence = body.split("，各投资方", 1)
@@ -7144,11 +7324,38 @@ def normalize_closing_payment_subpoints(item: dict[str, Any]) -> None:
             lines.append("股东名册：整体交割后" + register.rstrip("。") + "。")
             changed = True
             continue
-        if stripped.startswith("工商变更：公司应在协议生效日起") and "，且不晚于" in stripped:
+        if stripped.startswith("股东文件：") and "，并于整体交割后" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            certificate, register = body.split("，并于整体交割后", 1)
+            lines.append("出资证明书：" + certificate.rstrip("。") + "。")
+            lines.append("股东名册：整体交割后" + register.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("交割后属性：") and "；登记程序文件" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            registration_status, filing_priority = body.split("；登记程序文件", 1)
+            lines.append("工商变更属性：" + registration_status.rstrip("。") + "。")
+            if "，交易权利义务以" in filing_priority:
+                filing, priority = filing_priority.split("，交易权利义务以", 1)
+                lines.append("程序文件效力：登记程序文件" + filing.rstrip("。") + "。")
+                lines.append("交易文件优先：交易权利义务以" + priority.rstrip("。") + "。")
+            else:
+                lines.append("程序文件效力：登记程序文件" + filing_priority.rstrip("。") + "。")
+            changed = True
+            continue
+        if (
+            stripped.startswith(("工商变更：公司应在协议生效日起", "工商变更：公司应于协议生效后"))
+            and "，且不晚于" in stripped
+        ):
             body = stripped.split("：", 1)[1].rstrip("。")
             registration, filing = body.split("，且不晚于", 1)
+            cooperation = ""
+            if "；各方应" in filing:
+                filing, cooperation = filing.split("；", 1)
             lines.append("登记期限：" + registration.rstrip("。") + "。")
             lines.append("资料提交：不晚于" + filing.rstrip("。") + "。")
+            if cooperation:
+                lines.append("配合义务：" + cooperation.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("工商变更：本次增资工商变更") and "被列为付款先决条件" in stripped:
@@ -7446,6 +7653,15 @@ def normalize_drag_along_subpoints(item: dict[str, Any]) -> None:
     changed = False
     for line in draft_content.splitlines():
         stripped = line.strip()
+        if stripped.startswith("触发条件：") and "满3年后，" in stripped and "，且公司整体估值" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            timing, rest = body.split("，", 1)
+            trigger, valuation = rest.split("，且公司整体估值", 1)
+            lines.append("触发时间：" + timing.rstrip("。") + "。")
+            lines.append("触发交易：" + trigger.rstrip("。") + "。")
+            lines.append("估值门槛：公司整体估值" + valuation.rstrip("。") + "。")
+            changed = True
+            continue
         if stripped.startswith("领售触发：") and "后，如" in stripped and "，且公司整体估值" in stripped:
             body = stripped.split("：", 1)[1]
             timing, rest = body.split("后，如", 1)
@@ -7467,6 +7683,18 @@ def normalize_drag_along_subpoints(item: dict[str, Any]) -> None:
             parties, cooperation = body.split("，", 1)
             lines.append("被领售主体：" + parties.rstrip("。") + "。")
             lines.append("配合义务：" + cooperation.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("被领售及范围：") and "；异议股东须" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            parties, dissent = body.split("；异议股东须", 1)
+            lines.append("被领售主体：" + parties.rstrip("。") + "。")
+            if "，不收购视为同意" in dissent:
+                obligation, consequence = dissent.split("，不收购视为同意", 1)
+                lines.append("异议股东义务：异议股东须" + obligation.rstrip("。") + "。")
+                lines.append("未收购后果：不收购视为同意。")
+            else:
+                lines.append("异议股东义务：异议股东须" + dissent.rstrip("。") + "。")
             changed = True
             continue
         lines.append(stripped)
@@ -7513,6 +7741,18 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
                 lines.append("同轮分配：同轮不足" + same_round.rstrip("。") + "。")
             else:
                 lines.append("轮次顺位：投资人之间" + rest.rstrip("。") + "。")
+            changed = True
+            continue
+        if stripped.startswith("清算顺位：") and "；投资人内部后轮优先于前轮" in stripped:
+            body = stripped.split("：", 1)[1].rstrip("。")
+            first, rest = body.split("；投资人内部", 1)
+            lines.append("清算顺位：" + first.rstrip("。") + "。")
+            if "，同轮不足" in rest:
+                rounds, same_round = rest.split("，同轮不足", 1)
+                lines.append("轮次顺位：投资人内部" + rounds.rstrip("。") + "。")
+                lines.append("同轮分配：同轮不足" + same_round.rstrip("。") + "。")
+            else:
+                lines.append("轮次顺位：投资人内部" + rest.rstrip("。") + "。")
             changed = True
             continue
         if stripped.startswith("清算顺位：依法清偿") and "，剩余财产" in stripped:
@@ -7573,7 +7813,7 @@ def normalize_liquidation_preference_subpoints(item: dict[str, Any]) -> None:
     label_indexes: dict[str, int] = {}
     for line in lines:
         label = line.split("：", 1)[0] if "：" in line else ""
-        if label in {"新项目补偿", "法定分配偏离"}:
+        if label in {"新项目补偿", "法定分配偏离", "法定清算事件", "视同清算事件", "知识产权处置"}:
             if label in label_indexes:
                 changed = True
                 existing_index = label_indexes[label]
@@ -8036,6 +8276,8 @@ def apply_post_polish_quality_guards(items: list[dict[str, Any]]) -> None:
             normalize_closing_conditions_subpoints(item)
         elif item_id == "spa.closing":
             normalize_closing_payment_subpoints(item)
+        elif item_id == "spa.post_closing_covenants":
+            normalize_post_closing_covenants_subpoints(item)
         elif item_id == "spa.termination":
             normalize_termination_subpoints(item)
         elif item_id == "spa.compliance":

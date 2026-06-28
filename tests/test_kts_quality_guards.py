@@ -969,6 +969,56 @@ def test_post_closing_covenants_guard_replaces_stale_case_compact() -> None:
     assert "创始团队持续任职期限" in extraction["draft_content"]
 
 
+def test_post_polish_splits_post_closing_covenant_compound_lines() -> None:
+    items = [
+        {
+            "taxonomy_id": "spa.post_closing_covenants",
+            "draft_content": (
+                "资金用途：限业务拓展、研发、生产、资本支出及主营业务；偿债需股东会全票同意，对外投资/委托贷款/证券期货需投资方同意。\n"
+                "实缴承诺：第一轮融资增资款已全部实缴并完成工商变更；[公司或组织_AA]已就优先增资完成实缴；[公司或组织_O]优先增资事项拟于2029年12月31日前完成全部实缴。\n"
+                "竞业/业务唯一性：核心人员受竞业限制；公司应作为相关主体主营或相似业务的唯一实体及最高优先级项目。\n"
+                "IP转移：相关义务人应于首次交割后6个月转移公司所需IP；未完成的，第二次交割后12个月内完成。\n"
+                "许可/备案：首次交割日起18个月内取得试验卫星发射相关许可/备案/同意，包括发改核准、卫星网络、空间电台执照、无线电频率及发射许可。\n"
+                "团队协议：与相关创始股东签署顾问/劳动合同及保密/IP归属/竞业文件；劳动文件应于本轮交割后30个月内签署。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.post_closing_covenants",
+            "draft_content": (
+                "主体/工商里程碑：交割后三个月内，公司应完成对指定主体100%股权的收购或注销，并办理相应工商变更登记；特定架构调整方案需经相关各方协商并获投资方认可。\n"
+                "知识产权归集：员工、研发人员持有的主营业务相关无形资产应合法转让或登记至公司名下；未经投资方书面同意，不得擅自处分或用于主营业务以外活动。"
+            ),
+            "review_notes": [],
+        },
+    ]
+
+    apply_post_polish_quality_guards(items)
+    apply_post_polish_quality_guards(items)
+
+    current = items[0]["draft_content"]
+    assert "资金用途：限业务拓展、研发、生产、资本支出及主营业务。" in current
+    assert "偿债限制：偿债需股东会全票同意。" in current
+    assert "投资限制：对外投资/委托贷款/证券期货需投资方同意。" in current
+    assert "第一轮实缴：第一轮融资增资款已全部实缴并完成工商变更。" in current
+    assert "优先增资实缴：[公司或组织_AA]已就优先增资完成实缴。" in current
+    assert "后续实缴期限：[公司或组织_O]优先增资事项拟于2029年12月31日前完成全部实缴。" in current
+    assert "竞业限制：核心人员受竞业限制。" in current
+    assert "业务唯一性：公司应作为相关主体主营或相似业务的唯一实体及最高优先级项目。" in current
+    assert "IP转移义务：相关义务人应于首次交割后6个月转移公司所需IP。" in current
+    assert "IP转移补救期限：未完成的，第二次交割后12个月内完成。" in current
+    assert "许可/备案期限：首次交割日起18个月内取得试验卫星发射相关许可/备案/同意。" in current
+    assert "许可/备案范围：包括发改核准、卫星网络、空间电台执照、无线电频率及发射许可。" in current
+    assert "团队协议文件：与相关创始股东签署顾问/劳动合同及保密/IP归属/竞业文件。" in current
+    assert "劳动文件期限：劳动文件应于本轮交割后30个月内签署。" in current
+
+    a_current = items[1]["draft_content"]
+    assert "主体清理：交割后三个月内，公司应完成对指定主体100%股权的收购或注销，并办理相应工商变更登记。" in a_current
+    assert "架构调整：特定架构调整方案需经相关各方协商并获投资方认可。" in a_current
+    assert "知识产权归集：员工、研发人员持有的主营业务相关无形资产应合法转让或登记至公司名下。" in a_current
+    assert "知识产权处分限制：未经投资方书面同意，不得擅自处分或用于主营业务以外活动。" in a_current
+
+
 def test_post_closing_covenants_guard_backfills_specific_commitments_from_candidates() -> None:
     extraction = {
         "status": "drafted",
@@ -1674,6 +1724,14 @@ def test_post_polish_splits_board_composition_long_line() -> None:
             ),
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "sha.board_composition",
+            "draft_content": (
+                "董事会构成：本次交易完成后，公司董事会由5名董事组成，W、Z、N各推选1名，F推选2名，并由股东会选举产生；W和Z委派董事合称AK董事。\n"
+                "董事长：由F提名的董事担任；其不能履职时，由其余四名董事共同推举一名董事代行职务。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -1691,7 +1749,8 @@ def test_post_polish_splits_board_composition_long_line() -> None:
     draft = items[1]["draft_content"]
     assert "董事会规模：董事会7席。" in draft
     assert "四席委派方：[[公司或组织_AE]或组织_C]委派4席并含董事长。" in draft
-    assert "其他席位：[商标品牌_G]持股不低于8%时委派1席，[商标品牌_A]、[商标品牌_F]各委派1席。" in draft
+    assert "一席委派方：[商标品牌_G]持股不低于8%时委派1席。" in draft
+    assert "其他一席委派方：[商标品牌_A]、[商标品牌_F]各委派1席。" in draft
     assert "董事席位门槛：A/F/G任一方持股低于5%即丧失董事委派权。" in draft
     assert "观察员替代：持股不低于2%时可改派1名观察员。" in draft
     assert "观察员名额：除已获董事席位投资人外，其他投资人中持股最高前两名可各委派1名观察员。" in draft
@@ -1706,6 +1765,14 @@ def test_post_polish_splits_board_composition_long_line() -> None:
     assert "席位维持及观察员：" not in draft
     assert "席位调整：" not in draft
     assert "子公司/集团公司：" not in draft
+
+    draft = items[3]["draft_content"]
+    assert "董事会规模：本次交易完成后，公司董事会设5名董事，由股东会选举产生。" in draft
+    assert "一席委派方：W、Z、N各推选1名董事。" in draft
+    assert "两席委派方：F推选2名董事。" in draft
+    assert "投资人董事定义：W和Z委派董事合称AK董事。" in draft
+    assert "董事长：由F提名的董事担任。" in draft
+    assert "董事长替代：其不能履职时，由其余四名董事共同推举一名董事代行。" in draft
 
 
 def test_board_reserved_guard_removes_cross_item_seat_blocker() -> None:
@@ -2652,6 +2719,19 @@ def test_post_polish_splits_liquidation_events_order_and_amounts() -> None:
             ),
             "review_notes": ["需律师核对第10.2/10.3条对“第11.1条”的交叉引用是否为编号误植。"],
         },
+        {
+            "taxonomy_id": "sha.liquidation_preference",
+            "draft_content": (
+                "法定清算事件：法定清算/解散/关闭。\n"
+                "视同清算事件：控制权变更致原股东持股或表决权低于50%，或全部/实质全部资产出售。\n"
+                "知识产权处置：全部/实质全部知识产权许可或出售。\n"
+                "法定清算事件：法定清算/解散/关闭。\n"
+                "视同清算事件：控制权变更致原股东持股或表决权低于50%，或全部/实质全部资产出售。\n"
+                "知识产权处置：全部/实质全部知识产权许可或出售。\n"
+                "清算顺位：投资人优先于其他股东；投资人内部后轮优先于前轮，顺序为本轮、第二轮、第一轮，同轮不足时按实缴比例分配。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -2673,6 +2753,14 @@ def test_post_polish_splits_liquidation_events_order_and_amounts() -> None:
     assert "不足分配：同顺位不足时按应得金额比例分配。" in a_current
     assert "员工激励股口径：仅计入已实际取得且无未届满限制期部分。" in a_current
     assert items[1]["review_notes"] == ["需律师核对第10.2/10.3条对“第11.1条”的交叉引用是否为编号误植。"]
+
+    duplicated = items[2]["draft_content"]
+    assert duplicated.count("法定清算事件：") == 1
+    assert duplicated.count("视同清算事件：") == 1
+    assert duplicated.count("知识产权处置：") == 1
+    assert "清算顺位：投资人优先于其他股东。" in duplicated
+    assert "轮次顺位：投资人内部后轮优先于前轮，顺序为本轮、第二轮、第一轮。" in duplicated
+    assert "同轮分配：同轮不足时按实缴比例分配。" in duplicated
 
 
 def test_founder_obligations_guard_completes_service_and_non_compete_summary() -> None:
@@ -2944,6 +3032,25 @@ def test_post_polish_splits_closing_payment_delivery_and_registration_lines() ->
             "draft_content": "工商变更：本次增资工商变更、外商投资信息报告及外汇登记被列为付款先决条件。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.closing",
+            "draft_content": (
+                "付款及交割：付款先决条件满足后，公司可发出缴款通知；投资方应在收到后10个工作日内全额缴付投资款，足额付款日为本次交割日。\n"
+                "交割文件：公司应于交割日提供签署版股东名册及出资证明书，并在交割后三个工作日内递交完整签署版出资证明书扫描件。\n"
+                "工商变更：公司应于协议生效后30日内办毕增资变更登记并提供证明文件，且不晚于投资款缴付日后10日内提交登记资料；各方应配合提供材料。\n"
+                "交割后属性：工商变更为交割后推进事项；登记程序文件仅供备案等程序使用，交易权利义务以交易文件为准。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.closing",
+            "draft_content": (
+                "付款及交割日：先决条件满足或被豁免后10个工作日内，或另行书面约定时间，各投资方分别足额付款至指定专用账户；"
+                "足额付款即构成交割，付款日为各自交割日，付款义务分别且不连带。\n"
+                "股东文件：公司应于各投资方交割日后1个工作日内交付收款确认函及出资证明书，并于整体交割后1个工作日内交付增资后股东名册。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -2970,6 +3077,25 @@ def test_post_polish_splits_closing_payment_delivery_and_registration_lines() ->
     assert "营业执照：公司需提供换发营业执照复印件。" in a_current
     assert items[1]["review_notes"] == ["需律师重点复核工商变更登记作为付款先决条件的交易顺序。"]
     assert items[2]["draft_content"] == "付款前条件：本次增资工商变更、外商投资信息报告及外汇登记被列为付款先决条件。"
+
+    current_export = items[3]["draft_content"]
+    assert "付款通知：付款先决条件满足后，公司可发出缴款通知。" in current_export
+    assert "付款期限：投资方应在收到后10个工作日内全额缴付投资款。" in current_export
+    assert "交割日交付：公司应于交割日提供签署版股东名册及出资证明书。" in current_export
+    assert "后续交付：在交割后三个工作日内递交完整签署版出资证明书扫描件。" in current_export
+    assert "登记期限：公司应于协议生效后30日内办毕增资变更登记并提供证明文件。" in current_export
+    assert "配合义务：各方应配合提供材料。" in current_export
+    assert "工商变更属性：工商变更为交割后推进事项。" in current_export
+    assert "程序文件效力：登记程序文件仅供备案等程序使用。" in current_export
+    assert "交易文件优先：交易权利义务以交易文件为准。" in current_export
+
+    a_export = items[4]["draft_content"]
+    assert "付款期限：先决条件满足或被豁免后10个工作日内，或另行书面约定时间。" in a_export
+    assert "付款方式：各投资方分别足额付款至指定专用账户。" in a_export
+    assert "交割日：足额付款即构成交割，付款日为各自交割日。" in a_export
+    assert "付款责任：付款义务分别且不连带。" in a_export
+    assert "出资证明书：公司应于各投资方交割日后1个工作日内交付收款确认函及出资证明书。" in a_export
+    assert "股东名册：整体交割后1个工作日内交付增资后股东名册。" in a_export
 
 
 def test_post_polish_deduplicates_missing_notes_already_in_review_notes() -> None:
@@ -3158,6 +3284,23 @@ def test_post_polish_compacts_spa_other_dispute_and_notice_language() -> None:
             "draft_content": "公开披露：公开披露增资事项和细节需取得相关投资方及核心人员书面同意。",
             "review_notes": [],
         },
+        {
+            "taxonomy_id": "spa.other",
+            "draft_content": (
+                "保密/披露：协议条款、协议存在及未公开信息保密；法定、监管披露及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外，接收方应承担不低于本协议标准的保密义务。\n"
+                "协议版本：工商登记文件仅供程序使用；交易文件与前轮增资协议、公司章程或其他组织性文件不一致的，以本协议为准。\n"
+                "通知送达：通知需书面作出，可采用信函、邮件、微信等；法院、仲裁机构或政府机关函件亦可按该方式送达。"
+            ),
+            "review_notes": [],
+        },
+        {
+            "taxonomy_id": "spa.other",
+            "draft_content": (
+                "保密及公开披露：各方对洽谈、签署、履行及尽调取得的未公开信息保密至原提供方公开；未经相关投资方及核心人员书面同意，不得向公众披露增资事项和细节。\n"
+                "送达及存续：通讯地址或邮箱变更应于5日内通知；约定地址及邮箱作为仲裁、司法文书送达地址。解除后保密、违约责任及赔偿、适用法律和争议解决、费用及其他条款继续有效。"
+            ),
+            "review_notes": [],
+        },
     ]
 
     apply_post_polish_quality_guards(items)
@@ -3175,6 +3318,22 @@ def test_post_polish_compacts_spa_other_dispute_and_notice_language() -> None:
 
     assert items[1]["draft_content"] == "争议解决：争议先友好协商；15日内未解决的，提交约定仲裁机构仲裁，非争议事项继续履行。"
     assert items[2]["draft_content"] == "公开披露：增资事项和细节需取得相关投资方及核心人员书面同意。"
+
+    current_other = items[3]["draft_content"]
+    assert "保密范围：协议条款、协议存在及未公开信息保密。" in current_other
+    assert "允许披露：法定、监管披露及向股东、董事、雇员、关联方、顾问、潜在投资人等披露除外。" in current_other
+    assert "接收方义务：接收方应承担不低于本协议标准的保密义务。" in current_other
+    assert "程序文件效力：工商登记文件仅供程序使用。" in current_other
+    assert "交易文件优先：交易文件与前轮增资协议、公司章程或其他组织性文件不一致的，以本协议为准。" in current_other
+    assert "通知方式：通知需书面作出，可采用信函、邮件、微信等。" in current_other
+    assert "文书送达：法院、仲裁机构或政府机关函件亦可按该方式送达。" in current_other
+
+    a_other = items[4]["draft_content"]
+    assert "保密范围：各方对洽谈、签署、履行及尽调取得的未公开信息保密至原提供方公开。" in a_other
+    assert "公开披露：未经相关投资方及核心人员书面同意，不得向公众披露增资事项和细节。" in a_other
+    assert "通知变更：通讯地址或邮箱变更应于5日内通知。" in a_other
+    assert "文书送达：约定地址及邮箱作为仲裁、司法文书送达地址。" in a_other
+    assert "条款存续：解除后保密、违约责任及赔偿、适用法律和争议解决、费用及其他条款继续有效。" in a_other
 
 
 def test_post_polish_summarizes_closing_conditions_mac_line() -> None:
@@ -3709,6 +3868,14 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
             "review_notes": [],
         },
         {
+            "taxonomy_id": "sha.drag_along",
+            "draft_content": (
+                "触发条件：天使轮增资交割日满3年后，第三方收购公司全部或实质上全部业务/资产，或发生并购、重组等实际控制权变更交易，且公司整体估值不低于人民币2,488,078,800元。\n"
+                "被领售及范围：公司其他所有股东应同意并参与该交易；异议股东须按第三方价格收购同意交易的[[公司或组织_AE]或组织_K]全部股权，不收购视为同意。"
+            ),
+            "review_notes": [],
+        },
+        {
             "taxonomy_id": "sha.liquidation_preference",
             "draft_content": (
                 "清算事件：公司解散、清算、破产及视为清算事件触发优先清算；视为清算事件包括控制权变更、50%以上表决权转移、"
@@ -3752,21 +3919,25 @@ def test_post_polish_splits_remaining_long_substantive_lines() -> None:
     assert "触发时间：" in items[2]["draft_content"]
     assert "触发交易：" in items[2]["draft_content"]
     assert "估值门槛：" in items[2]["draft_content"]
-    assert "法定清算事件：" in items[3]["draft_content"]
-    assert "视同清算事件：" in items[3]["draft_content"]
-    assert "清算顺位：" in items[3]["draft_content"]
-    assert "优先清算额：" in items[3]["draft_content"]
-    assert "触发情形：" in items[4]["draft_content"]
-    assert "调整方式：" in items[4]["draft_content"]
-    assert not BARE_ORG_PLACEHOLDER_RE.search(items[4]["draft_content"])
-    assert "[[公司或组织_AE]或组织_C]" in items[4]["draft_content"]
-    assert "分红协助义务：" in items[5]["draft_content"]
-    assert "优先分红：" in items[5]["draft_content"]
-    assert "法律限制补偿：" in items[5]["draft_content"]
+    assert "触发时间：天使轮增资交割日满3年后。" in items[3]["draft_content"]
+    assert "被领售主体：公司其他所有股东应同意并参与该交易。" in items[3]["draft_content"]
+    assert "异议股东义务：异议股东须按第三方价格收购同意交易的[[公司或组织_AE]或组织_K]全部股权。" in items[3]["draft_content"]
+    assert "未收购后果：不收购视为同意。" in items[3]["draft_content"]
+    assert "法定清算事件：" in items[4]["draft_content"]
+    assert "视同清算事件：" in items[4]["draft_content"]
+    assert "清算顺位：" in items[4]["draft_content"]
+    assert "优先清算额：" in items[4]["draft_content"]
+    assert "触发情形：" in items[5]["draft_content"]
+    assert "调整方式：" in items[5]["draft_content"]
     assert not BARE_ORG_PLACEHOLDER_RE.search(items[5]["draft_content"])
-    assert "[[公司或组织_AE]或组织_H]" in items[5]["draft_content"]
     assert "[[公司或组织_AE]或组织_C]" in items[5]["draft_content"]
-    assert "[[公司或组织_AE]或组织_K]" in items[5]["draft_content"]
+    assert "分红协助义务：" in items[6]["draft_content"]
+    assert "优先分红：" in items[6]["draft_content"]
+    assert "法律限制补偿：" in items[6]["draft_content"]
+    assert not BARE_ORG_PLACEHOLDER_RE.search(items[6]["draft_content"])
+    assert "[[公司或组织_AE]或组织_H]" in items[6]["draft_content"]
+    assert "[[公司或组织_AE]或组织_C]" in items[6]["draft_content"]
+    assert "[[公司或组织_AE]或组织_K]" in items[6]["draft_content"]
 
 
 def test_post_polish_compacts_anti_dilution_formula_and_compensation_lines() -> None:
@@ -4370,6 +4541,7 @@ if __name__ == "__main__":
     test_spa_other_workpaper_tone_is_cleaned()
     test_post_closing_covenants_guard_compacts_overlong_summary()
     test_post_closing_covenants_guard_replaces_stale_case_compact()
+    test_post_polish_splits_post_closing_covenant_compound_lines()
     test_post_closing_covenants_guard_backfills_specific_commitments_from_candidates()
     test_post_closing_covenants_guard_backfills_use_of_proceeds_from_candidates()
     test_style_polish_payload_includes_fields_and_review_context()
